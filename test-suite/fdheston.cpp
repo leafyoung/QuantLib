@@ -1050,6 +1050,107 @@ BOOST_AUTO_TEST_CASE(testAmericanCallPutParity) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testFdHestonAmericanNotBelowExerciseValue) {
+
+    BOOST_TEST_MESSAGE("Testing that FdHestonVanillaEngine American prices "
+                       "stay above the exercise value...");
+
+    // Same undershoot as FdBlackScholesVanillaEngine: the step condition
+    // enforces the exercise constraint on grid nodes, but the monotonic
+    // cubic interpolant used to read off the price at the spot (which
+    // generally falls between nodes) can still dip below the payoff there.
+    // VanillaOption::impliedVolatility prices Americans with this engine,
+    // so a value below the payoff cannot be inverted either.
+
+    const Date today(15, October, 2026);
+    Settings::instance().evaluationDate() = today;
+    const DayCounter dc = Actual365Fixed();
+
+    struct Case {
+        Option::Type type;
+        Real spot;
+        Real strike;
+        Rate r;
+        Rate q;
+        Volatility vol;
+        Integer days;
+    };
+    const Case cases[] = {
+        // found by a parameter sweep at this engine's own default grid
+        // (tGrid=100, xGrid=100, vGrid=50); undershoot about 7.3e-3
+        {Option::Call, 145.0, 100.0, 0.00, 0.05, 0.25, 1095},
+        {Option::Call, 110.0, 100.0, 0.00, 0.05, 0.10, 365},
+    };
+
+    for (const auto& c : cases) {
+        const auto quote = ext::make_shared<SimpleQuote>(c.spot);
+        const Handle<YieldTermStructure> rTS(flatRate(today, c.r, dc));
+        const Handle<YieldTermStructure> qTS(flatRate(today, c.q, dc));
+        // near-zero vol-of-vol, theta == v0: a Heston process that stays
+        // close to a flat Black-Scholes volatility of c.vol throughout,
+        // isolating the finite-difference interpolation behavior rather
+        // than any genuine stochastic-volatility effect.
+        const Real v0 = c.vol * c.vol;
+        const auto hestonProcess = ext::make_shared<HestonProcess>(
+            rTS, qTS, Handle<Quote>(quote), v0, 1.0, v0, 1.0e-4, 0.0);
+        const auto model = ext::make_shared<HestonModel>(hestonProcess);
+
+        const auto payoff = ext::make_shared<PlainVanillaPayoff>(c.type, c.strike);
+        const auto exercise =
+            ext::make_shared<AmericanExercise>(today, today + c.days);
+
+        VanillaOption option(payoff, exercise);
+        option.setPricingEngine(ext::make_shared<FdHestonVanillaEngine>(model));
+
+        const Real intrinsic = (*payoff)(c.spot);
+        const Real calculated = option.NPV();
+
+        if (calculated < intrinsic) {
+            BOOST_FAIL("American option value below exercise value"
+                    << "\n    option type: " << c.type
+                    << "\n    spot       : " << c.spot
+                    << "\n    strike     : " << c.strike
+                    << "\n    intrinsic  : " << intrinsic
+                    << "\n    calculated : " << calculated
+                    << "\n    undershoot : " << (intrinsic - calculated));
+        }
+    }
+
+    // A European on the same market is worth less than intrinsic. The floor
+    // must not be applied to it, and neither to an American that cannot be
+    // exercised yet.
+    const auto quote = ext::make_shared<SimpleQuote>(110.0);
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.00, dc));
+    const Handle<YieldTermStructure> qTS(flatRate(today, 0.02, dc));
+    const Real v0 = 0.10 * 0.10;
+    const auto hestonProcess = ext::make_shared<HestonProcess>(
+        rTS, qTS, Handle<Quote>(quote), v0, 1.0, v0, 1.0e-4, 0.0);
+    const auto model = ext::make_shared<HestonModel>(hestonProcess);
+    const auto payoff = ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+    const Real intrinsic = (*payoff)(110.0);
+
+    const auto europeanExercise = ext::make_shared<EuropeanExercise>(today + 90);
+    VanillaOption european(payoff, europeanExercise);
+    european.setPricingEngine(ext::make_shared<FdHestonVanillaEngine>(model));
+    const Real europeanValue = european.NPV();
+    if (!(europeanValue < intrinsic - 0.1)) {
+        BOOST_FAIL("floor incorrectly applied to a European option"
+                << "\n    intrinsic - 0.1: " << (intrinsic - 0.1)
+                << "\n    calculated     : " << europeanValue);
+    }
+
+    const auto deferredExercise =
+        ext::make_shared<AmericanExercise>(today + 30, today + 90);
+    VanillaOption deferred(payoff, deferredExercise);
+    deferred.setPricingEngine(ext::make_shared<FdHestonVanillaEngine>(model));
+    const Real deferredValue = deferred.NPV();
+    if (!(deferredValue < intrinsic - 0.05)) {
+        BOOST_FAIL("floor incorrectly applied to a not-yet-exercisable American option"
+                << "\n    intrinsic - 0.05: " << (intrinsic - 0.05)
+                << "\n    calculated      : " << deferredValue);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()
