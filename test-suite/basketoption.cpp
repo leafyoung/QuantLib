@@ -3055,30 +3055,25 @@ BOOST_AUTO_TEST_CASE(testFd2dBlackScholesVanillaEngineRejectsNonBasketPayoff) {
     DayCounter dc = Actual360();
     Date today = Settings::instance().evaluationDate();
 
-    ext::shared_ptr<SimpleQuote> spot1(new SimpleQuote(100.0));
-    ext::shared_ptr<SimpleQuote> spot2(new SimpleQuote(100.0));
+    auto spot1 = ext::make_shared<SimpleQuote>(100.0);
+    auto spot2 = ext::make_shared<SimpleQuote>(100.0);
     ext::shared_ptr<YieldTermStructure> qTS1 = flatRate(today, 0.0, dc);
     ext::shared_ptr<YieldTermStructure> qTS2 = flatRate(today, 0.0, dc);
     ext::shared_ptr<YieldTermStructure> rTS = flatRate(today, 0.05, dc);
     ext::shared_ptr<BlackVolTermStructure> volTS1 = flatVol(today, 0.2, dc);
     ext::shared_ptr<BlackVolTermStructure> volTS2 = flatVol(today, 0.2, dc);
 
-    ext::shared_ptr<GeneralizedBlackScholesProcess> p1(
-        new BlackScholesMertonProcess(Handle<Quote>(spot1),
-                                       Handle<YieldTermStructure>(qTS1),
-                                       Handle<YieldTermStructure>(rTS),
-                                       Handle<BlackVolTermStructure>(volTS1)));
-    ext::shared_ptr<GeneralizedBlackScholesProcess> p2(
-        new BlackScholesMertonProcess(Handle<Quote>(spot2),
-                                       Handle<YieldTermStructure>(qTS2),
-                                       Handle<YieldTermStructure>(rTS),
-                                       Handle<BlackVolTermStructure>(volTS2)));
+    auto p1 = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(spot1), Handle<YieldTermStructure>(qTS1),
+        Handle<YieldTermStructure>(rTS), Handle<BlackVolTermStructure>(volTS1));
+    auto p2 = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(spot2), Handle<YieldTermStructure>(qTS2),
+        Handle<YieldTermStructure>(rTS), Handle<BlackVolTermStructure>(volTS2));
 
-    ext::shared_ptr<Exercise> exercise(
-        new EuropeanExercise(today + Period(1, Years)));
+    auto exercise = ext::make_shared<EuropeanExercise>(today + Period(1, Years));
 
-    ext::shared_ptr<PricingEngine> engine(
-        new Fd2dBlackScholesVanillaEngine(p1, p2, 0.0, 20, 20, 10));
+    ext::shared_ptr<PricingEngine> engine =
+        ext::make_shared<Fd2dBlackScholesVanillaEngine>(p1, p2, 0.0, 20, 20, 10);
 
     // Sanity check: a genuine basket payoff, through the normal BasketOption
     // path, still prices fine with the fix in place.
