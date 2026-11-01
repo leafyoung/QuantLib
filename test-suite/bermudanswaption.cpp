@@ -333,11 +333,14 @@ BOOST_AUTO_TEST_CASE(testFdSwaptionEnginesCashSettlement) {
     // inner-value calculator (FdmAffineModelSwapInnerValue) that replicates
     // the exercise payoff from the underlying swap's own cashflows -- the
     // same physical-style payoff a Physical and a Cash+CollateralizedCashPrice
-    // settled swaption share by definition. Neither engine validates
-    // settlementType/settlementMethod at all, so a Cash+ParYieldCurve
+    // settled swaption share by definition. Previously, neither engine
+    // validated settlementType/settlementMethod at all, so a Cash+ParYieldCurve
     // swaption (whose payoff genuinely differs -- an annuity-based formula
-    // this approach doesn't implement) is silently priced as if it were
-    // physically exercised instead of being rejected.
+    // this approach doesn't implement) was silently priced as if it were
+    // physically exercised instead of being rejected. The test below checks
+    // that Physical and Cash+CollateralizedCashPrice settlement still price
+    // identically (both using the physical-style payoff), and that
+    // Cash+ParYieldCurve is now rejected.
     struct EngineCase {
         const char* name;
         ext::shared_ptr<PricingEngine> engine;
