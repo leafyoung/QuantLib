@@ -1188,14 +1188,20 @@ BOOST_AUTO_TEST_CASE(testCapFloorNonZeroSpreadConsistency) {
 
     Handle<YieldTermStructure> yts(
         flatRate(referenceDate, 0.02, Actual365Fixed()));
-    ext::shared_ptr<IborIndex> index(new Euribor(6 * Months, yts));
+    auto index = ext::make_shared<Euribor>(6 * Months, yts);
 
     Schedule schedule(referenceDate + 2 * Days, referenceDate + 5 * Years,
                        6 * Months, index->fixingCalendar(), ModifiedFollowing,
                        ModifiedFollowing, DateGeneration::Forward, false);
 
+    // Strike well below the 2% flat forward (comfortably in the money) and a
+    // small mean reversion (so the model's forward distribution has real
+    // dispersion) are both required: with an out-of-the-money strike or a
+    // large mean reversion, both legs' NPVs collapse to (near) zero and the
+    // equality check below would pass trivially even if the spread
+    // adjustment were silently ignored.
     Spread spread = 0.0010;
-    Rate strike = 0.025;
+    Rate strike = 0.01;
 
     Leg spreadLeg = IborLeg(schedule, index)
                         .withNotionals(1.0)
@@ -1212,9 +1218,8 @@ BOOST_AUTO_TEST_CASE(testCapFloorNonZeroSpreadConsistency) {
 
     std::vector<Date> stepDates;
     std::vector<Real> vols(1, 0.01);
-    ext::shared_ptr<Gsr> gsr(new Gsr(yts, stepDates, vols, 50.0));
-    ext::shared_ptr<PricingEngine> engine(
-        new Gaussian1dCapFloorEngine(gsr, 64, 7.0));
+    auto gsr = ext::make_shared<Gsr>(yts, stepDates, vols, 0.01);
+    auto engine = ext::make_shared<Gaussian1dCapFloorEngine>(gsr, 64, 7.0);
 
     spreadCap.setPricingEngine(engine);
     shiftedCap.setPricingEngine(engine);
@@ -1223,6 +1228,10 @@ BOOST_AUTO_TEST_CASE(testCapFloorNonZeroSpreadConsistency) {
     Real shiftedCapNpv = shiftedCap.NPV();
 
     BOOST_CHECK(std::isfinite(spreadCapNpv));
+    // Guard against a vacuous pass: both engines priced the (in-the-money)
+    // reference cap. Unless this is comfortably positive, the comparison
+    // below would not actually be exercising the spread-adjustment logic.
+    BOOST_REQUIRE(shiftedCapNpv > 1.0e-4);
     QL_CHECK_CLOSE(spreadCapNpv, shiftedCapNpv, 1.0e-10);
 }
 
