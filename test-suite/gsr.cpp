@@ -55,6 +55,8 @@
 #include <ql/math/optimization/levenbergmarquardt.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/randomnumbers/sobolrsg.hpp>
+#include <ql/instruments/capfloor.hpp>
+#include <ql/pricingengines/capfloor/gaussian1dcapfloorengine.hpp>
 
 using namespace QuantLib;
 using boost::unit_test_framework::test_suite;
@@ -1164,6 +1166,64 @@ BOOST_AUTO_TEST_CASE(testNonstandardCopyOfAmortisingOvernightSwap) {
             QL_CHECK_SMALL(actual->amount() - expected->amount(), 1.0e-8);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(testCapFloorNonZeroSpreadConsistency) {
+    BOOST_TEST_MESSAGE("Testing Gaussian1dCapFloorEngine with a non-zero "
+                        "floating-leg spread...");
+
+    // Gaussian1dCapFloorEngine used to QL_REQUIRE every spread to be exactly
+    // zero, even though CapFloor::setupArguments() already pre-adjusts
+    // capRates/floorRates to (strike-spread)/gearing before the engine ever
+    // sees them -- exactly the same pre-adjustment the other cap/floor
+    // engines (analytic, Black, Bachelier) rely on without any such
+    // restriction. A cap with gearing 1 and spread s, strike K, is therefore
+    // mathematically identical to a zero-spread cap with strike K-s: both
+    // reduce to max(forward - (K-s), 0) once the adjustment is applied. This
+    // test prices both and checks they agree -- it would have thrown on the
+    // old, overly strict check before even reaching the comparison.
+
+    Date referenceDate(14, November, 2012);
+    Settings::instance().evaluationDate() = referenceDate;
+
+    Handle<YieldTermStructure> yts(
+        flatRate(referenceDate, 0.02, Actual365Fixed()));
+    ext::shared_ptr<IborIndex> index(new Euribor(6 * Months, yts));
+
+    Schedule schedule(referenceDate + 2 * Days, referenceDate + 5 * Years,
+                       6 * Months, index->fixingCalendar(), ModifiedFollowing,
+                       ModifiedFollowing, DateGeneration::Forward, false);
+
+    Spread spread = 0.0010;
+    Rate strike = 0.025;
+
+    Leg spreadLeg = IborLeg(schedule, index)
+                        .withNotionals(1.0)
+                        .withSpreads(spread)
+                        .withPaymentDayCounter(index->dayCounter());
+    CapFloor spreadCap(CapFloor::Cap, spreadLeg,
+                        std::vector<Rate>(1, strike));
+
+    Leg zeroSpreadLeg = IborLeg(schedule, index)
+                            .withNotionals(1.0)
+                            .withPaymentDayCounter(index->dayCounter());
+    CapFloor shiftedCap(CapFloor::Cap, zeroSpreadLeg,
+                         std::vector<Rate>(1, strike - spread));
+
+    std::vector<Date> stepDates;
+    std::vector<Real> vols(1, 0.01);
+    ext::shared_ptr<Gsr> gsr(new Gsr(yts, stepDates, vols, 50.0));
+    ext::shared_ptr<PricingEngine> engine(
+        new Gaussian1dCapFloorEngine(gsr, 64, 7.0));
+
+    spreadCap.setPricingEngine(engine);
+    shiftedCap.setPricingEngine(engine);
+
+    Real spreadCapNpv = spreadCap.NPV(); // must not throw
+    Real shiftedCapNpv = shiftedCap.NPV();
+
+    BOOST_CHECK(std::isfinite(spreadCapNpv));
+    QL_CHECK_CLOSE(spreadCapNpv, shiftedCapNpv, 1.0e-10);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
