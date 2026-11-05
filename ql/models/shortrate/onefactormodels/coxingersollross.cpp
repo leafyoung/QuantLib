@@ -64,27 +64,39 @@ namespace QuantLib {
         // and denominator agree to many significant digits, so their ratio
         // rounds to (or very near) 1.0 in double precision, losing most or
         // all of the information the subsequent *2k*theta/sigma2 scaling
-        // needs. Evaluating this one expression in extended (long double)
-        // precision keeps enough of that cancelled-away information to stay
-        // accurate well below the sigma where double precision breaks down
-        // (observed: ~1e-4 relative error at sigma=1e-8 vs ~4e-2 in double).
-        long double sigma2 = static_cast<long double>(sigma())*sigma();
-        long double kk = k(), hh = std::sqrt(kk*kk + 2.0L*sigma2);
-        long double tau = T-t;
-        long double numerator = 2.0L*hh*std::exp(0.5L*(kk+hh)*tau);
-        long double denominator = 2.0L*hh + (kk+hh)*(std::exp(tau*hh) - 1.0L);
-        long double value = std::log(numerator/denominator)*
-            2.0L*kk*static_cast<long double>(theta())/sigma2;
-        return static_cast<Real>(std::exp(value));
+        // needs. Rewritten algebraically to avoid the cancellation outright,
+        // rather than widening precision (which is a platform-dependent
+        // no-op on targets where long double has the same width as double,
+        // e.g. MSVC and Apple Silicon): writing delta = h-k, both numerator
+        // and denominator factor as (k+h)*exp(h*tau) times a term that is
+        // 1 plus something of size O(delta), so log(numerator/denominator)
+        // reduces to a sum of log1p terms, each accurate for its own small
+        // argument regardless of how small delta (and hence sigma) is.
+        // delta itself is computed as h^2-k^2 = 2*sigma2, divided by (h+k)
+        // -- exact and cancellation-free, never as a subtraction of two
+        // close numbers.
+        Real sigma2 = sigma()*sigma();
+        Real kk = k();
+        Real hh = std::sqrt(kk*kk + 2.0*sigma2);
+        Real tau = T-t;
+        Real delta = 2.0*sigma2/(hh+kk);
+        Real kh = kk+hh;
+        Real logRatio = std::log1p(delta/kh) - 0.5*delta*tau
+            - std::log1p(delta*std::exp(-hh*tau)/kh);
+        Real value = logRatio*2.0*kk*theta()/sigma2;
+        return std::exp(value);
     }
 
     Real CoxIngersollRoss::B(Time t, Time T) const {
-        long double sigma2 = static_cast<long double>(sigma())*sigma();
-        long double kk = k(), hh = std::sqrt(kk*kk + 2.0L*sigma2);
-        long double temp = std::exp((T-t)*hh) - 1.0L;
-        long double numerator = 2.0L*temp;
-        long double denominator = 2.0L*hh + (kk+hh)*temp;
-        return static_cast<Real>(numerator/denominator);
+        // B's closed form has no 1/sigma^2 amplification anywhere (unlike
+        // A above), so it does not share A's cancellation problem and
+        // needs no rewrite: it is already accurate down to sigma=0.
+        Real h = std::sqrt(k()*k() + 2.0*sigma()*sigma());
+        Real temp = std::exp((T-t)*h) - 1.0;
+        Real numerator = 2.0*temp;
+        Real denominator = 2.0*h + (k()+h)*temp;
+        Real value = numerator/denominator;
+        return value;
     }
 
     Real CoxIngersollRoss::discountBondOption(Option::Type type,
