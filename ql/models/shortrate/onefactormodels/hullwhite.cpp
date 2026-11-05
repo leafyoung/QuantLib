@@ -144,7 +144,13 @@ namespace QuantLib {
         QL_REQUIRE(a>=0.0,
             "negative a (" << a << ") not allowed");
 
-        auto temp = [a](Real x) { return a < QL_EPSILON ? x : (1.0-std::exp(-a*x)) / a; };
+        // (1-exp(-a*x))/a cancels catastrophically once a*x is small, which
+        // happens well above the a<QL_EPSILON guard above (e.g. a=3e-16):
+        // 1.0-exp(-a*x) loses precision representing a quantity of size
+        // a*x << 1 as a difference of two numbers near 1. -expm1(-a*x)/a is
+        // exact in the same limit and reduces to x as a->0, like the a<eps
+        // branch already returns.
+        auto temp = [a](Real x) { return a < QL_EPSILON ? x : -std::expm1(-a*x) / a; };
 
         Time deltaT = (T-t);
         Real tempDeltaT = temp(deltaT);

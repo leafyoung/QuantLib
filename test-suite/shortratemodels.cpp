@@ -462,6 +462,37 @@ BOOST_AUTO_TEST_CASE(testFuturesConvexityBias) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testFuturesConvexityBiasForTinyMeanReversion) {
+    BOOST_TEST_MESSAGE("Testing Hull-White futures convexity bias for "
+                       "mean reversion just above the zero-reversion guard...");
+
+    // convexityBias's local temp(x) = (1-exp(-a*x))/a cancels catastrophically
+    // once a*x is small, which happens well above the function's own
+    // a<QL_EPSILON branch (QL_EPSILON ~ 2.22e-16): at a=3e-16, barely over
+    // that threshold, the bias should still agree with the exact a=0 case to
+    // within machine precision, by continuity -- the function's own zero-
+    // reversion branch is the reference value here.
+    Real futureQuote = 94.0;
+    Real sigma = 0.015;
+    Time t = 5.0;
+    Time T = 5.25;
+
+    Real biasAtZero = HullWhite::convexityBias(futureQuote, t, T, sigma, 0.0);
+    Real biasAtTinyA = HullWhite::convexityBias(futureQuote, t, T, sigma, 3e-16);
+
+    Real tolerance = 1.0e-12;
+    Real error = std::fabs(biasAtTinyA-biasAtZero);
+    if (!(error < tolerance)) {
+        BOOST_ERROR("Failed to reproduce convexity bias continuity at "
+                    "tiny mean reversion:"
+                    << "\n  bias(a=0)     : " << biasAtZero
+                    << "\n  bias(a=3e-16) : " << biasAtTinyA
+                    << std::scientific
+                    << "\n  error         : " << error
+                    << "\n  tolerance     : " << tolerance);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testG2DiscountBondForSmallMeanReversion) {
     BOOST_TEST_MESSAGE("Testing zero-bond pricing for G2 model with "
                        "mean reversion close to zero...");
