@@ -377,10 +377,11 @@ namespace QuantLib {
             // away from the money the vega right-limit as stdDev->0+ is 0,
             // but at the money (forward==strike) the Black price is linear
             // in stdDev near 0, so the limit is the nonzero
-            // discount*forward*phi(0)*sqrt(maturity), not 0
+            // discount*forward*phi(0)*sqrt(maturity), not 0. n_d1_ is
+            // already phi(0) in this branch (set above), so reuse it
+            // rather than recomputing the same value a second way.
             if (close(forward_, strike_))
-                return discount_ * forward_ * std::sqrt(maturity) *
-                    CumulativeNormalDistribution().derivative(0.0);
+                return discount_ * forward_ * std::sqrt(maturity) * n_d1_;
             return 0.0;
         }
 
