@@ -744,7 +744,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
         swap, ext::make_shared<EuropeanExercise>(start));
 
-    // the slow-reversion factor (b=0.3 > a=0.05) is labeled y: the
+    // the slow-reversion factor (a=0.05 < b=0.3) is labeled x: the
     // documented failing state
     const Real a=0.05, sigma=0.02, b=0.3, eta=0.01, rho=-0.5;
     const ext::shared_ptr<G2> g2Model =
