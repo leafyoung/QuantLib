@@ -60,16 +60,37 @@ namespace QuantLib {
     }
 
     Real CoxIngersollRoss::A(Time t, Time T) const {
+        // log(numerator/denominator) is O(sigma^2): for small sigma, numerator
+        // and denominator agree to many significant digits, so their ratio
+        // rounds to (or very near) 1.0 in double precision, losing most or
+        // all of the information the subsequent *2k*theta/sigma2 scaling
+        // needs. Rewritten algebraically to avoid the cancellation outright,
+        // rather than widening precision (which is a platform-dependent
+        // no-op on targets where long double has the same width as double,
+        // e.g. MSVC and Apple Silicon): writing delta = h-k, both numerator
+        // and denominator factor as (k+h)*exp(h*tau) times a term that is
+        // 1 plus something of size O(delta), so log(numerator/denominator)
+        // reduces to a sum of log1p terms, each accurate for its own small
+        // argument regardless of how small delta (and hence sigma) is.
+        // delta itself is computed as h^2-k^2 = 2*sigma2, divided by (h+k)
+        // -- exact and cancellation-free, never as a subtraction of two
+        // close numbers.
         Real sigma2 = sigma()*sigma();
-        Real h = std::sqrt(k()*k() + 2.0*sigma2);
-        Real numerator = 2.0*h*std::exp(0.5*(k()+h)*(T-t));
-        Real denominator = 2.0*h + (k()+h)*(std::exp((T-t)*h) - 1.0);
-        Real value = std::log(numerator/denominator)*
-            2.0*k()*theta()/sigma2;
+        Real kk = k();
+        Real hh = std::sqrt(kk*kk + 2.0*sigma2);
+        Real tau = T-t;
+        Real delta = 2.0*sigma2/(hh+kk);
+        Real kh = kk+hh;
+        Real logRatio = std::log1p(delta/kh) - 0.5*delta*tau
+            - std::log1p(delta*std::exp(-hh*tau)/kh);
+        Real value = logRatio*2.0*kk*theta()/sigma2;
         return std::exp(value);
     }
 
     Real CoxIngersollRoss::B(Time t, Time T) const {
+        // B's closed form has no 1/sigma^2 amplification anywhere (unlike
+        // A above), so it does not share A's cancellation problem and
+        // needs no rewrite: it is already accurate down to sigma=0.
         Real h = std::sqrt(k()*k() + 2.0*sigma()*sigma());
         Real temp = std::exp((T-t)*h) - 1.0;
         Real numerator = 2.0*temp;
