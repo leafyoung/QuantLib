@@ -22,6 +22,7 @@
 #include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/math/integrals/gausslobattointegral.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
+#include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
@@ -198,6 +199,58 @@ BOOST_AUTO_TEST_CASE(testFdmCevOp) {
                     << "\n    delta difference: "
                     << std::fabs(calculatedDelta - analyticDelta)
                     << "\n    tolerance       : " << tol);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticCevEngineBetaOne) {
+    BOOST_TEST_MESSAGE(
+            "Testing analytic CEV engine at beta=1 (the Black limit)...");
+
+    // Regression test: at beta=1, dF = alpha*F*dW is exactly geometric
+    // Brownian motion with volatility alpha, so the CEV price must equal
+    // the Black formula with stdDev = alpha*sqrt(t). The CEV closed form's
+    // own delta_ = (1-2*beta)/(1-beta) has a removable singularity at
+    // beta=1 (and is numerically unstable arbitrarily close to it) that
+    // the raw formula does not special-case, throwing a raw exception
+    // from deep inside the noncentral chi-squared evaluation instead of
+    // either pricing correctly or rejecting cleanly.
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Date maturityDate = today + Period(12, Months);
+    const Real strike = 2.3;
+    const Real f0 = 2.1;
+    const Real alpha = 0.75;
+
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(maturityDate);
+    const ext::shared_ptr<YieldTermStructure> rTS = flatRate(today, 0.15, dc);
+    const Time t = dc.yearFraction(today, maturityDate);
+    const DiscountFactor discount = rTS->discount(maturityDate);
+
+    for (Real beta : {1.0, 1.0 - 1e-6, 1.0 + 1e-6}) {
+        for (Option::Type optionType : {Option::Call, Option::Put}) {
+            const ext::shared_ptr<PlainVanillaPayoff> payoff =
+                ext::make_shared<PlainVanillaPayoff>(optionType, strike);
+            VanillaOption option(payoff, exercise);
+            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
+
+            Real calculatedNPV = option.NPV();
+            Real expectedNPV = discount *
+                blackFormula(optionType, strike, f0, alpha*std::sqrt(t));
+
+            if (!std::isfinite(calculatedNPV)) {
+                BOOST_ERROR("AnalyticCEVEngine produced a non-finite price "
+                            "at beta=" << beta);
+            } else if (std::fabs(calculatedNPV - expectedNPV) > 1e-6) {
+                BOOST_ERROR("AnalyticCEVEngine at beta=" << beta
+                            << " should match the Black price: expected "
+                            << expectedNPV << ", got " << calculatedNPV);
             }
         }
     }
