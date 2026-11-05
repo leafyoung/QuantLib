@@ -21,6 +21,7 @@
 #include <ql/pricingengines/blackcalculator.hpp>
 #include <ql/instruments/payoffs.hpp>
 #include <ql/math/comparison.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
 #include <cmath>
 
 using namespace QuantLib;
@@ -416,9 +417,20 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityGreeks) {
                        << "gammaForward=" << gammaForward << " gamma=" << gamma);
         }
 
-        // Vega should be zero (no vol sensitivity)
-        if (std::fabs(vega) > tolerance) {
-            BOOST_ERROR("BlackCalculator " << testCase.description 
+        // Away from the money, vega should be zero (no vol sensitivity).
+        // At the money the Black price is linear in stdDev near 0, so the
+        // correct zero-vol vega is the nonzero discount*forward*phi(0)*
+        // sqrt(maturity), not zero.
+        if (close_enough(testCase.strike, forward)) {
+            Real expectedAtmVega = discount * forward * std::sqrt(maturity) *
+                CumulativeNormalDistribution().derivative(0.0);
+            if (std::fabs(vega - expectedAtmVega) > tolerance) {
+                BOOST_ERROR("BlackCalculator " << testCase.description
+                           << " ATM vega with zero volatility should be "
+                           << expectedAtmVega << ", got " << vega);
+            }
+        } else if (std::fabs(vega) > tolerance) {
+            BOOST_ERROR("BlackCalculator " << testCase.description
                        << " vega should be zero with zero volatility: " << vega);
         }
 

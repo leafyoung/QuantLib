@@ -374,6 +374,13 @@ namespace QuantLib {
 
         // Handle zero volatility case
         if (stdDev_ <= QL_EPSILON) {
+            // away from the money the vega right-limit as stdDev->0+ is 0,
+            // but at the money (forward==strike) the Black price is linear
+            // in stdDev near 0, so the limit is the nonzero
+            // discount*forward*phi(0)*sqrt(maturity), not 0
+            if (close(forward_, strike_))
+                return discount_ * forward_ * std::sqrt(maturity) *
+                    CumulativeNormalDistribution().derivative(0.0);
             return 0.0;
         }
 
