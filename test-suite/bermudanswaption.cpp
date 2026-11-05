@@ -320,12 +320,13 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
     // Regression test: G2::swaption built fixed-leg cashflows from
     // dayCounter.yearFraction() time differences using the TERM
     // STRUCTURE's day counter, not the swap's own fixed-leg day count --
-    // silently mispricing whenever the two differ. This is the only test
-    // in the suite that exercises G2SwaptionEngine itself (the others only
-    // use the FDM and tree engines), so the bug was never caught here.
-    // Parameters (realistic G2++, Act/360 fixed leg vs an Act/365F curve,
-    // the USD SOFR convention mismatch) reproduce a multi-percent gap
-    // before the fix.
+    // silently mispricing whenever the two differ. Before this test (and
+    // testG2SwaptionEngineZeroFixedRate below), no test in this suite
+    // exercised G2SwaptionEngine itself (the others only use the FDM and
+    // tree engines), so the bug was never caught here. Parameters
+    // (realistic G2++, Act/360 fixed leg vs an Act/365F curve, the USD
+    // SOFR convention mismatch) reproduce a multi-percent gap before the
+    // fix.
 
     Date today(15, September, 2016);
     Settings::instance().evaluationDate() = today;
@@ -345,7 +346,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
                            ModifiedFollowing, ModifiedFollowing,
                            DateGeneration::Forward, false);
 
-    ext::shared_ptr<VanillaSwap> probeSwap = ext::make_shared<VanillaSwap>(
+    auto probeSwap = ext::make_shared<VanillaSwap>(
         Swap::Payer, 1000.0,
         fixedSchedule, 0.0, Actual360(),
         floatSchedule, index, 0.0, index->dayCounter());
@@ -353,18 +354,18 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
         ext::make_shared<DiscountingSwapEngine>(termStructure));
     const Rate atmRate = probeSwap->fairRate();
 
-    ext::shared_ptr<VanillaSwap> swap = ext::make_shared<VanillaSwap>(
+    auto swap = ext::make_shared<VanillaSwap>(
         Swap::Payer, 1000.0,
         fixedSchedule, atmRate, Actual360(),
         floatSchedule, index, 0.0, index->dayCounter());
     swap->setPricingEngine(
         ext::make_shared<DiscountingSwapEngine>(termStructure));
 
-    const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
+    const auto swaption = ext::make_shared<Swaption>(
         swap, ext::make_shared<EuropeanExercise>(start));
 
     const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
-    const ext::shared_ptr<G2> g2Model =
+    const auto g2Model =
         ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
 
     swaption->setPricingEngine(
@@ -421,18 +422,18 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
                            DateGeneration::Forward, false);
 
     const Spread spread = 0.01;
-    ext::shared_ptr<VanillaSwap> swap = ext::make_shared<VanillaSwap>(
+    auto swap = ext::make_shared<VanillaSwap>(
         Swap::Payer, 1000.0,
         fixedSchedule, 0.0, Actual360(),
         floatSchedule, index, spread, index->dayCounter());
     swap->setPricingEngine(
         ext::make_shared<DiscountingSwapEngine>(termStructure));
 
-    const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
+    const auto swaption = ext::make_shared<Swaption>(
         swap, ext::make_shared<EuropeanExercise>(start));
 
     const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
-    const ext::shared_ptr<G2> g2Model =
+    const auto g2Model =
         ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
 
     swaption->setPricingEngine(
