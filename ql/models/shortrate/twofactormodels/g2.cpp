@@ -19,6 +19,7 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 */
 
+#include <ql/cashflows/coupon.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/integrals/segmentintegral.hpp>
 #include <ql/math/solvers1d/brent.hpp>
@@ -285,18 +286,23 @@ namespace QuantLib {
                                         arguments.fixedPayDates[i]);
 
         // Build the actual fixed-leg coupon amounts (normalized per unit
-        // nominal) at the given (possibly spread-adjusted) fixedRate, by
-        // scaling the swap's own already-correct fixedCoupons (computed
-        // from its own fixed-leg day count and accrual periods) rather
-        // than re-deriving accrual fractions from curve-day-count time
-        // differences, which is exact only when the curve and the swap's
-        // fixed leg happen to share the same day counter.
-        const Rate originalRate = arguments.swap->fixedRate();
+        // nominal) at the given (possibly spread-adjusted) fixedRate,
+        // using each coupon's own accrual period (from the swap's own
+        // fixed-leg day count) rather than re-deriving accrual fractions
+        // from curve-day-count time differences, which is exact only when
+        // the curve and the swap's fixed leg happen to share the same day
+        // counter. Reading the accrual period directly off each coupon --
+        // rather than scaling the swap's own fixedCoupons by
+        // fixedRate/originalRate -- also prices correctly when the swap's
+        // own fixed rate is zero (originalRate == 0), where that ratio
+        // would be 0/0.
+        const Leg& fixedLeg = arguments.swap->fixedLeg();
         std::vector<Real> coupons(arguments.fixedCoupons.size());
-        for (Size i=0; i<coupons.size(); ++i)
-            coupons[i] = (originalRate == 0.0) ? Real(0.0) :
-                arguments.fixedCoupons[i] * (fixedRate/originalRate)
-                    / arguments.nominal;
+        for (Size i=0; i<coupons.size(); ++i) {
+            auto coupon = ext::dynamic_pointer_cast<Coupon>(fixedLeg[i]);
+            QL_REQUIRE(coupon, "fixed leg cashflow is not a coupon");
+            coupons[i] = fixedRate * coupon->accrualPeriod();
+        }
 
         SwaptionPricingFunction function(a(), sigma(), b(), eta(), rho(),
                                          w, start,
