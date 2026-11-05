@@ -33,8 +33,10 @@
 #include <ql/pricingengines/swap/discountingswapengine.hpp>
 #include <ql/pricingengines/swaption/fdg2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/fdhullwhiteswaptionengine.hpp>
+#include <ql/pricingengines/swaption/g2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/treeswaptionengine.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
+#include <ql/time/daycounters/actual360.hpp>
 #include <ql/time/daycounters/thirty360.hpp>
 #include <ql/time/schedule.hpp>
 
@@ -307,6 +309,79 @@ BOOST_AUTO_TEST_CASE(testCachedG2Values) {
                         << "calculated: " << calculatedTree << "\n"
                         << "expected:   " << expectedTree[i]);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
+    BOOST_TEST_MESSAGE(
+        "Testing that G2SwaptionEngine respects the fixed leg's own day "
+        "count...");
+
+    // Regression test: G2::swaption built fixed-leg cashflows from
+    // dayCounter.yearFraction() time differences using the TERM
+    // STRUCTURE's day counter, not the swap's own fixed-leg day count --
+    // silently mispricing whenever the two differ. This is the only test
+    // in the suite that exercises G2SwaptionEngine itself (the others only
+    // use the FDM and tree engines), so the bug was never caught here.
+    // Parameters (realistic G2++, Act/360 fixed leg vs an Act/365F curve,
+    // the USD SOFR convention mismatch) reproduce a multi-percent gap
+    // before the fix.
+
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+
+    RelinkableHandle<YieldTermStructure> termStructure;
+    auto index = ext::make_shared<Euribor6M>(termStructure);
+    Calendar calendar = index->fixingCalendar();
+    Date settlement = calendar.advance(today, 2, Days);
+    termStructure.linkTo(flatRate(settlement, 0.03, Actual365Fixed()));
+
+    Date start = calendar.advance(settlement, 5, Years);
+    Date maturity = calendar.advance(start, 10, Years);
+    Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
+                           Unadjusted, Unadjusted,
+                           DateGeneration::Forward, false);
+    Schedule floatSchedule(start, maturity, Period(Semiannual), calendar,
+                           ModifiedFollowing, ModifiedFollowing,
+                           DateGeneration::Forward, false);
+
+    ext::shared_ptr<VanillaSwap> probeSwap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, 0.0, Actual360(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    probeSwap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+    const Rate atmRate = probeSwap->fairRate();
+
+    ext::shared_ptr<VanillaSwap> swap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, atmRate, Actual360(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    swap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+
+    const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
+        swap, ext::make_shared<EuropeanExercise>(start));
+
+    const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
+    const ext::shared_ptr<G2> g2Model =
+        ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
+
+    swaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
+    const Real analyticNPV = swaption->NPV();
+
+    swaption->setPricingEngine(
+        ext::make_shared<FdG2SwaptionEngine>(g2Model, 50, 200, 200, 0, 1e-4));
+    const Real fdmNPV = swaption->NPV();
+
+    // a loose tolerance: this only needs to catch a multi-percent day-count
+    // mismatch, not to certify the analytic/FDM agreement to high precision
+    const Real tol = 0.02 * fdmNPV;
+    if (std::fabs(analyticNPV - fdmNPV) > tol) {
+        BOOST_ERROR("G2SwaptionEngine disagrees with FdG2SwaptionEngine by "
+                    "more than " << tol << ": analytic=" << analyticNPV
+                    << ", fdm=" << fdmNPV);
     }
 }
 
