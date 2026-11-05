@@ -33,6 +33,7 @@
 #include <ql/pricingengines/swap/discountingswapengine.hpp>
 #include <ql/pricingengines/swaption/fdg2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/fdhullwhiteswaptionengine.hpp>
+#include <ql/pricingengines/swaption/g2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/treeswaptionengine.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/time/daycounters/thirty360.hpp>
@@ -686,6 +687,93 @@ BOOST_AUTO_TEST_CASE(testBermudanOISSwaptionPreservesFeatures) {
                     << lockDiff
                     << " (lockout=" << lockoutValue
                     << ", plain=" << compoundValue << ")");
+}
+
+BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
+    BOOST_TEST_MESSAGE(
+        "Testing G2SwaptionEngine's y-solve bracket on a slow-reverting x "
+        "factor...");
+
+    // Regression test: G2::swaption's inner solve for the critical y
+    // state used a bracket scaled to sigmay_ alone (+-max(10*sigmay_,1)),
+    // while x is integrated over a wider, sigmax_-scaled range. The x and
+    // y factors are interchangeable labels for the same G2++ model --
+    // nothing requires x to be the faster-reverting factor -- but when the
+    // slower-reverting factor (smaller reversion speed, larger
+    // accumulated variance) happens to be labeled x (a < b here, so a's
+    // factor reverts more slowly than b's), the required root for y*
+    // falls outside this narrower bracket and the engine threw "root not
+    // bracketed" on a perfectly valid, priceable state. Swapping only the
+    // labels (a<->b, sigma<->eta) on the identical model prices the same
+    // state without error, and (being the same model) must give the same
+    // price.
+
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+
+    RelinkableHandle<YieldTermStructure> termStructure;
+    auto index = ext::make_shared<Euribor6M>(termStructure);
+    Calendar calendar = index->fixingCalendar();
+    Date settlement = calendar.advance(today, 2, Days);
+    termStructure.linkTo(flatRate(settlement, 0.03, Actual365Fixed()));
+
+    Date start = calendar.advance(settlement, 10, Years);
+    Date maturity = calendar.advance(start, 30, Years);
+    Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
+                           Unadjusted, Unadjusted,
+                           DateGeneration::Forward, false);
+    Schedule floatSchedule(start, maturity, Period(Semiannual), calendar,
+                           ModifiedFollowing, ModifiedFollowing,
+                           DateGeneration::Forward, false);
+
+    ext::shared_ptr<VanillaSwap> probeSwap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, 0.0, index->dayCounter(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    probeSwap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+    const Rate atmRate = probeSwap->fairRate();
+
+    ext::shared_ptr<VanillaSwap> swap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, atmRate, index->dayCounter(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    swap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+
+    const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
+        swap, ext::make_shared<EuropeanExercise>(start));
+
+    // the slow-reversion factor (a=0.05 < b=0.3) is labeled x: the
+    // documented failing state
+    const Real a=0.05, sigma=0.02, b=0.3, eta=0.01, rho=-0.5;
+    const ext::shared_ptr<G2> g2Model =
+        ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
+    swaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
+
+    Real npv;
+    try {
+        npv = swaption->NPV();
+    } catch (const Error& e) {
+        BOOST_ERROR("G2SwaptionEngine threw on a valid state with the "
+                    "slow-reverting factor labeled x: " << e.what());
+        return;
+    }
+
+    // same model, labels swapped: must price identically
+    const ext::shared_ptr<G2> g2ModelRelabeled =
+        ext::make_shared<G2>(termStructure, b, eta, a, sigma, rho);
+    swaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2ModelRelabeled, 10.0, 400));
+    const Real npvRelabeled = swaption->NPV();
+
+    const Real tol = 1.0e-6 * std::max(std::fabs(npvRelabeled), 1.0);
+    if (std::fabs(npv - npvRelabeled) > tol) {
+        BOOST_ERROR("G2SwaptionEngine should price identically under the "
+                    "two equivalent factor labelings: "
+                    << npv << " vs " << npvRelabeled);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
