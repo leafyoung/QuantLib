@@ -288,11 +288,16 @@ namespace QuantLib {
         // and n'(d) = -d*n(d)
         // Therefore: Vega = n(d) + σ*(-d*n(d))*(-d/σ) = n(d) + d²*n(d) = n(d)*(1 + d²) - (F-K)*n(d)*d/σ
         // Simplifying: Vega = n(d) for Bachelier model
-        
-        if (maturity <= QL_EPSILON || stdDev_ <= QL_EPSILON) {
-            return 0.0;
-        }
-        
+        //
+        // n_d_ is already correct in the stdDev_==0 degenerate case (set at
+        // construction to phi(0) at the money, 0 away from it -- see the
+        // constructor), so no extra zero-stdDev special case is needed here;
+        // a prior version of this function short-circuited to 0 regardless,
+        // which is wrong at the money (the Bachelier ATM price is exactly
+        // linear in stdDev, so the correct ATM vega there is the nonzero
+        // discount_*sqrt(maturity)*phi(0), not 0). sqrt(maturity) alone
+        // already sends this to 0 as maturity->0.
+
         return discount_ * std::sqrt(maturity) * n_d_;
     }
 

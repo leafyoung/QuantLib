@@ -492,9 +492,20 @@ BOOST_AUTO_TEST_CASE(testBachelierCalculatorZeroVolatilityGreeks) {
                        << "gammaForward=" << gammaForward << " gamma=" << gamma);
         }
 
-        // Vega should be zero (no vol sensitivity)  
-        if (std::fabs(vega) > tolerance) {
-            BOOST_ERROR("BachelierCalculator " << testCase.description 
+        // Away from the money, vega should be zero (no vol sensitivity).
+        // At the money the Bachelier price is exactly linear in stdDev for
+        // every stdDev>=0, so the correct zero-vol vega is the nonzero
+        // discount*sqrt(maturity)*phi(0), not zero.
+        if (close_enough(testCase.strike, forward)) {
+            Real expectedAtmVega = discount * std::sqrt(maturity) *
+                CumulativeNormalDistribution().derivative(0.0);
+            if (std::fabs(vega - expectedAtmVega) > tolerance) {
+                BOOST_ERROR("BachelierCalculator " << testCase.description
+                           << " ATM vega with zero volatility should be "
+                           << expectedAtmVega << ", got " << vega);
+            }
+        } else if (std::fabs(vega) > tolerance) {
+            BOOST_ERROR("BachelierCalculator " << testCase.description
                        << " vega should be zero with zero volatility: " << vega);
         }
 

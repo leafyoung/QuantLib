@@ -24,6 +24,7 @@
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
 #include <ql/pricingengines/blackformula.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
 #include <cmath>
 #include <iomanip>
 
@@ -761,6 +762,60 @@ BOOST_AUTO_TEST_CASE(testImpliedStdDevLiRSNearTheMoney) {
                 }
             }
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testBlackFormulaStdDevDerivativeAtTheMoneyZeroVol) {
+    BOOST_TEST_MESSAGE(
+        "Testing Black/Bachelier stdDev derivative (vega) at the money with "
+        "zero volatility...");
+
+    // Away from the money the vega right-limit as stdDev->0+ is 0; exactly
+    // at the money the Black price is linear in stdDev near 0 (Bachelier:
+    // exactly linear for every stdDev>=0), so the correct zero-stdDev value
+    // is discount*forward*phi(0) (Black) / discount*phi(0) (Bachelier), not
+    // zero.
+    Real forward = 100.0, discount = 0.9;
+    Real phi0 = CumulativeNormalDistribution().derivative(0.0);
+
+    Real blackAtm = blackFormulaStdDevDerivative(forward, forward, 0.0, discount);
+    Real expectedBlackAtm = discount * forward * phi0;
+    if (std::fabs(blackAtm - expectedBlackAtm) > 1e-12) {
+        BOOST_ERROR("blackFormulaStdDevDerivative at the money with zero "
+                    "stdDev should be " << expectedBlackAtm
+                    << ", got " << blackAtm);
+    }
+
+    Real blackOtm = blackFormulaStdDevDerivative(forward + 10.0, forward, 0.0, discount);
+    if (std::fabs(blackOtm) > 1e-12) {
+        BOOST_ERROR("blackFormulaStdDevDerivative away from the money with "
+                    "zero stdDev should be 0, got " << blackOtm);
+    }
+
+    Real bachelierAtm =
+        bachelierBlackFormulaStdDevDerivative(forward, forward, 0.0, discount);
+    Real expectedBachelierAtm = discount * phi0;
+    if (std::fabs(bachelierAtm - expectedBachelierAtm) > 1e-12) {
+        BOOST_ERROR("bachelierBlackFormulaStdDevDerivative at the money "
+                    "with zero stdDev should be " << expectedBachelierAtm
+                    << ", got " << bachelierAtm);
+    }
+
+    Real bachelierOtm =
+        bachelierBlackFormulaStdDevDerivative(forward + 10.0, forward, 0.0, discount);
+    if (std::fabs(bachelierOtm) > 1e-12) {
+        BOOST_ERROR("bachelierBlackFormulaStdDevDerivative away from the "
+                    "money with zero stdDev should be 0, got " << bachelierOtm);
+    }
+
+    // continuity check: the ATM value at stdDev=0 should be the limit of
+    // the formula's own values at small positive stdDev
+    Real blackSmallStdDev = blackFormulaStdDevDerivative(forward, forward, 1e-6, discount);
+    if (std::fabs(blackSmallStdDev - expectedBlackAtm) > 1e-4) {
+        BOOST_ERROR("blackFormulaStdDevDerivative at the money is not "
+                    "continuous as stdDev->0: stdDev=0 gives "
+                    << expectedBlackAtm << ", stdDev=1e-6 gives "
+                    << blackSmallStdDev);
     }
 }
 
