@@ -279,6 +279,26 @@ namespace QuantLib {
         const Real dividendDiscount = model_->dividendYield()->discount(
                                             arguments_.exercise->lastDate());
 
+        // term measures elapsed time from the model's own term-structure
+        // reference date, which can be exactly (or effectively) zero even
+        // when the option is not yet expired (e.g. the exercise date
+        // coincides with a T+n settlement reference date while today is
+        // still n days earlier). At term == 0 the Heston characteristic
+        // function collapses to that of a point mass (D = C = 0 in every
+        // Fj_Helper segment, since no segment satisfies begin < term_), and
+        // its Fourier inversion integrand becomes the slowly-convergent,
+        // highly oscillatory sin(phi*k)/phi -- which the quadrature rules
+        // below either fail to converge on (silently wrong value) or throw
+        // on. The term == 0 limit has a trivial closed form (the forward
+        // price is deterministic, so the option is worth its discounted
+        // intrinsic value against the forward), so short-circuit to it
+        // rather than attempting the integration.
+        if (term <= 0.0) {
+            const Real forward = spotPrice*dividendDiscount/riskFreeDiscount;
+            results_.value = riskFreeDiscount*(*payoff)(forward);
+            return;
+        }
+
         //average values
         const TimeGrid& timeGrid = model_->timeGrid();
         QL_REQUIRE(timeGrid.size() > 1, "at least two model points needed");
