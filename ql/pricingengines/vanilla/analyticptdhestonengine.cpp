@@ -296,6 +296,7 @@ namespace QuantLib {
         if (term <= 0.0) {
             const Real forward = spotPrice*dividendDiscount/riskFreeDiscount;
             results_.value = riskFreeDiscount*(*payoff)(forward);
+            evaluations_ = 0;
             return;
         }
 
