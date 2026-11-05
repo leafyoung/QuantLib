@@ -340,6 +340,61 @@ BOOST_AUTO_TEST_CASE(testConstraint) {
     BOOST_CHECK_GT(positiveCurve.fitResults().solution()[0], 0.0);
 }
 
+BOOST_AUTO_TEST_CASE(testNelsonSiegelSvenssonKappaZeroLimit) {
+
+    BOOST_TEST_MESSAGE(
+        "Testing Nelson-Siegel and Svensson fitting at the kappa=0 limit...");
+
+    // Regression test: the (1-exp(-kappa*t))/(kappa*t) term's removable
+    // singularity at kappa=0 was guarded as (1-exp(-kappa*t))/
+    // ((kappa+eps)*(t+eps)), which evaluates to 0 at kappa=0 exactly (since
+    // the numerator is also exactly 0 there) instead of its true limit, 1 --
+    // the same species as #2599 (Vasicek A(t,T) at a->0). The correct
+    // Nelson-Siegel zero rate at kappa=0 is c0+c1 (the guarded code gives
+    // c0-c2); Svensson's second guarded term correctly reduces to 0 at
+    // kappa1=0 (the guarded code gives -c3).
+
+    Real t = 5.0;
+    Real tolerance = 1e-10;
+
+    {
+        NelsonSiegelFitting method;
+        Array x = {0.03, 0.02, 0.01, 0.0};  // c0, c1, c2, kappa=0
+        DiscountFactor d = method.discount(x, t);
+        Real zeroRate = -std::log(d) / t;
+        Real expectedZeroRate = x[0] + x[1];  // c0+c1, not c0-c2
+        if (std::fabs(zeroRate - expectedZeroRate) > tolerance) {
+            BOOST_ERROR("NelsonSiegelFitting zero rate at kappa=0 should be "
+                        << expectedZeroRate << " (c0+c1), got " << zeroRate);
+        }
+
+        // continuity: the kappa=0 value should be the limit of the
+        // formula's own values at small positive kappa
+        Array xSmallKappa = {0.03, 0.02, 0.01, 1e-8};
+        DiscountFactor dSmallKappa = method.discount(xSmallKappa, t);
+        Real zeroRateSmallKappa = -std::log(dSmallKappa) / t;
+        if (std::fabs(zeroRateSmallKappa - expectedZeroRate) > 1e-6) {
+            BOOST_ERROR("NelsonSiegelFitting zero rate is not continuous as "
+                        "kappa->0: kappa=0 gives " << expectedZeroRate
+                        << ", kappa=1e-8 gives " << zeroRateSmallKappa);
+        }
+    }
+    {
+        SvenssonFitting method;
+        // c0, c1, c2, c3, kappa, kappa1; kappa=0 exercises the first guarded
+        // term, kappa1=0 the second
+        Array x = {0.03, 0.02, 0.01, 0.005, 0.0, 0.0};
+        DiscountFactor d = method.discount(x, t);
+        Real zeroRate = -std::log(d) / t;
+        Real expectedZeroRate = x[0] + x[1];  // c0+c1 (c3's term -> 0, not -c3)
+        if (std::fabs(zeroRate - expectedZeroRate) > tolerance) {
+            BOOST_ERROR("SvenssonFitting zero rate at kappa=kappa1=0 should "
+                        "be " << expectedZeroRate << " (c0+c1), got "
+                        << zeroRate);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()
