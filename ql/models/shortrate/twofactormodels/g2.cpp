@@ -223,8 +223,8 @@ namespace QuantLib {
             // The y and x factors are interchangeable labels for the same
             // G2++ model; this bound (scaled to sigmay_ alone) can fail to
             // bracket the root when the slower-reverting factor happens to
-            // be labeled y, although the identical model with the factor
-            // labels swapped prices the same state cleanly. Widen
+            // be labeled x (a < b), although the identical model with the
+            // factor labels swapped prices the same state cleanly. Widen
             // adaptively rather than throwing on a perfectly valid,
             // priceable state.
             Real fLower = function(-searchBound), fUpper = function(searchBound);

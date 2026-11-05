@@ -32,8 +32,8 @@
 #include <ql/models/shortrate/twofactormodels/g2.hpp>
 #include <ql/pricingengines/swap/discountingswapengine.hpp>
 #include <ql/pricingengines/swaption/fdg2swaptionengine.hpp>
-#include <ql/pricingengines/swaption/g2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/fdhullwhiteswaptionengine.hpp>
+#include <ql/pricingengines/swaption/g2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/treeswaptionengine.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/time/daycounters/thirty360.hpp>
@@ -691,7 +691,7 @@ BOOST_AUTO_TEST_CASE(testBermudanOISSwaptionPreservesFeatures) {
 
 BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     BOOST_TEST_MESSAGE(
-        "Testing G2SwaptionEngine's y-solve bracket on a slow-reverting y "
+        "Testing G2SwaptionEngine's y-solve bracket on a slow-reverting x "
         "factor...");
 
     // Regression test: G2::swaption's inner solve for the critical y
@@ -699,12 +699,14 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     // while x is integrated over a wider, sigmax_-scaled range. The x and
     // y factors are interchangeable labels for the same G2++ model --
     // nothing requires x to be the faster-reverting factor -- but when the
-    // slower-reverting factor happens to be labeled y (a < b here), the
-    // required root for y* falls outside this narrower bracket and the
-    // engine threw "root not bracketed" on a perfectly valid, priceable
-    // state. Swapping only the labels (a<->b, sigma<->eta) on the
-    // identical model prices the same state without error, and (being the
-    // same model) must give the same price.
+    // slower-reverting factor (smaller reversion speed, larger
+    // accumulated variance) happens to be labeled x (a < b here, so a's
+    // factor reverts more slowly than b's), the required root for y*
+    // falls outside this narrower bracket and the engine threw "root not
+    // bracketed" on a perfectly valid, priceable state. Swapping only the
+    // labels (a<->b, sigma<->eta) on the identical model prices the same
+    // state without error, and (being the same model) must give the same
+    // price.
 
     Date today(15, September, 2016);
     Settings::instance().evaluationDate() = today;
@@ -755,7 +757,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
         npv = swaption->NPV();
     } catch (const Error& e) {
         BOOST_ERROR("G2SwaptionEngine threw on a valid state with the "
-                    "slow-reverting factor labeled y: " << e.what());
+                    "slow-reverting factor labeled x: " << e.what());
         return;
     }
 
