@@ -627,6 +627,41 @@ BOOST_AUTO_TEST_CASE(testVasicekDiscountFactorForSmallMeanReversion) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testCoxIngersollRossDiscountFactorForSmallSigma) {
+    BOOST_TEST_MESSAGE("Testing zero-bond pricing for CIR model with small sigma...");
+
+    // CoxIngersollRoss::A(t,T) computes exp(2*k*theta/sigma^2 * log(num/den)),
+    // where log(num/den) is itself O(sigma^2): for small sigma, num and den
+    // agree to many digits, so in double precision their ratio rounds to (or
+    // very near) 1.0, and the 1/sigma^2 scaling amplifies that lost
+    // precision into a large relative error in the final bond price. As
+    // sigma->0, the CIR short-rate process degenerates to the deterministic
+    // ODE dr=k(theta-r)dt, whose zero-coupon bond price is the plain
+    // discount factor exp(-theta*tau - (r0-theta)*(1-exp(-k*tau))/k).
+    const Rate r0 = 0.03;
+    const Real theta = 0.05;
+    const Real k = 0.1;
+    const Real sigma = 1.0e-8;
+    const Time maturity = 30.0;
+
+    const CoxIngersollRoss model(r0, theta, k, sigma, false);
+
+    const Real expected =
+        std::exp(-theta*maturity - (r0-theta)*(1.0-std::exp(-k*maturity))/k);
+    const Real calculated = model.discountBond(0.0, maturity, r0);
+
+    const Real tolerance = 1.0e-3;
+    const Real error = std::fabs(expected-calculated);
+    if (error > tolerance) {
+        BOOST_ERROR("Failed to reproduce small-sigma zero-bond price:"
+                    << "\n  calculated: " << calculated
+                    << "\n  expected  : " << expected
+                    << std::scientific
+                    << "\n  error     : " << error
+                    << "\n  tolerance : " << tolerance);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testHullWhiteForwardStartBondOptionForSmallMeanReversion) {
     BOOST_TEST_MESSAGE("Testing Hull-White forward-start bond option across small mean-reversion speeds...");
 

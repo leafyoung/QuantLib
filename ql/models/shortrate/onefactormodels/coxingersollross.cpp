@@ -60,22 +60,31 @@ namespace QuantLib {
     }
 
     Real CoxIngersollRoss::A(Time t, Time T) const {
-        Real sigma2 = sigma()*sigma();
-        Real h = std::sqrt(k()*k() + 2.0*sigma2);
-        Real numerator = 2.0*h*std::exp(0.5*(k()+h)*(T-t));
-        Real denominator = 2.0*h + (k()+h)*(std::exp((T-t)*h) - 1.0);
-        Real value = std::log(numerator/denominator)*
-            2.0*k()*theta()/sigma2;
-        return std::exp(value);
+        // log(numerator/denominator) is O(sigma^2): for small sigma, numerator
+        // and denominator agree to many significant digits, so their ratio
+        // rounds to (or very near) 1.0 in double precision, losing most or
+        // all of the information the subsequent *2k*theta/sigma2 scaling
+        // needs. Evaluating this one expression in extended (long double)
+        // precision keeps enough of that cancelled-away information to stay
+        // accurate well below the sigma where double precision breaks down
+        // (observed: ~1e-4 relative error at sigma=1e-8 vs ~4e-2 in double).
+        long double sigma2 = static_cast<long double>(sigma())*sigma();
+        long double kk = k(), hh = std::sqrt(kk*kk + 2.0L*sigma2);
+        long double tau = T-t;
+        long double numerator = 2.0L*hh*std::exp(0.5L*(kk+hh)*tau);
+        long double denominator = 2.0L*hh + (kk+hh)*(std::exp(tau*hh) - 1.0L);
+        long double value = std::log(numerator/denominator)*
+            2.0L*kk*static_cast<long double>(theta())/sigma2;
+        return static_cast<Real>(std::exp(value));
     }
 
     Real CoxIngersollRoss::B(Time t, Time T) const {
-        Real h = std::sqrt(k()*k() + 2.0*sigma()*sigma());
-        Real temp = std::exp((T-t)*h) - 1.0;
-        Real numerator = 2.0*temp;
-        Real denominator = 2.0*h + (k()+h)*temp;
-        Real value = numerator/denominator;
-        return value;
+        long double sigma2 = static_cast<long double>(sigma())*sigma();
+        long double kk = k(), hh = std::sqrt(kk*kk + 2.0L*sigma2);
+        long double temp = std::exp((T-t)*hh) - 1.0L;
+        long double numerator = 2.0L*temp;
+        long double denominator = 2.0L*hh + (kk+hh)*temp;
+        return static_cast<Real>(numerator/denominator);
     }
 
     Real CoxIngersollRoss::discountBondOption(Option::Type type,
