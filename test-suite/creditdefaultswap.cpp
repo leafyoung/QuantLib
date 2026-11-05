@@ -1077,6 +1077,97 @@ BOOST_AUTO_TEST_CASE(testDefaultConventions) {
 
 }
 
+BOOST_AUTO_TEST_CASE(testForwardStartProtection) {
+    BOOST_TEST_MESSAGE(
+        "Testing MidPoint/Integral CDS engines with a forward protection "
+        "start...");
+
+    // Regression test: MidPointCdsEngine and IntegralCdsEngine both
+    // special-cased "startDate = protectionStart" for the coupon at index
+    // 0 specifically ("if (i==0)"), implicitly assuming protectionStart
+    // always falls within the very first coupon's period. The constructor
+    // explicitly allows protectionStart after schedule[0] for CDS/CDS2015
+    // -rule (post-Big-Bang) contracts, and the rebate logic in
+    // CreditDefaultSwap::init() already handles this correctly with a
+    // proper search loop -- the two pricing engines did not. When
+    // protectionStart falls past coupon 0's own accrual end, coupon 0's
+    // startDate was pushed past its own endDate, corrupting the
+    // mid-point/integration for that coupon (and, since it is still
+    // included rather than skipped, effectively including a coupon for a
+    // period before protection has actually started). IsdaCdsEngine does
+    // not have this bug and serves as the reference.
+
+    Date today(6, March, 2026);
+    Settings::instance().evaluationDate() = today;
+
+    Handle<Quote> hazardRate(ext::make_shared<SimpleQuote>(0.02));
+    Handle<DefaultProbabilityTermStructure> probabilityCurve(
+        ext::make_shared<FlatHazardRate>(today, hazardRate, Actual365Fixed()));
+    Handle<YieldTermStructure> discountCurve(
+        ext::make_shared<FlatForward>(today, 0.03, Actual365Fixed()));
+    Real recoveryRate = 0.4;
+
+    // Build the coupon schedule starting well BEFORE protection start, so
+    // protection start falls past several of the schedule's own coupons --
+    // MakeCreditDefaultSwap's tenor-based constructor always anchors the
+    // generated schedule's effective date to protectionStart itself, so it
+    // can never exercise this; passing an explicit pre-existing Schedule
+    // (whose first date is the issue date, not protectionStart) does.
+    Date issueDate = today;
+    Date maturity = cdsMaturity(issueDate, 5 * Years, DateGeneration::CDS2015);
+    Schedule schedule(issueDate, maturity, 3 * Months, WeekendsOnly(),
+                      Following, Unadjusted, DateGeneration::CDS2015, false);
+    Date protectionStart = issueDate + 15 * Months;
+
+    ext::shared_ptr<CreditDefaultSwap> cds =
+        MakeCreditDefaultSwap(schedule, 0.01)
+            .withProtectionStart(protectionStart)
+            .withTradeDate(protectionStart)
+            .withUpfrontDate(protectionStart + 3)
+            .withNominal(10000.0);
+
+    cds->setPricingEngine(ext::make_shared<IsdaCdsEngine>(
+        probabilityCurve, recoveryRate, discountCurve));
+    Real referenceNPV = cds->NPV();
+
+    cds->setPricingEngine(ext::make_shared<MidPointCdsEngine>(
+        probabilityCurve, recoveryRate, discountCurve));
+    Real midPointNPV;
+    try {
+        midPointNPV = cds->NPV();
+    } catch (const Error& e) {
+        BOOST_ERROR("MidPointCdsEngine threw on a valid forward-start "
+                    "protection state: " << e.what());
+        midPointNPV = referenceNPV;
+    }
+
+    cds->setPricingEngine(ext::make_shared<IntegralCdsEngine>(
+        Period(1, Weeks), probabilityCurve, recoveryRate, discountCurve));
+    Real integralNPV;
+    try {
+        integralNPV = cds->NPV();
+    } catch (const Error& e) {
+        BOOST_ERROR("IntegralCdsEngine threw on a valid forward-start "
+                    "protection state: " << e.what());
+        integralNPV = referenceNPV;
+    }
+
+    // a generous but not vacuous tolerance: MidPoint/Integral/ISDA use
+    // different approximations even in the ordinary (non-forward-start)
+    // case, so this only needs to catch a gross forward-start-specific
+    // divergence, not certify three-way numerical agreement
+    const Real tol = 0.02 * std::fabs(referenceNPV);
+    if (std::fabs(midPointNPV - referenceNPV) > tol) {
+        BOOST_ERROR("MidPointCdsEngine (" << midPointNPV
+                    << ") disagrees with IsdaCdsEngine (" << referenceNPV
+                    << ") on a forward-start protection state");
+    }
+    if (std::fabs(integralNPV - referenceNPV) > tol) {
+        BOOST_ERROR("IntegralCdsEngine (" << integralNPV
+                    << ") disagrees with IsdaCdsEngine (" << referenceNPV
+                    << ") on a forward-start protection state");
+    }
+}
 
 BOOST_AUTO_TEST_SUITE_END()
 

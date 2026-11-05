@@ -84,8 +84,19 @@ namespace QuantLib {
             Date paymentDate = coupon->date(),
                  startDate = coupon->accrualStartDate(),
                  endDate = coupon->accrualEndDate();
-            // this is the only point where it might not coincide
-            if (i==0)
+            // Protection can start anywhere, not just within the first
+            // coupon's own period -- the constructor explicitly allows
+            // protectionStart after schedule[0] for CDS/CDS2015-rule
+            // (post-Big-Bang) contracts. A coupon entirely before
+            // protection starts accrues no premium and bears no default
+            // risk; a coupon straddling protectionStart has its
+            // effective start clipped to it. Using i==0 unconditionally
+            // assumed protectionStart always falls in the very first
+            // coupon, which is wrong for a forward-starting contract and
+            // can push startDate past endDate.
+            if (endDate <= arguments_.protectionStart)
+                continue;
+            if (startDate < arguments_.protectionStart)
                 startDate = arguments_.protectionStart;
             Date effectiveStartDate =
                 (startDate <= today && today <= endDate) ? today : startDate;

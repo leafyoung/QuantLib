@@ -85,9 +85,19 @@ namespace QuantLib {
             // the right sign at the end.
 
             Date paymentDate = coupon->date(),
-                 startDate = (i == 0 ? arguments_.protectionStart :
-                                       coupon->accrualStartDate()),
+                 startDate = coupon->accrualStartDate(),
                  endDate = coupon->accrualEndDate();
+            // Protection can start anywhere, not just within the first
+            // coupon's own period -- see the matching comment in
+            // midpointcdsengine.cpp. Using i==0 unconditionally assumed
+            // protectionStart always falls in the very first coupon,
+            // which is wrong for a forward-starting contract: it can
+            // push startDate past endDate, running the integration below
+            // backwards (d0 > d1).
+            if (endDate <= arguments_.protectionStart)
+                continue;
+            if (startDate < arguments_.protectionStart)
+                startDate = arguments_.protectionStart;
             Date effectiveStartDate =
                 (startDate <= today && today <= endDate) ? today : startDate;
             Real couponAmount = coupon->amount();
