@@ -3606,7 +3606,7 @@ BOOST_AUTO_TEST_CASE(testAsymptoticCVwithDifferentAlpha) {
 
 
 
-BOOST_AUTO_TEST_CASE(testPiecewiseTimeDependentZeroMaturity) {
+BOOST_AUTO_TEST_CASE(testPiecewiseTimeDependentNegativeTerm) {
     BOOST_TEST_MESSAGE("Testing piecewise time dependent Heston engine "
                        "at zero time to maturity...");
 
