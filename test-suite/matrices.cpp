@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(testIterativeSolvers) {
             BiCGstab(MatrixMult(tightA), maxIter, 1e-12).solve(tightB);
         const Real residual = norm2(tightA*result.x-tightB)/norm2(tightB);
         if (residual > relTol) {
-            BOOST_FAIL("BiCGstab discarded a converged solution at the "
+            BOOST_FAIL("BiCGstab failed to return a converged solution at the "
                        "iteration budget\n  iterations used : " << result.iterations
                        << "\n  achieved error  : " << result.error
                        << "\n  rel tolerance   : " << relTol);
