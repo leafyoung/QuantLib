@@ -2688,6 +2688,84 @@ BOOST_AUTO_TEST_CASE(testPiecewiseTimeDependentChFAsymtotic) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testPiecewiseTimeDependentZeroMaturity) {
+    BOOST_TEST_MESSAGE("Testing piecewise time dependent Heston engine "
+                       "at zero time to maturity...");
+
+    // term in AnalyticPTDHestonEngine::calculate() is measured from the
+    // model's own term-structure reference date, not from today's
+    // evaluation date -- so term == 0 is reachable on a live (unexpired)
+    // option whenever the exercise date coincides with a reference date
+    // that sits a few settlement days after evaluationDate. At term == 0,
+    // every Fj_Helper segment has begin >= term_ and is skipped, so the
+    // characteristic function collapses to that of a point mass and its
+    // Fourier inversion integrand becomes the slowly-convergent, highly
+    // oscillatory sin(phi*k)/phi -- which quadrature can fail to converge
+    // on (silently wrong value, observed with GaussLaguerre) or outright
+    // throw on (observed with GaussLobatto), instead of returning the
+    // trivial closed-form zero-time-value limit (discounted intrinsic
+    // value against the forward price).
+    const Date today(5, July, 2002);
+    Settings::instance().evaluationDate() = today;
+    const Date referenceDate = today + 2;
+
+    const DayCounter dc = Actual365Fixed();
+    const std::vector<Date> dates = {referenceDate, referenceDate + Period(20, Years)};
+    const Handle<YieldTermStructure> riskFreeTS(
+        ext::make_shared<ZeroCurve>(dates, std::vector<Rate>{0.03, 0.03}, dc));
+    const Handle<YieldTermStructure> dividendTS(
+        ext::make_shared<ZeroCurve>(dates, std::vector<Rate>{0.01, 0.01}, dc));
+
+    const Real s0Value = 100.0;
+    const Handle<Quote> s0(ext::make_shared<SimpleQuote>(s0Value));
+    ConstantParameter theta(0.04, PositiveConstraint());
+    ConstantParameter kappa(2.0, PositiveConstraint());
+    ConstantParameter sigma(0.3, PositiveConstraint());
+    ConstantParameter rho(-0.5, BoundaryConstraint(-1.0, 1.0));
+
+    const ext::shared_ptr<PiecewiseTimeDependentHestonModel> model =
+        ext::make_shared<PiecewiseTimeDependentHestonModel>(
+            riskFreeTS, dividendTS, s0, 0.04, theta, kappa, sigma, rho,
+            TimeGrid(20.0, 2));
+
+    // the exercise date coincides exactly with the curves' reference date,
+    // which is still two days after evaluationDate -- not yet expired.
+    const Real strike = 110.0;
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Put, strike),
+        ext::make_shared<EuropeanExercise>(referenceDate));
+    BOOST_REQUIRE(!option.isExpired());
+
+    const Real riskFreeDiscount = riskFreeTS->discount(referenceDate);
+    const Real dividendDiscount = dividendTS->discount(referenceDate);
+    const Real forward = s0Value*dividendDiscount/riskFreeDiscount;
+    const Real expected = riskFreeDiscount*std::max(strike-forward, 0.0);
+
+    option.setPricingEngine(
+        ext::make_shared<AnalyticPTDHestonEngine>(model, 192));
+    const Real calculatedGaussLaguerre = option.NPV();
+
+    option.setPricingEngine(ext::make_shared<AnalyticPTDHestonEngine>(
+        model, AnalyticPTDHestonEngine::Gatheral,
+        AnalyticPTDHestonEngine::Integration::gaussLobatto(
+            1e-10, Null<Real>(), 10000)));
+    const Real calculatedGaussLobatto = option.NPV();
+
+    const Real tolerance = 1e-8;
+    if (std::fabs(calculatedGaussLaguerre-expected) > tolerance) {
+        BOOST_ERROR("failed to reproduce zero-maturity discounted "
+                    "intrinsic value with GaussLaguerre integration"
+                    << "\n  calculated: " << calculatedGaussLaguerre
+                    << "\n  expected  : " << expected);
+    }
+    if (std::fabs(calculatedGaussLobatto-expected) > tolerance) {
+        BOOST_ERROR("failed to reproduce zero-maturity discounted "
+                    "intrinsic value with GaussLobatto integration"
+                    << "\n  calculated: " << calculatedGaussLobatto
+                    << "\n  expected  : " << expected);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion) {
     BOOST_TEST_MESSAGE("Testing small sigma expansion of "
                        "the characteristic function...");
