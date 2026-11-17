@@ -780,6 +780,30 @@ BOOST_AUTO_TEST_CASE(testIterativeSolvers) {
                 << "\n  rel tolerance : " << relTol);
     }
 
+    // Convergence achieved on the last permitted iteration must return the
+    // converged solution rather than reporting an exhausted budget: the
+    // achieved error is the criterion, independent of which loop exit fired.
+    Array tightB(3);
+    tightB[0] = 1.0; tightB[1] = 1.0; tightB[2] = 2.0;
+    Matrix tightA(3, 3);
+    const Real tightVals[3][3] = {{1.0, -2.0, -3.0},
+                                  {-2.0, 2.0, -2.0},
+                                  {-1.0, -3.0, -2.0}};
+    for (Size i = 0; i < 3; ++i)
+        for (Size j = 0; j < 3; ++j)
+            tightA[i][j] = tightVals[i][j];
+    for (Size maxIter = 2; maxIter <= 3; ++maxIter) {
+        const BiCGStabResult result =
+            BiCGstab(MatrixMult(tightA), maxIter, 1e-12).solve(tightB);
+        const Real residual = norm2(tightA*result.x-tightB)/norm2(tightB);
+        if (residual > relTol) {
+            BOOST_FAIL("BiCGstab discarded a converged solution at the "
+                       "iteration budget\n  iterations used : " << result.iterations
+                       << "\n  achieved error  : " << result.error
+                       << "\n  rel tolerance   : " << relTol);
+        }
+    }
+
     const GMRESResult u = GMRES(MatrixMult(M1), 3, relTol).solve(b, b);
     if (norm2(M1*u.x-b)/norm2(b) > relTol) {
         BOOST_FAIL("Failed to calculate inverse using gmres"
