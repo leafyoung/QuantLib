@@ -2909,9 +2909,17 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
-    // equal volatilities that are not exactly representable still leave a deterministic spread
-    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 0.1, 0.1, 1.0) - intrinsic) <= tolerance,
-                        "deterministic spread with inexact volatilities failed");
+    // nearly equal volatilities at rho = 1: the naive combination s1^2 + s2^2 - 2 s1 s2 rounds
+    // to a negative number here, the spread is normal with volatility |vol1 - vol2|
+    {
+        const Real a = 15.726632108963026, b = 15.72663221349127;
+        const Real expected = bachelierBlackFormula(Option::Call, 3.0, g1 - g2,
+                                                    std::abs(a - b) * std::sqrt(t), df);
+        const Real calculated = price(Option::Call, 3.0, a, b, 1.0);
+        BOOST_CHECK_MESSAGE(std::isfinite(calculated) && std::abs(calculated - expected) <= tolerance,
+                            "nearly equal volatilities failed: " << calculated << " vs "
+                            << expected);
+    }
 
     // zero volatilities leave the discounted intrinsic value
     BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 0.0, 0.0, 0.3) - intrinsic) <= tolerance,
@@ -2948,7 +2956,8 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                         ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                                     ext::make_shared<AmericanExercise>(today, maturity));
         americanSpread.setPricingEngine(engine);
-        BOOST_CHECK_THROW(americanSpread.NPV(), Error);
+        BOOST_CHECK_EXCEPTION(americanSpread.NPV(), Error,
+                              ExpectedErrorMessage("not a European exercise"));
         BasketOption minBasket(ext::make_shared<MinBasketPayoff>(
                                    ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                                exercise);
