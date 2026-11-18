@@ -20,7 +20,6 @@
 #include <ql/cashflows/backwardlookingvariancetime.hpp>
 #include <ql/cashflows/blackovernightindexedcouponpricer.hpp>
 
-#include <ql/math/functional.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/termstructures/volatility/optionlet/optionletvolatilitystructure.hpp>
 #include <utility>
