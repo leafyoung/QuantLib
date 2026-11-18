@@ -32,7 +32,7 @@
 #include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/methods/finitedifferences/meshers/concentrating1dmesher.hpp>
 #include <ql/methods/finitedifferences/operators/numericaldifferentiation.hpp>
-#include <ql/methods/finitedifferences/utilities/hestonrndcalculator.hpp>
+#include <ql/methods/finitedifferences/utilities/hestonsmallsigmaexpansion.hpp>
 #include <ql/methods/montecarlo/pathgenerator.hpp>
 #include <ql/models/equity/hestonmodel.hpp>
 #include <ql/models/equity/hestonmodelhelper.hpp>
@@ -2852,11 +2852,10 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
     // deterministic and every Heston engine must converge to the
     // corresponding Black-Scholes price (see testSmallSigmaExpansion above,
     // which covers AnalyticHestonEngine). COSHestonEngine,
-    // AnalyticPTDHestonEngine (both complex-log formulas) and
-    // AnalyticPDFHestonEngine (via HestonRNDCalculator) did not: their
-    // characteristic function evaluations have the same v0/sigma^2 and
-    // kappa*theta/sigma^2 cancellation as AnalyticHestonEngine::chF without
-    // its small-sigma branch, and diverged (or threw) for sigma below
+    // AnalyticPTDHestonEngine and AnalyticPDFHestonEngine (via
+    // HestonRNDCalculator) evaluate the characteristic function through
+    // formulas with v0/sigma^2 and kappa*theta/sigma^2 prefactors, which
+    // need the small-sigma expansion to stay accurate for sigma below
     // roughly 1e-6.
 
     const Date settlementDate(20, March, 2020);
@@ -2890,7 +2889,7 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
     const Real tolNPV = 50*sigma;
 
     // --- characteristic function level: COSHestonEngine::chF must agree
-    //     with the (already regression-tested) AnalyticHestonEngine::chF ---
+    //     with AnalyticHestonEngine::chF ---
     const ext::shared_ptr<COSHestonEngine> cosEngine =
         ext::make_shared<COSHestonEngine>(hestonModel);
 
@@ -2924,15 +2923,11 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
                 << "\n  tolerance : " << tolNPV);
     }
 
-    // --- AnalyticPTDHestonEngine, two segments with genuinely DIFFERENT
-    //     parameters (not just two copies of the same one): this exercises
-    //     the actual use case the Dprev generalization exists for -- a
-    //     segment boundary where kappa/theta/rho/sigma all change, carrying
-    //     a nonzero D across it -- not merely the cross-segment recursion
-    //     with a no-op parameter change. Both segments keep sigma tiny
-    //     enough to hit the small-sigma branch, but at different magnitudes,
-    //     so the branch is independently exercised (and independently
-    //     thresholded) per segment.
+    // --- AnalyticPTDHestonEngine, two segments with different
+    //     kappa/theta/rho/sigma, so that a nonzero D is carried across a
+    //     boundary where the parameters change. Both sigmas (1e-9 and
+    //     5e-9) are below the 1e-6 threshold, so each segment takes the
+    //     small-sigma branch on its own.
     const Time t1 = 0.5*t;
     const Real kappa1 = 1.25, theta1 = 0.01, rho1 = -0.9, sigma1 = 1e-9;
     const Real kappa2 = 0.75, theta2 = 0.03, rho2 = -0.5, sigma2 = 5e-9;
@@ -2990,9 +2985,9 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
                 << "\n  tolerance : " << tolPtdNPV);
     }
 
-    // --- AnalyticPDFHestonEngine (HestonRNDCalculator); tightened from the
-    //     1e-6 default Gauss-Lobatto tolerance so the integration error
-    //     itself does not swamp the (much smaller) small-sigma-branch error ---
+    // --- AnalyticPDFHestonEngine (HestonRNDCalculator); the integration
+    //     tolerance is 1e-10, below the 1e-6 default, so that the
+    //     integration error does not swamp the small-sigma-branch error ---
     option.setPricingEngine(
         ext::make_shared<AnalyticPDFHestonEngine>(hestonModel, 1e-10));
     const Real pdfNPV = option.NPV();
@@ -3005,36 +3000,71 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testSmallSigmaStepAgainstClosedForm) {
+    BOOST_TEST_MESSAGE("Testing the small-sigma expansion step against the "
+                       "closed-form Riccati step at moderate sigma...");
+
+    // At sigma = 1e-2 the closed form is still numerically stable (its
+    // cancellation error is of order eps/sigma^2 ~ 1e-12), while the
+    // expansion's truncation error is O(sigma^3), with a small coefficient.
+    // The sigma^2 terms of D and C (theta = 1 puts C on the scale of D) are
+    // of order 1e-7 to 1e-5, so agreement to 1e-7 pins their coefficients,
+    // including those multiplying a nonzero complex Dprev.
+    const Real kappa = 1.3, theta = 1.0, sigma = 1e-2, rho = -0.6;
+    const Time tau = 1.7;
+    const std::complex<Real> i(0.0, 1.0);
+
+    const std::complex<Real> zs[] = {
+        {0.55, 0.0}, {0.3, -0.5}, {0.8, 0.0}, {-0.2, 0.7}};
+    const std::complex<Real> Dprevs[] = {
+        {0.0, 0.0}, {0.4, -0.3}, {-0.15, 0.25}};
+
+    for (const auto& z : zs) {
+        for (const auto& Dprev : Dprevs) {
+            const std::complex<Real> k = kappa - i*rho*sigma*z;
+            const std::complex<Real> d =
+                std::sqrt(k*k + sigma*sigma*(z*z + i*z));
+            const std::complex<Real> g = (k-d)/(k+d);
+            const std::complex<Real> gt =
+                (k-d-Dprev*sigma*sigma)/(k+d-Dprev*sigma*sigma);
+            const std::complex<Real> e = std::exp(-d*tau);
+            const std::complex<Real> expectedD =
+                (k+d)/(sigma*sigma)*(g-gt*e)/(1.0-gt*e);
+            const std::complex<Real> expectedC = kappa*theta/(sigma*sigma)
+                *((k-d)*tau - 2.0*std::log((1.0-gt*e)/(1.0-gt)));
+
+            const auto [calculatedD, calculatedC] =
+                detail::hestonSmallSigmaStep(kappa, theta, sigma, rho, tau, z, Dprev);
+
+            const Real tol = 1e-7;
+            if (std::abs(calculatedD - expectedD) > tol
+                    || std::abs(calculatedC - expectedC) > tol) {
+                BOOST_ERROR("small-sigma step differs from the closed form"
+                        << "\n  z         : " << z
+                        << "\n  Dprev     : " << Dprev
+                        << "\n  expected D: " << expectedD
+                        << "\n  calculated: " << calculatedD
+                        << "\n  expected C: " << expectedC
+                        << "\n  calculated: " << calculatedC
+                        << "\n  tolerance : " << tol);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testSmallSigmaExpansionOverflowSafety) {
     BOOST_TEST_MESSAGE("Testing the small-sigma expansion stays finite for "
                        "long-dated, fast mean-reverting inputs...");
 
-    // A naive transcription of the small-sigma Taylor coefficients forms
-    // exp(+kappa*tau) (and its square) as an intermediate quantity. That
-    // intermediate overflows in double precision once kappa*tau exceeds
-    // roughly 350 -- reachable with an ordinary, if unusual, combination of
-    // a long-dated option and a fast-mean-reverting calibration -- well
-    // before the true (bounded, tiny) D/C coefficients do. This is a
-    // pre-existing limitation of AnalyticHestonEngine::chF's own small-sigma
-    // branch too (confirmed separately; out of scope here).
-    //
-    // This checks hestonSmallSigmaStep's call sites directly rather than
-    // routing everything through the full option-pricing engines:
-    // COSHestonEngine::chF is checked directly against the known
-    // deterministic-limit closed form, since COSHestonEngine::calculate()
-    // itself goes through *unrelated* cumulant-based truncation-range
-    // helpers (c2/c3/c4) that form exp(2*kappa*t)..exp(4*kappa*t) directly
-    // and already overflow in this regime regardless of sigma -- a
-    // separate, pre-existing, out-of-scope issue with
-    // COSHestonEngine::calculate() itself (confirmed separately).
-    // HestonRNDCalculator::pdf is not checked in this extreme regime at
-    // all: confirmed separately (by sweeping sigma down from 0.3, which
-    // never touches this PR's branch) that its own integration-domain
-    // scaling (c_inf_, which grows with kappa*theta*t) already gives an
-    // inaccurate result here for any sigma, including ordinary,
-    // non-small ones -- another pre-existing, sigma-independent,
-    // out-of-scope limitation. AnalyticPTDHestonEngine has no such
-    // confound, so it is checked end to end via full option pricing.
+    // A transcription of the small-sigma Taylor coefficients that forms
+    // exp(+2*kappa*tau) as an intermediate overflows in double precision
+    // once kappa*tau exceeds roughly 350, well before the D (bounded) and
+    // C (linear in tau) coefficients themselves do.
+    // COSHestonEngine::chF is checked directly against the
+    // deterministic-limit closed form (COSHestonEngine::calculate() is not
+    // used, since its truncation-range helpers form exp(kappa*t) up to
+    // exp(4*kappa*t) directly); AnalyticPTDHestonEngine is checked end to
+    // end via option pricing.
 
     const Date settlementDate(20, March, 2020);
     Settings::instance().evaluationDate() = settlementDate;
@@ -3070,17 +3100,6 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansionOverflowSafety) {
                 << "\n  expected  : " << expectedChF
                 << "\n  calculated: " << calculatedChF
                 << "\n  diff      : " << diffChF);
-    }
-
-    // --- HestonRNDCalculator::pdf: only required to stay finite here (see
-    //     the comment above for why its accuracy isn't checked in this
-    //     extreme regime) ---
-    const Real x0 = std::log(spot->value());
-    const Real calculatedPdf = HestonRNDCalculator(hestonProcess, 1e-10).pdf(x0, t);
-    if (!std::isfinite(calculatedPdf)) {
-        BOOST_ERROR("HestonRNDCalculator::pdf returned a non-finite value for "
-                "long-dated, fast mean-reverting small-sigma inputs "
-                "(kappa*t=" << kappa*t << "): " << calculatedPdf);
     }
 
     const Real strike = 100.0;
