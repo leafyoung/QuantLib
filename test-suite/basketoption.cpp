@@ -24,6 +24,8 @@
 #include "utilities.hpp"
 #include <ql/instruments/basketoption.hpp>
 #include <ql/models/equity/hestonmodel.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
+#include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 #include <ql/math/randomnumbers/sobolbrownianbridgersg.hpp>
 #include <ql/pricingengines/basket/bachelierspreadengine.hpp>
 #include <ql/pricingengines/basket/bjerksundstenslandspreadengine.hpp>
@@ -54,10 +56,10 @@
 #include <ql/time/daycounters/yearfractiontodate.hpp>
 #include <ql/utilities/dataformatters.hpp>
 #include <ql/math/statistics/incrementalstatistics.hpp>
-#include <ql/math/distributions/normaldistribution.hpp>
-#include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 using namespace QuantLib;
 using namespace boost::unit_test_framework;
@@ -2857,26 +2859,32 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));
     const DiscountFactor df = r->discount(maturity);
     const Real s1 = 105.0, s2 = 100.0;
+    // the second process has its own dividend and risk-free curves
     const Handle<YieldTermStructure> q(flatRate(today, 0.03, dc));
-    const DiscountFactor dq = q->discount(maturity);
-    const auto makeProcess = [&](Real spot) {
+    const Handle<YieldTermStructure> r2(flatRate(today, 0.04, dc));
+    const Handle<YieldTermStructure> q2(flatRate(today, 0.01, dc));
+    const auto makeProcess = [&](Real spot, const Handle<YieldTermStructure>& dividend,
+                                 const Handle<YieldTermStructure>& riskFree) {
         return ext::make_shared<BlackScholesMertonProcess>(
-            Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), q, r,
+            Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), dividend, riskFree,
             Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
     };
+    const auto makeFirst = [&](Real spot) { return makeProcess(spot, q, r); };
+    const auto makeSecond = [&](Real spot) { return makeProcess(spot, q2, r2); };
     const auto makeVol = [](Real v) { return Handle<Quote>(ext::make_shared<SimpleQuote>(v)); };
     const auto price = [&](Option::Type type, Real strike, Real vol1, Real vol2, Real rho) {
         BasketOption option(ext::make_shared<SpreadBasketPayoff>(
                                 ext::make_shared<PlainVanillaPayoff>(type, strike)),
                             exercise);
         option.setPricingEngine(ext::make_shared<BachelierSpreadEngine>(
-            makeProcess(s1), makeProcess(s2), makeVol(vol1), makeVol(vol2), rho));
+            makeFirst(s1), makeSecond(s2), makeVol(vol1), makeVol(vol2), rho));
         return option.NPV();
     };
     const Real tolerance = 1e-10;
 
-    // forwards at maturity, with a nonzero dividend yield
-    const Real g1 = s1 * dq / df, g2 = s2 * dq / df;
+    // forwards at maturity from each process's own curves
+    const Real g1 = s1 * q->discount(maturity) / df;
+    const Real g2 = s2 * q2->discount(maturity) / r2->discount(maturity);
 
     // put-call parity holds for any strike sign, including zero and negative
     for (Real strike : {-20.0, 0.0, 5.0, 30.0}) {
@@ -2897,7 +2905,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                         "rho = 1 reduction failed: " << degenerate << " vs " << vanilla);
 
     // rho = 1 with equal volatilities leaves a deterministic spread
-    const Real intrinsic = df * std::max(g1 - g2 - 3.0, 0.0);
+    const Real intrinsic = df * std::max<Real>(g1 - g2 - 3.0, 0.0);
     BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
@@ -2919,12 +2927,12 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
 
     // invalid inputs are rejected
     BOOST_CHECK_THROW(price(Option::Call, 3.0, -1.0, 12.0, 0.0), Error);
-    BOOST_CHECK_THROW(BachelierSpreadEngine(makeProcess(s1), makeProcess(s2), makeVol(8.0),
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
                                             makeVol(12.0), 1.5),
                       Error);
     {
         const auto engine = ext::make_shared<BachelierSpreadEngine>(
-            makeProcess(s1), makeProcess(s2), makeVol(8.0), makeVol(12.0), 0.0);
+            makeFirst(s1), makeSecond(s2), makeVol(8.0), makeVol(12.0), 0.0);
         BasketOption americanSpread(ext::make_shared<SpreadBasketPayoff>(
                                         ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                                     ext::make_shared<AmericanExercise>(today, maturity));
@@ -2935,6 +2943,12 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                exercise);
         minBasket.setPricingEngine(engine);
         BOOST_CHECK_THROW(minBasket.NPV(), Error);
+        BasketOption cashOrNothing(
+            ext::make_shared<SpreadBasketPayoff>(
+                ext::make_shared<CashOrNothingPayoff>(Option::Call, 3.0, 1.0)),
+            exercise);
+        cashOrNothing.setPricingEngine(engine);
+        BOOST_CHECK_THROW(cashOrNothing.NPV(), Error);
         BasketOption past(ext::make_shared<SpreadBasketPayoff>(
                               ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                           ext::make_shared<EuropeanExercise>(today - 30));
@@ -2955,7 +2969,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
             const Real z2 = rho * z1 + std::sqrt(1.0 - rho * rho) * inverse(uniform.next().value);
             const Real spread =
                 g1 + vol1 * std::sqrt(t) * z1 - (g2 + vol2 * std::sqrt(t) * z2) - strike;
-            stats.add(df * std::max(spread, 0.0));
+            stats.add(df * std::max<Real>(spread, 0.0));
         }
         const Real exact = price(Option::Call, strike, vol1, vol2, rho);
         const Real error = 4.0 * stats.errorEstimate();

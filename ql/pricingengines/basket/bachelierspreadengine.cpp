@@ -36,6 +36,7 @@ namespace QuantLib {
     : process1_(std::move(process1)), process2_(std::move(process2)),
       vol1_(std::move(absoluteVolatility1)), vol2_(std::move(absoluteVolatility2)),
       rho_(correlation) {
+        QL_REQUIRE(process1_ && process2_, "null process given");
         QL_REQUIRE(rho_ >= -1.0 && rho_ <= 1.0,
                    "correlation (" << rho_ << ") must be in [-1, 1]");
         registerWith(process1_);
@@ -46,7 +47,7 @@ namespace QuantLib {
 
     void BachelierSpreadEngine::calculate() const {
         auto exercise = ext::dynamic_pointer_cast<EuropeanExercise>(arguments_.exercise);
-        QL_REQUIRE(exercise, "not an European exercise");
+        QL_REQUIRE(exercise, "not a European exercise");
 
         auto spreadPayoff = ext::dynamic_pointer_cast<SpreadBasketPayoff>(arguments_.payoff);
         QL_REQUIRE(spreadPayoff, "spread payoff expected");
@@ -70,9 +71,9 @@ namespace QuantLib {
         QL_REQUIRE(t >= 0.0, "maturity (" << maturity << ") precedes the reference date");
         // the variance is nonnegative in exact arithmetic (it equals
         // (sigma1 - sigma2)^2 + 2*(1 - rho)*sigma1*sigma2); the floor only
-        // guards rounding when rho = 1 and sigma1 = sigma2.
+        // guards rounding when rho is near 1 and sigma1 is near sigma2.
         const Real variance =
-            std::max(0.0, squared(sigma1) + squared(sigma2) - 2.0 * rho_ * sigma1 * sigma2) * t;
+            std::max<Real>(0.0, squared(sigma1) + squared(sigma2) - 2.0 * rho_ * sigma1 * sigma2) * t;
 
         results_.value = bachelierBlackFormula(payoff->optionType(), payoff->strike(),
                                                forward(process1_) - forward(process2_),
