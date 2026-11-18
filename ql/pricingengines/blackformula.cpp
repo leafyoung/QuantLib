@@ -668,8 +668,18 @@ namespace QuantLib {
         forward = forward + displacement;
         strike = strike + displacement;
 
-        if (stdDev==0.0 || strike==0.0)
+        if (strike==0.0)
             return 0.0;
+        if (stdDev==0.0) {
+            // away from the money the vega right-limit as stdDev->0+ is 0,
+            // but at the money (forward==strike) the Black price is linear
+            // in stdDev near 0, so the limit is the nonzero
+            // discount*forward*phi(0), not 0
+            if (forward==strike)
+                return discount * forward *
+                    CumulativeNormalDistribution().derivative(0.0);
+            return 0.0;
+        }
 
         Real d1 = std::log(forward/strike)/stdDev + .5*stdDev;
         return discount * forward *
@@ -952,8 +962,16 @@ namespace QuantLib {
         QL_REQUIRE(discount>0.0,
                    "discount (" << discount << ") must be positive");
 
-        if (stdDev==0.0)
+        if (stdDev==0.0) {
+            // at the money, d1=(forward-strike)/stdDev is exactly 0 for
+            // every stdDev>0 (the Bachelier ATM price is exactly linear in
+            // stdDev), so the true value at stdDev=0 is the same nonzero
+            // discount*phi(0), not 0; away from the money the vega right
+            // limit as stdDev->0+ is genuinely 0
+            if (forward==strike)
+                return discount * CumulativeNormalDistribution().derivative(0.0);
             return 0.0;
+        }
 
         Real d1 = (forward - strike)/stdDev;
         return discount *
