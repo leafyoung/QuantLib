@@ -2909,6 +2909,10 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
+    // equal volatilities that are not exactly representable still leave a deterministic spread
+    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 0.1, 0.1, 1.0) - intrinsic) <= tolerance,
+                        "deterministic spread with inexact volatilities failed");
+
     // zero volatilities leave the discounted intrinsic value
     BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 0.0, 0.0, 0.3) - intrinsic) <= tolerance,
                         "zero volatility failed");
@@ -2927,6 +2931,13 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
 
     // invalid inputs are rejected
     BOOST_CHECK_THROW(price(Option::Call, 3.0, -1.0, 12.0, 0.0), Error);
+    BOOST_CHECK_THROW(price(Option::Call, 3.0, 8.0, -1.0, 0.0), Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
+                                            makeVol(12.0), -1.5),
+                      Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(nullptr, makeSecond(s2), makeVol(8.0),
+                                            makeVol(12.0), 0.0),
+                      Error);
     BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
                                             makeVol(12.0), 1.5),
                       Error);
