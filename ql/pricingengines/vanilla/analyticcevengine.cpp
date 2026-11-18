@@ -21,6 +21,7 @@
 
 #include <ql/exercise.hpp>
 #include <ql/math/functional.hpp>
+#include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <boost/math/distributions/non_central_chi_squared.hpp>
 #include <boost/math/special_functions/gamma.hpp>
@@ -41,6 +42,19 @@ namespace QuantLib {
 
     Real CEVCalculator::value(
         Option::Type optionType, Real strike, Time t) const {
+
+        // At beta=1, dF = alpha*F*dW is exactly geometric Brownian motion
+        // with volatility alpha: the CEV closed form degenerates (delta_'s
+        // 1/(1-beta) factor blows up, feeding the chi-squared distributions
+        // below a divide-by-zero/overflowing degrees-of-freedom parameter,
+        // which throws rather than returning a sensible price) exactly
+        // where the true model is just Black. Dispatch to the Black formula
+        // for beta at or extremely close to 1, where the CEV closed form is
+        // both undefined/unstable and numerically indistinguishable from it
+        // anyway.
+        if (std::fabs(beta_ - 1.0) < 1.0e-4) {
+            return blackFormula(optionType, strike, f0_, alpha_*std::sqrt(t), 1.0);
+        }
 
         typedef boost::math::non_central_chi_squared_distribution<Real>
             nc_chi2;
