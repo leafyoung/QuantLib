@@ -23,10 +23,10 @@
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
 #include <ql/instruments/basketoption.hpp>
-#include <ql/models/equity/hestonmodel.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 #include <ql/math/randomnumbers/sobolbrownianbridgersg.hpp>
+#include <ql/models/equity/hestonmodel.hpp>
 #include <ql/pricingengines/basket/bachelierspreadengine.hpp>
 #include <ql/pricingengines/basket/bjerksundstenslandspreadengine.hpp>
 #include <ql/pricingengines/basket/fd2dblackscholesvanillaengine.hpp>
@@ -2853,7 +2853,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const Date today(25, October, 2026);
     Settings::instance().evaluationDate() = today;
     const DayCounter dc = Actual365Fixed();
-    const Date maturity = today + 365;
+    const Date maturity = today + 180;
     const Time t = dc.yearFraction(today, maturity);
     const auto exercise = ext::make_shared<EuropeanExercise>(maturity);
     const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));

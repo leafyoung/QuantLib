@@ -21,7 +21,6 @@
 #include <ql/math/functional.hpp>
 #include <ql/pricingengines/basket/bachelierspreadengine.hpp>
 #include <ql/pricingengines/blackformula.hpp>
-#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -69,11 +68,11 @@ namespace QuantLib {
 
         const Time t = process1_->time(maturity);
         QL_REQUIRE(t >= 0.0, "maturity (" << maturity << ") precedes the reference date");
-        // the variance is nonnegative in exact arithmetic (it equals
-        // (sigma1 - sigma2)^2 + 2*(1 - rho)*sigma1*sigma2); the floor only
-        // guards rounding when rho is near 1 and sigma1 is near sigma2.
+        // (sigma1 - sigma2)^2 + 2(1 - rho) sigma1 sigma2 is the spread variance per
+        // unit time, written as a sum of nonnegative terms so that it does not
+        // cancel when rho is near 1 and sigma1 is near sigma2
         const Real variance =
-            std::max<Real>(0.0, squared(sigma1) + squared(sigma2) - 2.0 * rho_ * sigma1 * sigma2) * t;
+            (squared(sigma1 - sigma2) + 2.0 * (1.0 - rho_) * sigma1 * sigma2) * t;
 
         results_.value = bachelierBlackFormula(payoff->optionType(), payoff->strike(),
                                                forward(process1_) - forward(process2_),
