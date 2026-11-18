@@ -24,7 +24,10 @@
 #include "utilities.hpp"
 #include <ql/instruments/basketoption.hpp>
 #include <ql/models/equity/hestonmodel.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
+#include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 #include <ql/math/randomnumbers/sobolbrownianbridgersg.hpp>
+#include <ql/pricingengines/basket/bachelierspreadengine.hpp>
 #include <ql/pricingengines/basket/bjerksundstenslandspreadengine.hpp>
 #include <ql/pricingengines/basket/fd2dblackscholesvanillaengine.hpp>
 #include <ql/pricingengines/basket/fdndimblackscholesvanillaengine.hpp>
@@ -54,7 +57,9 @@
 #include <ql/utilities/dataformatters.hpp>
 #include <ql/math/statistics/incrementalstatistics.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 using namespace QuantLib;
 using namespace boost::unit_test_framework;
@@ -2839,6 +2844,171 @@ BOOST_AUTO_TEST_CASE(testPearsonSpreadEngineVanillaLimit) {
                                 "vanilla limit failed for " << type << " with strike " << strike
                                 << ": calculated " << calculated << ", expected " << expected);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
+    BOOST_TEST_MESSAGE("Testing Bachelier spread engine...");
+
+    const Date today(25, October, 2026);
+    Settings::instance().evaluationDate() = today;
+    const DayCounter dc = Actual365Fixed();
+    const Date maturity = today + 180;
+    const Time t = dc.yearFraction(today, maturity);
+    const auto exercise = ext::make_shared<EuropeanExercise>(maturity);
+    const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));
+    const DiscountFactor df = r->discount(maturity);
+    const Real s1 = 105.0, s2 = 100.0;
+    // the second process has its own dividend and risk-free curves
+    const Handle<YieldTermStructure> q(flatRate(today, 0.03, dc));
+    const Handle<YieldTermStructure> r2(flatRate(today, 0.04, dc));
+    const Handle<YieldTermStructure> q2(flatRate(today, 0.01, dc));
+    const auto makeProcess = [&](Real spot, const Handle<YieldTermStructure>& dividend,
+                                 const Handle<YieldTermStructure>& riskFree) {
+        return ext::make_shared<BlackScholesMertonProcess>(
+            Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), dividend, riskFree,
+            Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
+    };
+    const auto makeFirst = [&](Real spot) { return makeProcess(spot, q, r); };
+    const auto makeSecond = [&](Real spot) { return makeProcess(spot, q2, r2); };
+    const auto makeVol = [](Real v) { return Handle<Quote>(ext::make_shared<SimpleQuote>(v)); };
+    const auto price = [&](Option::Type type, Real strike, Real vol1, Real vol2, Real rho) {
+        BasketOption option(ext::make_shared<SpreadBasketPayoff>(
+                                ext::make_shared<PlainVanillaPayoff>(type, strike)),
+                            exercise);
+        option.setPricingEngine(ext::make_shared<BachelierSpreadEngine>(
+            makeFirst(s1), makeSecond(s2), makeVol(vol1), makeVol(vol2), rho));
+        return option.NPV();
+    };
+    const Real tolerance = 1e-10;
+
+    // forwards at maturity from each process's own curves
+    const Real g1 = s1 * q->discount(maturity) / df;
+    const Real g2 = s2 * q2->discount(maturity) / r2->discount(maturity);
+
+    // put-call parity holds for any strike sign, including zero and negative
+    for (Real strike : {-20.0, 0.0, 5.0, 30.0}) {
+        for (Real rho : {-0.7, 0.0, 0.6}) {
+            const Real parity = price(Option::Call, strike, 8.0, 12.0, rho) -
+                                price(Option::Put, strike, 8.0, 12.0, rho);
+            const Real expected = df * (g1 - g2 - strike);
+            BOOST_CHECK_MESSAGE(std::abs(parity - expected) <= tolerance,
+                                "parity failed for strike " << strike << ", rho " << rho
+                                << ": " << parity << " vs " << expected);
+        }
+    }
+
+    // rho = 1 leaves the spread normal with volatility |vol1 - vol2|
+    const Real degenerate = price(Option::Call, 3.0, 12.0, 8.0, 1.0);
+    const Real vanilla = bachelierBlackFormula(Option::Call, 3.0, g1 - g2, 4.0 * std::sqrt(t), df);
+    BOOST_CHECK_MESSAGE(std::abs(degenerate - vanilla) <= tolerance,
+                        "rho = 1 reduction failed: " << degenerate << " vs " << vanilla);
+
+    // rho = 1 with equal volatilities leaves a deterministic spread
+    const Real intrinsic = df * std::max<Real>(g1 - g2 - 3.0, 0.0);
+    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
+                        "deterministic spread failed");
+
+    // nearly equal volatilities at rho = 1: the naive combination s1^2 + s2^2 - 2 s1 s2 rounds
+    // to a negative number here, the spread is normal with volatility |vol1 - vol2|
+    {
+        const Real a = 15.726632108963026, b = 15.72663221349127;
+        const Real expected = bachelierBlackFormula(Option::Call, 3.0, g1 - g2,
+                                                    std::abs(a - b) * std::sqrt(t), df);
+        const Real calculated = price(Option::Call, 3.0, a, b, 1.0);
+        BOOST_CHECK_MESSAGE(std::isfinite(calculated) && std::abs(calculated - expected) <= tolerance,
+                            "nearly equal volatilities failed: " << calculated << " vs "
+                            << expected);
+    }
+
+    // zero volatilities leave the discounted intrinsic value
+    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 0.0, 0.0, 0.3) - intrinsic) <= tolerance,
+                        "zero volatility failed");
+
+    // uncorrelated and perfectly anticorrelated spreads have standard deviations
+    // sqrt(vol1^2 + vol2^2) and vol1 + vol2
+    for (auto [rho0, sd] : {std::pair<Real, Real>{0.0, std::sqrt(8.0 * 8.0 + 12.0 * 12.0)},
+                            std::pair<Real, Real>{-1.0, 20.0}}) {
+        const Real expected =
+            bachelierBlackFormula(Option::Put, 1.0, g1 - g2, sd * std::sqrt(t), df);
+        const Real calculated = price(Option::Put, 1.0, 8.0, 12.0, rho0);
+        BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
+                            "effective volatility failed for rho " << rho0 << ": " << calculated
+                            << " vs " << expected);
+    }
+
+    // invalid inputs are rejected
+    BOOST_CHECK_THROW(price(Option::Call, 3.0, -1.0, 12.0, 0.0), Error);
+    BOOST_CHECK_THROW(price(Option::Call, 3.0, 8.0, -1.0, 0.0), Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
+                                            makeVol(12.0), -1.5),
+                      Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(nullptr, makeSecond(s2), makeVol(8.0),
+                                            makeVol(12.0), 0.0),
+                      Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
+                                            makeVol(12.0), 1.5),
+                      Error);
+    {
+        const auto engine = ext::make_shared<BachelierSpreadEngine>(
+            makeFirst(s1), makeSecond(s2), makeVol(8.0), makeVol(12.0), 0.0);
+        BasketOption americanSpread(ext::make_shared<SpreadBasketPayoff>(
+                                        ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                                    ext::make_shared<AmericanExercise>(today, maturity));
+        americanSpread.setPricingEngine(engine);
+        BOOST_CHECK_EXCEPTION(americanSpread.NPV(), Error,
+                              ExpectedErrorMessage("not a European exercise"));
+        BasketOption minBasket(ext::make_shared<MinBasketPayoff>(
+                                   ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                               exercise);
+        minBasket.setPricingEngine(engine);
+        BOOST_CHECK_THROW(minBasket.NPV(), Error);
+        BasketOption cashOrNothing(
+            ext::make_shared<SpreadBasketPayoff>(
+                ext::make_shared<CashOrNothingPayoff>(Option::Call, 3.0, 1.0)),
+            exercise);
+        cashOrNothing.setPricingEngine(engine);
+        BOOST_CHECK_THROW(cashOrNothing.NPV(), Error);
+        BasketOption past(ext::make_shared<SpreadBasketPayoff>(
+                              ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                          ext::make_shared<EuropeanExercise>(today - 30));
+        // an expired option never reaches the engine, so feed the arguments directly
+        past.setupArguments(engine->getArguments());
+        BOOST_CHECK_EXCEPTION(engine->calculate(), Error,
+                              ExpectedErrorMessage("precedes the reference date"));
+        // a maturity on the reference date is valid: the value is the intrinsic value of the spots
+        BasketOption atReference(
+            ext::make_shared<SpreadBasketPayoff>(
+                ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+            ext::make_shared<EuropeanExercise>(today));
+        atReference.setupArguments(engine->getArguments());
+        engine->calculate();
+        const Real atReferenceValue =
+            dynamic_cast<const Instrument::results*>(engine->getResults())->value;
+        BOOST_CHECK_MESSAGE(std::abs(atReferenceValue - std::max<Real>(s1 - s2 - 3.0, 0.0)) <=
+                                tolerance,
+                            "maturity on the reference date failed: " << atReferenceValue);
+    }
+
+    // Monte Carlo over the two correlated normal forwards, for both correlation signs
+    for (Real rho : {-0.4, 0.6}) {
+        const Real vol1 = 8.0, vol2 = 12.0, strike = 2.0;
+        const Size paths = 400000;
+        MersenneTwisterUniformRng uniform(42);
+        InverseCumulativeNormal inverse;
+        IncrementalStatistics stats;
+        for (Size i = 0; i < paths; ++i) {
+            const Real z1 = inverse(uniform.next().value);
+            const Real z2 = rho * z1 + std::sqrt(1.0 - rho * rho) * inverse(uniform.next().value);
+            const Real spread =
+                g1 + vol1 * std::sqrt(t) * z1 - (g2 + vol2 * std::sqrt(t) * z2) - strike;
+            stats.add(df * std::max<Real>(spread, 0.0));
+        }
+        const Real exact = price(Option::Call, strike, vol1, vol2, rho);
+        const Real error = 4.0 * stats.errorEstimate();
+        BOOST_CHECK_MESSAGE(std::abs(stats.mean() - exact) <= error,
+                            "Monte Carlo mismatch: exact " << exact << ", simulated " << stats.mean()
+                            << " +/- " << error);
     }
 }
 
