@@ -23,10 +23,10 @@
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
 #include <ql/instruments/basketoption.hpp>
+#include <ql/models/equity/hestonmodel.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 #include <ql/math/randomnumbers/sobolbrownianbridgersg.hpp>
-#include <ql/models/equity/hestonmodel.hpp>
 #include <ql/pricingengines/basket/bachelierspreadengine.hpp>
 #include <ql/pricingengines/basket/bjerksundstenslandspreadengine.hpp>
 #include <ql/pricingengines/basket/fd2dblackscholesvanillaengine.hpp>
@@ -2976,6 +2976,18 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
         past.setupArguments(engine->getArguments());
         BOOST_CHECK_EXCEPTION(engine->calculate(), Error,
                               ExpectedErrorMessage("precedes the reference date"));
+        // a maturity on the reference date is valid: the value is the intrinsic value of the spots
+        BasketOption atReference(
+            ext::make_shared<SpreadBasketPayoff>(
+                ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+            ext::make_shared<EuropeanExercise>(today));
+        atReference.setupArguments(engine->getArguments());
+        engine->calculate();
+        const Real atReferenceValue =
+            dynamic_cast<const Instrument::results*>(engine->getResults())->value;
+        BOOST_CHECK_MESSAGE(std::abs(atReferenceValue - std::max<Real>(s1 - s2 - 3.0, 0.0)) <=
+                                tolerance,
+                            "maturity on the reference date failed: " << atReferenceValue);
     }
 
     // Monte Carlo over the two correlated normal forwards, for both correlation signs
