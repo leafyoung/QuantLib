@@ -54,6 +54,7 @@
 #include <ql/time/daycounters/yearfractiontodate.hpp>
 #include <ql/utilities/dataformatters.hpp>
 #include <ql/math/statistics/incrementalstatistics.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 
 #include <cmath>
@@ -2855,10 +2856,12 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const auto exercise = ext::make_shared<EuropeanExercise>(maturity);
     const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));
     const DiscountFactor df = r->discount(maturity);
-    const Real f1 = 105.0, f2 = 100.0;
-    const auto makeProcess = [&](Real forward) {
-        return ext::make_shared<BlackProcess>(
-            Handle<Quote>(ext::make_shared<SimpleQuote>(forward)), r,
+    const Real s1 = 105.0, s2 = 100.0;
+    const Handle<YieldTermStructure> q(flatRate(today, 0.03, dc));
+    const DiscountFactor dq = q->discount(maturity);
+    const auto makeProcess = [&](Real spot) {
+        return ext::make_shared<BlackScholesMertonProcess>(
+            Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), q, r,
             Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
     };
     const auto makeVol = [](Real v) { return Handle<Quote>(ext::make_shared<SimpleQuote>(v)); };
@@ -2867,13 +2870,13 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                 ext::make_shared<PlainVanillaPayoff>(type, strike)),
                             exercise);
         option.setPricingEngine(ext::make_shared<BachelierSpreadEngine>(
-            makeProcess(f1), makeProcess(f2), makeVol(vol1), makeVol(vol2), rho));
+            makeProcess(s1), makeProcess(s2), makeVol(vol1), makeVol(vol2), rho));
         return option.NPV();
     };
     const Real tolerance = 1e-10;
 
-    // BlackProcess is the futures process: the spot is the forward
-    const Real g1 = f1, g2 = f2;
+    // forwards at maturity, with a nonzero dividend yield
+    const Real g1 = s1 * dq / df, g2 = s2 * dq / df;
 
     // put-call parity holds for any strike sign, including zero and negative
     for (Real strike : {-20.0, 0.0, 5.0, 30.0}) {
@@ -2898,24 +2901,68 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
-    // Monte Carlo over the two correlated normal forwards
-    const Real vol1 = 8.0, vol2 = 12.0, rho = -0.4, strike = 2.0;
-    const Size paths = 400000;
-    MersenneTwisterUniformRng uniform(42);
-    InverseCumulativeNormal inverse;
-    IncrementalStatistics stats;
-    for (Size i = 0; i < paths; ++i) {
-        const Real z1 = inverse(uniform.next().value);
-        const Real z2 = rho * z1 + std::sqrt(1.0 - rho * rho) * inverse(uniform.next().value);
-        const Real spread =
-            g1 + vol1 * std::sqrt(t) * z1 - (g2 + vol2 * std::sqrt(t) * z2) - strike;
-        stats.add(df * std::max(spread, 0.0));
+    // zero volatilities leave the discounted intrinsic value
+    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 0.0, 0.0, 0.3) - intrinsic) <= tolerance,
+                        "zero volatility failed");
+
+    // uncorrelated and perfectly anticorrelated spreads have standard deviations
+    // sqrt(vol1^2 + vol2^2) and vol1 + vol2
+    for (auto [rho0, sd] : {std::pair<Real, Real>{0.0, std::sqrt(8.0 * 8.0 + 12.0 * 12.0)},
+                            std::pair<Real, Real>{-1.0, 20.0}}) {
+        const Real expected =
+            bachelierBlackFormula(Option::Put, 1.0, g1 - g2, sd * std::sqrt(t), df);
+        const Real calculated = price(Option::Put, 1.0, 8.0, 12.0, rho0);
+        BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
+                            "effective volatility failed for rho " << rho0 << ": " << calculated
+                            << " vs " << expected);
     }
-    const Real exact = price(Option::Call, strike, vol1, vol2, rho);
-    const Real error = 4.0 * stats.errorEstimate();
-    BOOST_CHECK_MESSAGE(std::abs(stats.mean() - exact) <= error,
-                        "Monte Carlo mismatch: exact " << exact << ", simulated " << stats.mean()
-                        << " +/- " << error);
+
+    // invalid inputs are rejected
+    BOOST_CHECK_THROW(price(Option::Call, 3.0, -1.0, 12.0, 0.0), Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeProcess(s1), makeProcess(s2), makeVol(8.0),
+                                            makeVol(12.0), 1.5),
+                      Error);
+    {
+        const auto engine = ext::make_shared<BachelierSpreadEngine>(
+            makeProcess(s1), makeProcess(s2), makeVol(8.0), makeVol(12.0), 0.0);
+        BasketOption americanSpread(ext::make_shared<SpreadBasketPayoff>(
+                                        ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                                    ext::make_shared<AmericanExercise>(today, maturity));
+        americanSpread.setPricingEngine(engine);
+        BOOST_CHECK_THROW(americanSpread.NPV(), Error);
+        BasketOption minBasket(ext::make_shared<MinBasketPayoff>(
+                                   ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                               exercise);
+        minBasket.setPricingEngine(engine);
+        BOOST_CHECK_THROW(minBasket.NPV(), Error);
+        BasketOption past(ext::make_shared<SpreadBasketPayoff>(
+                              ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                          ext::make_shared<EuropeanExercise>(today - 30));
+        // an expired option never reaches the engine, so feed the arguments directly
+        past.setupArguments(engine->getArguments());
+        BOOST_CHECK_THROW(engine->calculate(), Error);
+    }
+
+    // Monte Carlo over the two correlated normal forwards, for both correlation signs
+    for (Real rho : {-0.4, 0.6}) {
+        const Real vol1 = 8.0, vol2 = 12.0, strike = 2.0;
+        const Size paths = 400000;
+        MersenneTwisterUniformRng uniform(42);
+        InverseCumulativeNormal inverse;
+        IncrementalStatistics stats;
+        for (Size i = 0; i < paths; ++i) {
+            const Real z1 = inverse(uniform.next().value);
+            const Real z2 = rho * z1 + std::sqrt(1.0 - rho * rho) * inverse(uniform.next().value);
+            const Real spread =
+                g1 + vol1 * std::sqrt(t) * z1 - (g2 + vol2 * std::sqrt(t) * z2) - strike;
+            stats.add(df * std::max(spread, 0.0));
+        }
+        const Real exact = price(Option::Call, strike, vol1, vol2, rho);
+        const Real error = 4.0 * stats.errorEstimate();
+        BOOST_CHECK_MESSAGE(std::abs(stats.mean() - exact) <= error,
+                            "Monte Carlo mismatch: exact " << exact << ", simulated " << stats.mean()
+                            << " +/- " << error);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(testGaussianCopulaSpreadEngineFlatVol) {

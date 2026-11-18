@@ -22,6 +22,7 @@
 #include <ql/pricingengines/basket/bachelierspreadengine.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace QuantLib {
@@ -54,6 +55,8 @@ namespace QuantLib {
         QL_REQUIRE(payoff, "non-plain payoff given");
 
         const Date maturity = exercise->lastDate();
+        // Black-Scholes forward of the state variable (spot grown at the
+        // risk-free rate net of the dividend yield)
         auto forward = [&maturity](const ext::shared_ptr<GeneralizedBlackScholesProcess>& p) {
             return p->stateVariable()->value() / p->riskFreeRate()->discount(maturity) *
                    p->dividendYield()->discount(maturity);
@@ -64,6 +67,7 @@ namespace QuantLib {
         QL_REQUIRE(sigma1 >= 0.0 && sigma2 >= 0.0, "absolute volatilities must be non-negative");
 
         const Time t = process1_->time(maturity);
+        QL_REQUIRE(t >= 0.0, "maturity (" << maturity << ") precedes the reference date");
         // the variance is nonnegative in exact arithmetic (it equals
         // (sigma1 - sigma2)^2 + 2*(1 - rho)*sigma1*sigma2); the floor only
         // guards rounding when rho = 1 and sigma1 = sigma2.

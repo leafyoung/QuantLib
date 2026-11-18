@@ -41,13 +41,19 @@ namespace QuantLib {
 
         The processes supply the spot, risk-free and dividend curves only;
         their Black volatility surfaces are not used. The absolute
-        volatilities are flat and passed separately.
+        volatilities are flat, in forward-price units per square root of
+        year, and are passed separately. The time to maturity and the
+        discount factor are taken from the first process's risk-free curve
+        (reference date and day counter); the second process contributes its
+        forward only, so both processes are expected to share the same
+        reference date and day counter.
 
         \ingroup basketengines
 
         \test the correctness of the returned value is tested by
-              put-call parity, the perfectly correlated degenerate cases and
-              a Monte Carlo simulation of the two normal forwards.
+              put-call parity, the perfectly correlated degenerate cases,
+              the rejection of invalid inputs and Monte Carlo simulations of
+              the two normal forwards.
     */
     class BachelierSpreadEngine : public BasketOption::engine {
       public:
