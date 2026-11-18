@@ -59,7 +59,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <string>
 #include <utility>
+#include <vector>
 
 using namespace QuantLib;
 using namespace boost::unit_test_framework;
@@ -2935,6 +2938,53 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
         BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
                             "effective volatility failed for rho " << rho0 << ": " << calculated
                             << " vs " << expected);
+    }
+
+    // the instrument reprices after each input of the engine changes
+    {
+        auto spot1 = ext::make_shared<SimpleQuote>(s1);
+        auto spot2 = ext::make_shared<SimpleQuote>(s2);
+        auto vol1 = ext::make_shared<SimpleQuote>(8.0);
+        auto vol2 = ext::make_shared<SimpleQuote>(12.0);
+        const auto process = [&](const ext::shared_ptr<SimpleQuote>& spot,
+                                 const Handle<YieldTermStructure>& dividend,
+                                 const Handle<YieldTermStructure>& riskFree) {
+            return ext::make_shared<BlackScholesMertonProcess>(
+                Handle<Quote>(spot), dividend, riskFree,
+                Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
+        };
+        BasketOption option(ext::make_shared<SpreadBasketPayoff>(
+                                ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
+                            exercise);
+        option.setPricingEngine(ext::make_shared<BachelierSpreadEngine>(
+            process(spot1, q, r), process(spot2, q2, r2), Handle<Quote>(vol1),
+            Handle<Quote>(vol2), 0.3));
+        // the expected value from the current quotes, by the closed form
+        const auto expectedFromSpots = [&]() {
+            const Real f1 = spot1->value() * q->discount(maturity) / df;
+            const Real f2 = spot2->value() * q2->discount(maturity) / r2->discount(maturity);
+            const Real v1 = vol1->value(), v2 = vol2->value();
+            return bachelierBlackFormula(
+                Option::Call, 3.0, f1 - f2,
+                std::sqrt((v1 * v1 + v2 * v2 - 2.0 * 0.3 * v1 * v2) * t), df);
+        };
+        Real previous = option.NPV();
+        BOOST_CHECK_MESSAGE(std::abs(previous - expectedFromSpots()) <= tolerance,
+                            "initial value failed: " << previous);
+        const std::vector<std::pair<std::string, std::function<void()>>> changes = {
+            {"first volatility", [&]() { vol1->setValue(20.0); }},
+            {"second volatility", [&]() { vol2->setValue(3.0); }},
+            {"first spot", [&]() { spot1->setValue(s1 + 9.0); }},
+            {"second spot", [&]() { spot2->setValue(s2 - 7.0); }}};
+        for (const auto& [name, change] : changes) {
+            change();
+            const Real updated = option.NPV();
+            BOOST_CHECK_MESSAGE(std::abs(updated - previous) > 1e-6 &&
+                                    std::abs(updated - expectedFromSpots()) <= tolerance,
+                                "no repricing after changing the " << name << ": " << updated
+                                << " vs " << expectedFromSpots());
+            previous = updated;
+        }
     }
 
     // invalid inputs are rejected
