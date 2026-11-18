@@ -33,7 +33,7 @@
 namespace QuantLib {
 
     //! Black compounded overnight coupon pricer
-    /* The methods that are implemented here to price capped / floored compounded ON coupons are
+    /*! The methods that are implemented here to price capped / floored compounded ON coupons are
     highly experimental and ad-hoc. As soon as a market best practice has evolved, the pricer
     should be revised.
 

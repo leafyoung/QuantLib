@@ -34,7 +34,8 @@ namespace QuantLib {
         : CompoundingOvernightIndexedCouponPricer(std::move(v), effectiveVolatilityInput),
           dampingExponent_(dampingExponent) {
         QL_REQUIRE(dampingExponent_ > 0.0,
-                   "damping exponent (" << dampingExponent_ << ") must be positive");
+                   "BlackCompoundingOvernightIndexedCouponPricer: damping exponent ("
+                       << dampingExponent_ << ") must be positive");
     }
 
     void BlackCompoundingOvernightIndexedCouponPricer::initialize(const FloatingRateCoupon& coupon) {
@@ -330,9 +331,7 @@ namespace QuantLib {
                 Real fixingEndTime = capletVolatility()->timeFromReference(fixingDates.back());
                 Real sigma = capletVolatility()->volatility(
                     std::max(fixingDates.front(), capletVolatility()->referenceDate() + 1), effStrike);
-                Real T = std::max(fixingStartTime, 0.0);
-                if (!close_enough(fixingEndTime, T))
-                    T += cubed(fixingEndTime - T) / squared(fixingEndTime - fixingStartTime) / 3.0;
+                Real T = backwardLookingVarianceTime(fixingStartTime, fixingEndTime);
                 stdDev = sigma * std::sqrt(T);
             }
             if (optionType == Option::Type::Call)
