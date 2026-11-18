@@ -39,7 +39,9 @@ namespace QuantLib {
 
     The optional \p dampingExponent \f$ q \f$ sets how fast the volatility of the compounded rate is
     damped inside the accrual period when the volatility input is not effective, see
-    backwardLookingVarianceTime(); the default \f$ q = 1 \f$ is the linear damping. */
+    backwardLookingVarianceTime(); the default \f$ q = 1 \f$ is the linear damping. The exponent
+    is ignored when the volatility input is effective. The averaging pricer below always uses
+    \f$ q = 1 \f$. */
     class BlackCompoundingOvernightIndexedCouponPricer : public CompoundingOvernightIndexedCouponPricer {
     public:
         explicit BlackCompoundingOvernightIndexedCouponPricer(

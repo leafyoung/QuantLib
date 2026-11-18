@@ -49,10 +49,8 @@ namespace QuantLib {
         The exponent \f$ q = 1 \f$ is the linear damping from one at the
         start of the accrual period to zero at its end.
 
-        This is the formula of the Willems damping family (arXiv:2004.04501,
-        Section 3); the Lean statement of the integral is
-        <tt>integral_onDamping_sq</tt> in formal-mathfin's
-        <tt>MathFin/Models/Rates/OvernightCompounding.lean</tt>.
+        The power family of damping profiles follows Willems (arXiv:2004.04501,
+        Section 3).
 
         \param fixingStart  time of the first fixing of the accrual period
         \param fixingEnd    time of the last fixing; must not precede
