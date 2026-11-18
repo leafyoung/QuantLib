@@ -17,6 +17,7 @@
  WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
  or FITNESS FOR A PARTICULAR PURPOSE. See the license for more details.
 */
+#include <ql/cashflows/backwardlookingvariancetime.hpp>
 #include <ql/cashflows/blackovernightindexedcouponpricer.hpp>
 
 #include <ql/math/functional.hpp>
@@ -28,8 +29,13 @@ namespace QuantLib {
 
     BlackCompoundingOvernightIndexedCouponPricer::BlackCompoundingOvernightIndexedCouponPricer(
             Handle<OptionletVolatilityStructure> v,
-            const bool effectiveVolatilityInput)
-        : CompoundingOvernightIndexedCouponPricer(std::move(v), effectiveVolatilityInput) {}
+            const bool effectiveVolatilityInput,
+            const Real dampingExponent)
+        : CompoundingOvernightIndexedCouponPricer(std::move(v), effectiveVolatilityInput),
+          dampingExponent_(dampingExponent) {
+        QL_REQUIRE(dampingExponent_ > 0.0,
+                   "damping exponent (" << dampingExponent_ << ") must be positive");
+    }
 
     void BlackCompoundingOvernightIndexedCouponPricer::initialize(const FloatingRateCoupon& coupon) {
         OvernightIndexedCouponPricer::initialize(coupon);
@@ -68,14 +74,12 @@ namespace QuantLib {
                 // vol input is not effective:
                 // for the standard deviation see Lyashenko, Mercurio, Looking forward to backward looking rates,
                 // section 6.3. the idea is to dampen the average volatility sigma between the fixing start and fixing end
-                // date by a linear function going from (fixing start, 1) to (fixing end, 0)
+                // date by a function going from (fixing start, 1) to (fixing end, 0), see backwardLookingVarianceTime()
                 Real fixingStartTime = capletVolatility()->timeFromReference(fixingDates.front());
                 Real fixingEndTime = capletVolatility()->timeFromReference(fixingDates.back());
                 Real sigma = capletVolatility()->volatility(
                     std::max(fixingDates.front(), capletVolatility()->referenceDate() + 1), effStrike);
-                Real T = std::max(fixingStartTime, 0.0);
-                if (!close_enough(fixingEndTime, T))
-                    T += cubed(fixingEndTime - T) / squared(fixingEndTime - fixingStartTime) / 3.0;
+                Real T = backwardLookingVarianceTime(fixingStartTime, fixingEndTime, dampingExponent_);
                 stdDev = sigma * std::sqrt(T);
             }
             if (optionType == Option::Type::Call)

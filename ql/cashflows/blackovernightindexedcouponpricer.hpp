@@ -35,12 +35,17 @@ namespace QuantLib {
     //! Black compounded overnight coupon pricer
     /* The methods that are implemented here to price capped / floored compounded ON coupons are
     highly experimental and ad-hoc. As soon as a market best practice has evolved, the pricer
-    should be revised. */
+    should be revised.
+
+    The optional \p dampingExponent \f$ q \f$ sets how fast the volatility of the compounded rate is
+    damped inside the accrual period when the volatility input is not effective, see
+    backwardLookingVarianceTime(); the default \f$ q = 1 \f$ is the linear damping. */
     class BlackCompoundingOvernightIndexedCouponPricer : public CompoundingOvernightIndexedCouponPricer {
     public:
         explicit BlackCompoundingOvernightIndexedCouponPricer(
                 Handle<OptionletVolatilityStructure> v = Handle<OptionletVolatilityStructure>(),
-                bool effectiveVolatilityInput = false);
+                bool effectiveVolatilityInput = false,
+                Real dampingExponent = 1.0);
         //! \name FloatingRateCoupon interface
         //@{
         void initialize(const FloatingRateCoupon& coupon) override;
@@ -57,6 +62,7 @@ namespace QuantLib {
         Real optionletRateGlobal(Option::Type optionType, Real effStrike) const;
         Real optionletRateLocal(Option::Type optionType, Real effStrike) const;
 
+        Real dampingExponent_;
         Real gearing_;
         ext::shared_ptr<IborIndex> index_;
         Real effectiveIndexFixing_, swapletRate_;
