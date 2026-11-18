@@ -2954,7 +2954,8 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                           ext::make_shared<EuropeanExercise>(today - 30));
         // an expired option never reaches the engine, so feed the arguments directly
         past.setupArguments(engine->getArguments());
-        BOOST_CHECK_THROW(engine->calculate(), Error);
+        BOOST_CHECK_EXCEPTION(engine->calculate(), Error,
+                              ExpectedErrorMessage("precedes the reference date"));
     }
 
     // Monte Carlo over the two correlated normal forwards, for both correlation signs
