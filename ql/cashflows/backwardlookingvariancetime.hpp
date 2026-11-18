@@ -38,7 +38,8 @@ namespace QuantLib {
                        \right)^q\right), \qquad q > 0,
         \f]
         which accounts for the fixings already realised. For a constant
-        volatility \f$ \sigma \f$ the variance of \f$ \log R(\tau_1) \f$ is
+        volatility \f$ \sigma \f$ the total variance of \f$ R(\tau_1) \f$
+        (of its logarithm, possibly shifted, for lognormal volatilities) is
         \f$ \sigma^2 \Theta \f$ with
         \f[
             \Theta = \int_0^{\tau_1} \psi(t)^2 \, dt
