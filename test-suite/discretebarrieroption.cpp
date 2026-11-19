@@ -116,7 +116,7 @@ namespace {
             Real st = std::exp(logS);
             Real payoff = (optionType == Option::Call) ? std::max<Real>(st - strike, 0.0)
                                                        : std::max<Real>(strike - st, 0.0);
-            stats.add((hit == knockIn) ? std::exp(-r) * payoff : 0.0);
+            stats.add((hit == knockIn) ? Real(std::exp(-r) * payoff) : Real(0.0));
         }
         return {stats.mean(), stats.errorEstimate()};
     }

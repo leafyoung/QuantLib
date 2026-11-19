@@ -33,7 +33,7 @@ namespace QuantLib {
         Real shiftedBarrier(Barrier::Type type, Real barrier, Volatility sigma, Time dt) {
             Real shift = std::exp(broadieGlassermanKouBeta * sigma * std::sqrt(dt));
             bool down = (type == Barrier::DownIn || type == Barrier::DownOut);
-            return down ? barrier / shift : barrier * shift;
+            return down ? Real(barrier / shift) : Real(barrier * shift);
         }
 
     }
