@@ -202,7 +202,11 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     for (const auto& c : cases) {
         vars.expiry = vars.today + c.days;
         Real calculated = vars.discrete(c.type, c.barrier, c.optionType, c.steps, c.strike);
-        QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+        BOOST_TEST_CONTEXT("type " << int(c.type) << ", barrier " << c.barrier << ", option "
+                                   << int(c.optionType) << ", strike " << c.strike << ", steps "
+                                   << c.steps << ", days " << c.days) {
+            QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+        }
     }
 }
 
@@ -235,7 +239,11 @@ BOOST_AUTO_TEST_CASE(testStrikeBeyondBarrier) {
     for (Size steps : std::vector<Size>{1, 12, 250}) {
         for (const auto& c : cases) {
             Real calculated = vars.discrete(c.type, c.barrier, c.optionType, steps, c.strike);
-            QL_CHECK_SMALL(calculated - c.expected, c.tolerance);
+            BOOST_TEST_CONTEXT("type " << int(c.type) << ", barrier " << c.barrier << ", option "
+                                       << int(c.optionType) << ", strike " << c.strike << ", steps "
+                                       << steps) {
+                QL_CHECK_SMALL(calculated - c.expected, c.tolerance);
+            }
         }
     }
 }
@@ -376,18 +384,24 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
         Handle<Quote>(vars.spot), vars.process->dividendYield(), vars.process->riskFreeRate(),
         Handle<BlackVolTermStructure>(surface));
 
+    // expiries on the one-year node and between the nodes, where the surface interpolates
     constexpr double beta = 0.5825971579390106;
-    for (Real strike : std::vector<Real>{85.0, 115.0}) {
-        Volatility sigma = surface->blackVol(vars.expiry, strike);
-        BOOST_REQUIRE(std::fabs(sigma - surface->blackVol(vars.expiry, 100.0)) > 0.01);
+    const Date nodeExpiry = vars.expiry;
+    for (Date expiry : {nodeExpiry, vars.today + 9 * Months, vars.today + 18 * Months}) {
+        vars.expiry = expiry;
+        Real maturity = vars.dc.yearFraction(vars.today, expiry);
+        for (Real strike : std::vector<Real>{85.0, 115.0}) {
+            Volatility sigma = surface->blackVol(expiry, strike);
+            BOOST_REQUIRE(std::fabs(sigma - surface->blackVol(expiry, 100.0)) > 0.01);
 
-        BarrierOption discrete = vars.option(Barrier::DownOut, 90.0, Option::Call, strike);
-        discrete.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(process, 12));
-        BarrierOption shifted =
-            vars.option(Barrier::DownOut, 90.0 * std::exp(-beta * sigma * std::sqrt(1.0 / 12.0)),
-                        Option::Call, strike);
-        shifted.setPricingEngine(ext::make_shared<AnalyticBarrierEngine>(process));
-        QL_CHECK_SMALL(discrete.NPV() - shifted.NPV(), 1.0e-12);
+            BarrierOption discrete = vars.option(Barrier::DownOut, 90.0, Option::Call, strike);
+            discrete.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(process, 12));
+            BarrierOption shifted = vars.option(
+                Barrier::DownOut, 90.0 * std::exp(-beta * sigma * std::sqrt(maturity / 12.0)),
+                Option::Call, strike);
+            shifted.setPricingEngine(ext::make_shared<AnalyticBarrierEngine>(process));
+            QL_CHECK_SMALL(discrete.NPV() - shifted.NPV(), 1.0e-12);
+        }
     }
 }
 
@@ -501,8 +515,12 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
     for (const auto& c : cases) {
         vars.expiry = vars.today + c.days;
         vars.vol->setValue(c.vol);
-        QL_CHECK_SMALL(vars.discrete(c.type, c.barrier, c.optionType, c.steps) - c.expected,
-                       1.0e-8);
+        BOOST_TEST_CONTEXT("type " << int(c.type) << ", barrier " << c.barrier << ", option "
+                                   << int(c.optionType) << ", steps " << c.steps << ", days "
+                                   << c.days << ", vol " << c.vol) {
+            QL_CHECK_SMALL(vars.discrete(c.type, c.barrier, c.optionType, c.steps) - c.expected,
+                           1.0e-8);
+        }
     }
 }
 
@@ -609,6 +627,14 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     americanExact.setPricingEngine(
         ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
     BOOST_CHECK_EXCEPTION(americanExact.NPV(), Error,
+                          ExpectedErrorMessage("only european style option are supported"));
+    BarrierOption bermudanExact(Barrier::UpOut, 120.0, 0.0,
+                                ext::make_shared<PlainVanillaPayoff>(Option::Call, 121.0),
+                                ext::make_shared<BermudanExercise>(
+                                    std::vector<Date>{vars.today + 6 * Months, vars.expiry}));
+    bermudanExact.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(bermudanExact.NPV(), Error,
                           ExpectedErrorMessage("only european style option are supported"));
     BarrierOption touchedExact = vars.option(Barrier::UpOut, 99.0, Option::Call, 100.0);
     touchedExact.setPricingEngine(
