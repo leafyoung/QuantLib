@@ -52,7 +52,7 @@ namespace {
         ext::shared_ptr<SimpleQuote> realRate = ext::make_shared<SimpleQuote>(0.012);
         Handle<YieldTermStructure> nominalCurve, realCurve;
         Real an = 0.08, sn = 0.015, ar = 0.05, sr = 0.012, sI = 0.08;
-        Real rhoNR = 0.4, rhoNI = 0.2, rhoRI = -0.3, I0 = 100.0;
+        Real rhoNR = 0.4, rhoNI = 0.2, rhoRI = -0.3;
 
         Setup() {
             nominalCurve = Handle<YieldTermStructure>(
@@ -62,8 +62,7 @@ namespace {
         }
 
         JarrowYildirim model() const {
-            return JarrowYildirim(nominalCurve, realCurve, an, sn, ar, sr, sI, rhoNR, rhoNI, rhoRI,
-                                  I0);
+            return JarrowYildirim(nominalCurve, realCurve, an, sn, ar, sr, sI, rhoNR, rhoNI, rhoRI);
         }
     };
 
@@ -72,7 +71,7 @@ namespace {
     }
 
     Real integrate(const std::function<Real(Real)>& f, Real a, Real b) {
-        return GaussLobattoIntegral(1000, 1.0e-13)(f, a, b);
+        return GaussLobattoIntegral(100000, 1.0e-15)(f, a, b);
     }
 
 }
@@ -83,39 +82,39 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
     s.sn = s.sr = s.sI = 0.0;
     JarrowYildirim jy = s.model();
     Real S = 2.0, T = 5.0;
-    Real fS = 100.0 * std::exp((0.03 - 0.012) * S), fT = 100.0 * std::exp((0.03 - 0.012) * T);
-    Real tol = 1.0e-12;
-    if (std::fabs(jy.forwardIndex(T) - fT) > tol * fT)
-        BOOST_ERROR("forward index " << jy.forwardIndex(T) << " expected " << fT);
+    Real fS = std::exp((0.03 - 0.012) * S), fT = std::exp((0.03 - 0.012) * T);
+    QL_CHECK_CLOSE(jy.forwardIndexRatio(T), fT, 1.0e-10);
     if (jy.yoyConvexity(S, T) != 1.0)
         BOOST_ERROR("convexity " << jy.yoyConvexity(S, T) << " expected exactly 1");
     Real expectedYoY = fT / fS;
-    if (std::fabs(jy.yoyForward(S, T) - expectedYoY) > tol)
-        BOOST_ERROR("yoy forward " << jy.yoyForward(S, T) << " expected " << expectedYoY);
+    QL_CHECK_CLOSE(jy.yoyForward(S, T), expectedYoY, 1.0e-10);
     BOOST_CHECK_EQUAL(jy.zcInflationVariance(T), 0.0);
     Real df = std::exp(-0.03 * T);
     for (Real k : {1.05, 1.10, 1.20}) {
         Real call = jy.zcInflationOption(Option::Call, k, T);
         Real put = jy.zcInflationOption(Option::Put, k, T);
-        Real expCall = df * std::max<Real>(fT / 100.0 - k, 0.0);
-        Real expPut = df * std::max<Real>(k - fT / 100.0, 0.0);
-        if (std::fabs(call - expCall) > tol || std::fabs(put - expPut) > tol)
-            BOOST_ERROR("strike " << k << ": call " << call << " put " << put << " expected "
-                                  << expCall << " and " << expPut);
+        Real expCall = df * std::max<Real>(fT - k, 0.0);
+        Real expPut = df * std::max<Real>(k - fT, 0.0);
+        QL_CHECK_CLOSE(call, expCall, 1.0e-10);
+        QL_CHECK_CLOSE(put, expPut, 1.0e-10);
     }
 }
 
 BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim closed forms against quadrature...");
     // mean reversions from the small-a branch through the closed-form threshold
+    // including one tiny and one large mean reversion, which exercise the
+    // choice of integration panels and of the branch for each term
     for (auto rates :
          {std::make_pair(0.08, 0.05), std::make_pair(1.0e-8, 1.0e-6), std::make_pair(1.0e-3, 0.5),
-          std::make_pair(0.02, 0.02), std::make_pair(0.15, 1.0e-7)}) {
+          std::make_pair(0.02, 0.02), std::make_pair(0.15, 1.0e-7), std::make_pair(1.0e-3, 2.0),
+          std::make_pair(1.0e-8, 1.0), std::make_pair(1.0e-8, 0.05), std::make_pair(2.0e-4, 2.0),
+          std::make_pair(2.0, 1.0e-8), std::make_pair(1.0, 2.0e-4)}) {
         Setup s;
         s.an = rates.first;
         s.ar = rates.second;
         JarrowYildirim jy = s.model();
-        for (Real T : {0.5, 3.0, 10.0}) {
+        for (Real T : {0.5, 3.0, 10.0, 30.0}) {
             auto integrand = [&](Real u) -> Real {
                 Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
                 return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
@@ -124,11 +123,11 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
             };
             Real expected = integrate(integrand, 0.0, T);
             Real calculated = jy.zcInflationVariance(T);
-            if (std::fabs(calculated - expected) > 1.0e-11 * std::max<Real>(1.0, expected))
-                BOOST_ERROR("V(0," << T << ") = " << calculated << " expected " << expected);
+            QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
         }
-        for (auto st : {std::make_pair(1.0, 2.0), std::make_pair(4.0, 6.0),
-                        std::make_pair(0.0, 3.0), std::make_pair(7.0, 7.5)}) {
+        for (auto st :
+             {std::make_pair(1.0, 2.0), std::make_pair(4.0, 6.0), std::make_pair(0.0, 3.0),
+              std::make_pair(7.0, 7.5), std::make_pair(10.0, 30.0), std::make_pair(30.0, 31.0)}) {
             Real S = st.first, T = st.second;
             auto integrand = [&](Real u) -> Real {
                 Real delta = bFun(s.ar, T - u) - bFun(s.ar, S - u);
@@ -138,9 +137,7 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
             };
             Real expected = S > 0.0 ? integrate(integrand, 0.0, S) : Real(0.0);
             Real calculated = std::log(jy.yoyConvexity(S, T));
-            if (std::fabs(calculated - expected) > 1.0e-12)
-                BOOST_ERROR("log convexity(" << S << "," << T << ") = " << calculated
-                                             << " expected " << expected);
+            QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
         }
         BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
     }
@@ -154,10 +151,8 @@ BOOST_AUTO_TEST_CASE(testZcCapletFloorletParity) {
         for (Real k : {0.95, 1.0, 1.1, 1.3}) {
             Real call = jy.zcInflationOption(Option::Call, k, T);
             Real put = jy.zcInflationOption(Option::Put, k, T);
-            Real expected = std::exp(-0.03 * T) * (jy.forwardIndex(T) / s.I0 - k);
-            if (std::fabs(call - put - expected) > 1.0e-14)
-                BOOST_ERROR("parity violated at T = " << T << ", K = " << k << ": " << call - put
-                                                      << " vs " << expected);
+            Real expected = std::exp(-0.03 * T) * (jy.forwardIndexRatio(T) - k);
+            QL_CHECK_CLOSE(call - put, expected, 1.0e-10);
         }
     }
 }
@@ -178,7 +173,7 @@ BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
         },
         0.0, T);
     Real sd = std::sqrt(variance);
-    Real forward = jy.forwardIndex(T) / s.I0;
+    Real forward = jy.forwardIndexRatio(T);
     Real df = std::exp(-0.03 * T);
     NormalDistribution density;
     // payoff is smooth on each side of the exercise boundary in the normal variate
@@ -190,14 +185,9 @@ BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
     Real putExpected = -df * integrate(payoff, -12.0, zStar);
     Real call = jy.zcInflationOption(Option::Call, strike, T);
     Real put = jy.zcInflationOption(Option::Put, strike, T);
-    Real tolerance = 1.0e-10;
-    if (std::fabs(call - callExpected) > tolerance)
-        BOOST_ERROR("call " << call << " expected " << callExpected);
-    if (std::fabs(put - putExpected) > tolerance)
-        BOOST_ERROR("put " << put << " expected " << putExpected);
-    Real black = df * blackFormula(Option::Call, strike, forward, sd);
-    if (std::fabs(call - black) > tolerance)
-        BOOST_ERROR("call " << call << " vs Black " << black);
+    QL_CHECK_CLOSE(call, callExpected, 1.0e-6);
+    QL_CHECK_CLOSE(put, putExpected, 1.0e-6);
+    QL_CHECK_CLOSE(call, df * blackFormula(Option::Call, strike, forward, sd), 1.0e-9);
 }
 
 BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
@@ -255,7 +245,7 @@ BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
     Real calculated = jy.yoyForward(S, T);
     BOOST_TEST_MESSAGE("YoY forward: closed form " << calculated << ", Monte Carlo " << meanYoY
                                                    << " +- " << seYoY);
-    Real curveOnly = jy.forwardIndex(T) / jy.forwardIndex(S);
+    Real curveOnly = jy.forwardIndexRatio(T) / jy.forwardIndexRatio(S);
     if (std::fabs(meanYoY - calculated) > 4.0 * seYoY)
         BOOST_ERROR("YoY forward " << calculated << " vs Monte Carlo " << meanYoY << " +- "
                                    << seYoY);
@@ -337,33 +327,94 @@ BOOST_AUTO_TEST_CASE(testZcVarianceAgainstMonteCarlo) {
 BOOST_AUTO_TEST_CASE(testParameterValidation) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim parameter validation...");
     Setup s;
-    auto make = [&](Real rhoNR, Real rhoNI, Real rhoRI) {
-        JarrowYildirim(s.nominalCurve, s.realCurve, s.an, s.sn, s.ar, s.sr, s.sI, rhoNR, rhoNI,
-                       rhoRI, s.I0);
+    auto make = [&](Real an, Real sn, Real ar, Real sr, Real sI, Real rhoNR, Real rhoNI,
+                    Real rhoRI) {
+        JarrowYildirim(s.nominalCurve, s.realCurve, an, sn, ar, sr, sI, rhoNR, rhoNI, rhoRI);
     };
-    BOOST_CHECK_EXCEPTION(make(1.2, 0.0, 0.0), Error,
+    auto correlations = [&](Real rhoNR, Real rhoNI, Real rhoRI) {
+        make(s.an, s.sn, s.ar, s.sr, s.sI, rhoNR, rhoNI, rhoRI);
+    };
+    BOOST_CHECK_EXCEPTION(correlations(1.2, 0.0, 0.0), Error,
                           ExpectedErrorMessage("correlation 1.2 outside [-1, 1]"));
+    BOOST_CHECK_EXCEPTION(correlations(0.0, -1.2, 0.0), Error,
+                          ExpectedErrorMessage("correlation -1.2 outside [-1, 1]"));
     BOOST_CHECK_EXCEPTION(
-        make(0.9, 0.9, -0.9), Error,
+        correlations(0.9, 0.9, 0.0), Error,
         ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
-    BOOST_CHECK_NO_THROW(make(1.0, 1.0, 1.0));
+    BOOST_CHECK_EXCEPTION(
+        correlations(0.9, 0.9, -0.9), Error,
+        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+    BOOST_CHECK_NO_THROW(correlations(1.0, 1.0, 1.0));
+    BOOST_CHECK_EXCEPTION(make(0.0, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("nominal mean reversion must be positive"));
+    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, 0.0, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("real mean reversion must be positive"));
+    BOOST_CHECK_EXCEPTION(make(s.an, -0.1, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("negative nominal volatility"));
+    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, -0.1, s.sI, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("negative real volatility"));
+    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, s.sr, -0.1, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("negative index volatility"));
+
+    Handle<YieldTermStructure> empty;
+    BOOST_CHECK_EXCEPTION(
+        JarrowYildirim(empty, s.realCurve, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+        ExpectedErrorMessage("empty nominal curve"));
+    BOOST_CHECK_EXCEPTION(
+        JarrowYildirim(s.nominalCurve, empty, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+        ExpectedErrorMessage("empty real curve"));
     Handle<YieldTermStructure> shifted(
         ext::make_shared<FlatForward>(s.today + 1, Handle<Quote>(s.realRate), Actual365Fixed()));
     BOOST_CHECK_EXCEPTION(
-        JarrowYildirim(s.nominalCurve, shifted, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0, s.I0),
-        Error, ExpectedErrorMessage("nominal and real curves must have the same reference date"));
+        JarrowYildirim(s.nominalCurve, shifted, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+        ExpectedErrorMessage("nominal and real curves must have the same reference date"));
     Handle<YieldTermStructure> otherDayCounter(
         ext::make_shared<FlatForward>(s.today, Handle<Quote>(s.realRate), Actual360()));
     BOOST_CHECK_EXCEPTION(
-        JarrowYildirim(s.nominalCurve, otherDayCounter, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0,
-                       s.I0),
+        JarrowYildirim(s.nominalCurve, otherDayCounter, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0,
+                       0.0),
         Error, ExpectedErrorMessage("nominal and real curves must have the same day counter"));
-    BOOST_CHECK_EXCEPTION(JarrowYildirim(s.nominalCurve, s.realCurve, 0.0, s.sn, s.ar, s.sr, s.sI,
-                                         0.0, 0.0, 0.0, s.I0),
-                          Error, ExpectedErrorMessage("nominal mean reversion must be positive"));
-    BOOST_CHECK_EXCEPTION(JarrowYildirim(s.nominalCurve, s.realCurve, s.an, s.sn, s.ar, s.sr, -0.1,
-                                         0.0, 0.0, 0.0, s.I0),
-                          Error, ExpectedErrorMessage("negative index volatility"));
+
+    // time arguments
+    JarrowYildirim jy = s.model();
+    BOOST_CHECK_EXCEPTION(jy.forwardIndexRatio(-1.0), Error,
+                          ExpectedErrorMessage("negative time (-1) given"));
+    BOOST_CHECK_EXCEPTION(jy.zcInflationVariance(-1.0), Error,
+                          ExpectedErrorMessage("negative time (-1) given"));
+    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, 0.0), Error,
+                          ExpectedErrorMessage("non-positive time (0) given"));
+    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, -1.0), Error,
+                          ExpectedErrorMessage("non-positive time (-1) given"));
+    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(-1.0, 2.0), Error,
+                          ExpectedErrorMessage("negative time (-1) given"));
+    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(3.0, 3.0), Error,
+                          ExpectedErrorMessage("start time (3) must be smaller than end time (3)"));
+    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(4.0, 3.0), Error,
+                          ExpectedErrorMessage("start time (4) must be smaller than end time (3)"));
+    BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(0.0));
+    BOOST_CHECK_NO_THROW(jy.zcInflationVariance(0.0));
+    BOOST_CHECK_NO_THROW(jy.yoyConvexity(0.0, 1.0));
+}
+
+BOOST_AUTO_TEST_CASE(testCurveConventionsAfterRelinking) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim curve conventions after relinking...");
+    Setup s;
+    RelinkableHandle<YieldTermStructure> real(*s.realCurve);
+    JarrowYildirim jy(s.nominalCurve, real, s.an, s.sn, s.ar, s.sr, s.sI, s.rhoNR, s.rhoNI,
+                      s.rhoRI);
+    BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(2.0));
+    real.linkTo(
+        ext::make_shared<FlatForward>(s.today + 1, Handle<Quote>(s.realRate), Actual365Fixed()));
+    ExpectedErrorMessage message("nominal and real curves must have the same reference date");
+    BOOST_CHECK_EXCEPTION(jy.forwardIndexRatio(2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.zcInflationVariance(2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, 2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(1.0, 2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.yoyForward(1.0, 2.0), Error, message);
+    real.linkTo(ext::make_shared<FlatForward>(s.today, Handle<Quote>(s.realRate), Actual360()));
+    BOOST_CHECK_EXCEPTION(
+        jy.forwardIndexRatio(2.0), Error,
+        ExpectedErrorMessage("nominal and real curves must have the same day counter"));
 }
 
 BOOST_AUTO_TEST_CASE(testObserverRegistration) {
@@ -372,16 +423,19 @@ BOOST_AUTO_TEST_CASE(testObserverRegistration) {
     auto jy = ext::make_shared<JarrowYildirim>(s.model());
     Flag flag;
     flag.registerWith(jy);
-    Real before = jy->forwardIndex(5.0);
+    Real before = jy->forwardIndexRatio(5.0);
     s.realRate->setValue(0.02);
     if (!flag.isUp())
         BOOST_ERROR("observer was not notified of a real curve change");
-    if (jy->forwardIndex(5.0) >= before)
-        BOOST_ERROR("forward index did not fall after a real rate increase");
+    Real afterReal = jy->forwardIndexRatio(5.0);
+    if (afterReal >= before)
+        BOOST_ERROR("forward index ratio did not fall after a real rate increase");
     flag.lower();
     s.nominalRate->setValue(0.035);
     if (!flag.isUp())
         BOOST_ERROR("observer was not notified of a nominal curve change");
+    if (jy->forwardIndexRatio(5.0) <= afterReal)
+        BOOST_ERROR("forward index ratio did not rise after a nominal rate increase");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

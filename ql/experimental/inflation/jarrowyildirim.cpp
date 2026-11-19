@@ -31,7 +31,7 @@ namespace QuantLib {
 
         // Closed forms below subtract nearly equal terms when a*T is small;
         // below this threshold the smooth integrands are integrated instead.
-        const Real closedFormThreshold = 0.1;
+        constexpr double closedFormThreshold = 0.1;
 
         // int_0^T f(s) ds for an integrand varying on the scale 1/rate,
         // by composite Gauss-Legendre (nodes on [-1,1]) with panels of width at most 1/rate
@@ -62,10 +62,10 @@ namespace QuantLib {
 
         // int_0^T B_a(u,T) B_b(u,T) du
         Real integralBB(Real a, Real b, Time T) {
-            if (std::min(a, b) * T < closedFormThreshold)
+            if (std::min<Real>(a, b) * T < closedFormThreshold)
                 return smoothIntegral(
                     [&](Real s) -> Real { return expIntegral(a, s) * expIntegral(b, s); }, T,
-                    std::max(a, b));
+                    std::max<Real>(a, b));
             return (T - expIntegral(a, T) - expIntegral(b, T) + expIntegral(a + b, T)) / (a * b);
         }
 
@@ -83,9 +83,9 @@ namespace QuantLib {
                 QL_REQUIRE(rho >= -1.0 && rho <= 1.0, "correlation " << rho << " outside [-1, 1]");
             Real det =
                 1.0 - rhoNR * rhoNR - rhoNI * rhoNI - rhoRI * rhoRI + 2.0 * rhoNR * rhoNI * rhoRI;
-            QL_REQUIRE(det >= -1.0e-12, "correlation matrix is not positive semi-definite "
-                                        "(determinant "
-                                            << det << ")");
+            QL_REQUIRE(det >= -1.0e-12,
+                       "correlation matrix is not positive semi-definite (determinant " << det
+                                                                                        << ")");
         }
 
     }
@@ -99,36 +99,40 @@ namespace QuantLib {
                                    Real indexVolatility,
                                    Real rhoNominalReal,
                                    Real rhoNominalIndex,
-                                   Real rhoRealIndex,
-                                   Real baseIndex)
+                                   Real rhoRealIndex)
     : nominalCurve_(std::move(nominalCurve)), realCurve_(std::move(realCurve)),
       an_(nominalMeanReversion), sn_(nominalVolatility), ar_(realMeanReversion),
       sr_(realVolatility), sigmaI_(indexVolatility), rhoNR_(rhoNominalReal),
-      rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex), baseIndex_(baseIndex) {
+      rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex) {
+        checkCurves();
+        QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive");
+        QL_REQUIRE(realMeanReversion > 0.0, "real mean reversion must be positive");
+        QL_REQUIRE(nominalVolatility >= 0.0, "negative nominal volatility");
+        QL_REQUIRE(realVolatility >= 0.0, "negative real volatility");
+        QL_REQUIRE(indexVolatility >= 0.0, "negative index volatility");
+        checkCorrelations(rhoNominalReal, rhoNominalIndex, rhoRealIndex);
+        registerWith(nominalCurve_);
+        registerWith(realCurve_);
+    }
+
+    void JarrowYildirim::checkCurves() const {
         QL_REQUIRE(!nominalCurve_.empty(), "empty nominal curve");
         QL_REQUIRE(!realCurve_.empty(), "empty real curve");
         QL_REQUIRE(nominalCurve_->referenceDate() == realCurve_->referenceDate(),
                    "nominal and real curves must have the same reference date");
         QL_REQUIRE(nominalCurve_->dayCounter() == realCurve_->dayCounter(),
                    "nominal and real curves must have the same day counter");
-        QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive");
-        QL_REQUIRE(realMeanReversion > 0.0, "real mean reversion must be positive");
-        QL_REQUIRE(nominalVolatility >= 0.0, "negative nominal volatility");
-        QL_REQUIRE(realVolatility >= 0.0, "negative real volatility");
-        QL_REQUIRE(indexVolatility >= 0.0, "negative index volatility");
-        QL_REQUIRE(baseIndex > 0.0, "base index must be positive");
-        checkCorrelations(rhoNominalReal, rhoNominalIndex, rhoRealIndex);
-        registerWith(nominalCurve_);
-        registerWith(realCurve_);
     }
 
-    Real JarrowYildirim::forwardIndex(Time T) const {
-        QL_REQUIRE(T >= 0.0, "negative time " << T);
-        return baseIndex_ * realCurve_->discount(T) / nominalCurve_->discount(T);
+    Real JarrowYildirim::forwardIndexRatio(Time T) const {
+        checkCurves();
+        QL_REQUIRE(T >= 0.0, "negative time (" << T << ") given");
+        return realCurve_->discount(T) / nominalCurve_->discount(T);
     }
 
     Real JarrowYildirim::zcInflationVariance(Time T) const {
-        QL_REQUIRE(T >= 0.0, "negative time " << T);
+        checkCurves();
+        QL_REQUIRE(T >= 0.0, "negative time (" << T << ") given");
         return sigmaI_ * sigmaI_ * T + sr_ * sr_ * integralBB(ar_, ar_, T) +
                sn_ * sn_ * integralBB(an_, an_, T) -
                2.0 * rhoRI_ * sigmaI_ * sr_ * integralB(ar_, T) +
@@ -137,14 +141,16 @@ namespace QuantLib {
     }
 
     Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
-        QL_REQUIRE(T > 0.0, "non-positive time " << T);
+        QL_REQUIRE(T > 0.0, "non-positive time (" << T << ") given");
         Real stdDev = std::sqrt(std::max<Real>(zcInflationVariance(T), 0.0));
         return nominalCurve_->discount(T) *
-               blackFormula(type, strike, forwardIndex(T) / baseIndex_, stdDev);
+               blackFormula(type, strike, forwardIndexRatio(T), stdDev);
     }
 
     Real JarrowYildirim::yoyConvexity(Time S, Time T) const {
-        QL_REQUIRE(S >= 0.0 && S < T, "invalid times: S = " << S << ", T = " << T);
+        checkCurves();
+        QL_REQUIRE(S >= 0.0, "negative time (" << S << ") given");
+        QL_REQUIRE(S < T, "start time (" << S << ") must be smaller than end time (" << T << ")");
         Real exponent =
             sr_ * expIntegral(ar_, T - S) *
             (rhoRI_ * sigmaI_ * expIntegral(ar_, S) + rhoNR_ * sn_ * integralExpB(ar_, an_, S) -
@@ -153,7 +159,7 @@ namespace QuantLib {
     }
 
     Real JarrowYildirim::yoyForward(Time S, Time T) const {
-        return forwardIndex(T) / forwardIndex(S) * yoyConvexity(S, T);
+        return forwardIndexRatio(T) / forwardIndexRatio(S) * yoyConvexity(S, T);
     }
 
 }

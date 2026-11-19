@@ -45,9 +45,24 @@ namespace QuantLib {
         with constant parameters, \f$ d\langle W_n,W_r\rangle = \rho_{nr}dt \f$,
         \f$ d\langle W_n,W_I\rangle = \rho_{nI}dt \f$ and
         \f$ d\langle W_r,W_I\rangle = \rho_{rI}dt \f$. The nominal and real
-        Hull-White rates are fitted to the nominal and real zero curves, the
-        latter being the curve of real zero-coupon bond prices
-        \f$ P_r(0,T) \f$; both mean reversions must be positive.
+        Hull-White rates are fitted to the nominal and real zero curves; both
+        mean reversions must be positive.
+
+        The real curve is an input, not derived by the model: a plain
+        YieldTermStructure whose discount factors are the real zero-coupon
+        bond prices \f$ P_r(0,T) \f$. They are tied to the index forward by
+        \f[
+            P_r(0,T) = P_n(0,T)\,\frac{E^T[I_T]}{I_0}.
+        \f]
+        For instance, from a zero-inflation curve with annually compounded
+        zero rates \f$ z(T) \f$ and \f$ E^T[I_T]/I_0 = (1+z(T))^T \f$, the real
+        curve has discount factors \f$ P_n(0,T)(1+z(T))^T \f$; observation lags,
+        interpolation and seasonality are the user's responsibility when
+        building it.
+
+        \f$ I_T \f$ is the index level at time \f$ T \f$ itself, with no
+        observation lag or interpolation: the prices below are not prices of
+        CPI cap/floors on lagged fixings.
 
         The index forward \f$ F(t,T) = I_t P_r(t,T)/P_n(t,T) \f$ is a
         martingale under the nominal \f$ T \f$-forward measure, so \f$ I_T \f$
@@ -78,6 +93,29 @@ namespace QuantLib {
     */
     class JarrowYildirim : public Observer, public Observable {
       public:
+        /*! \param nominalCurve  curve of nominal discount factors
+            \param realCurve  curve of real discount factors; it must have the same
+                              reference date and day counter as the nominal curve,
+                              which is checked at construction and at each call
+            \param nominalMeanReversion  \f$ a_n > 0 \f$
+            \param nominalVolatility  absolute (normal) volatility \f$ \sigma_n \ge 0 \f$
+                                        of the nominal short rate
+            \param realMeanReversion  \f$ a_r > 0 \f$
+            \param realVolatility  absolute volatility \f$ \sigma_r \ge 0 \f$ of the real
+                                    short rate
+            \param indexVolatility  lognormal volatility \f$ \sigma_I \ge 0 \f$ of the index
+            \param rhoNominalReal  correlation \f$ \rho_{nr} \f$
+            \param rhoNominalIndex  correlation \f$ \rho_{nI} \f$
+            \param rhoRealIndex  correlation \f$ \rho_{rI} \f$
+
+            Each correlation must lie in \f$ [-1,1] \f$ and the correlation
+            matrix must be positive semi-definite (determinant at least
+            \f$ -10^{-12} \f$).
+
+            The model registers with both curve handles and notifies its own
+            observers when either changes; results are computed on demand from
+            the current curves.
+        */
         JarrowYildirim(Handle<YieldTermStructure> nominalCurve,
                        Handle<YieldTermStructure> realCurve,
                        Real nominalMeanReversion,
@@ -87,8 +125,7 @@ namespace QuantLib {
                        Real indexVolatility,
                        Real rhoNominalReal,
                        Real rhoNominalIndex,
-                       Real rhoRealIndex,
-                       Real baseIndex);
+                       Real rhoRealIndex);
 
         Real nominalMeanReversion() const { return an_; }
         Real nominalVolatility() const { return sn_; }
@@ -98,17 +135,18 @@ namespace QuantLib {
         Real rhoNominalReal() const { return rhoNR_; }
         Real rhoNominalIndex() const { return rhoNI_; }
         Real rhoRealIndex() const { return rhoRI_; }
-        Real baseIndex() const { return baseIndex_; }
 
-        //! \f$ F(0,T) = I_0 P_r(0,T)/P_n(0,T) \f$, for \f$ T \ge 0 \f$
-        Real forwardIndex(Time T) const;
+        //! \f$ F(0,T)/I_0 = P_r(0,T)/P_n(0,T) \f$, for \f$ T \ge 0 \f$
+        Real forwardIndexRatio(Time T) const;
 
         //! total variance \f$ V(0,T) \f$ of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure,
         //! for \f$ T \ge 0 \f$
         Real zcInflationVariance(Time T) const;
 
-        /*! Price of a zero-coupon inflation cap/floor paying
-            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$.
+        /*! Price, per unit notional and discounted on the nominal curve, of
+            a zero-coupon inflation cap/floor paying
+            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$; the strike
+            \f$ K \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
         */
         Real zcInflationOption(Option::Type type, Real strike, Time T) const;
 
@@ -121,8 +159,10 @@ namespace QuantLib {
         void update() override { notifyObservers(); }
 
       private:
+        void checkCurves() const;
+
         Handle<YieldTermStructure> nominalCurve_, realCurve_;
-        Real an_, sn_, ar_, sr_, sigmaI_, rhoNR_, rhoNI_, rhoRI_, baseIndex_;
+        Real an_, sn_, ar_, sr_, sigmaI_, rhoNR_, rhoNI_, rhoRI_;
     };
 
 }
