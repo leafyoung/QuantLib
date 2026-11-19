@@ -95,9 +95,12 @@ namespace {
     // Exact lognormal steps at the N monitoring dates: no time-discretization error.
     // Returns the discounted mean payoff and its standard error.
     std::pair<Real, Real> monteCarlo(const CommonVars& vars, Barrier::Type type, Real barrier,
-                                     Option::Type optionType, Size steps, Size paths) {
-        Real s0 = vars.spot->value(), strike = 100.0, r = vars.rate->value(),
-             q = vars.dividend->value(), sigma = vars.vol->value();
+                                     Option::Type optionType, Real strike, Size steps,
+                                     Size paths) {
+        Real s0 = vars.spot->value();
+        Real r = vars.rate->value();
+        Real q = vars.dividend->value();
+        Real sigma = vars.vol->value();
         Real maturity = vars.dc.yearFraction(vars.today, vars.expiry);
         Real dt = maturity / Real(steps);
         Real drift = (r - q - 0.5 * sigma * sigma) * dt, diffusion = sigma * std::sqrt(dt);
@@ -249,7 +252,7 @@ BOOST_AUTO_TEST_CASE(testStrikeNearBarrier) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(testKnockOutExceedsContinuous) {
+BOOST_AUTO_TEST_CASE(testCorrectionDirection) {
     BOOST_TEST_MESSAGE("Testing the direction of the discrete-monitoring correction...");
 
     CommonVars vars;
@@ -297,19 +300,12 @@ BOOST_AUTO_TEST_CASE(testConvergenceToContinuous) {
 BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing against a Monte Carlo simulation of discrete monitoring...");
 
-    // The seed is fixed, so the run is deterministic.  Over 16 other seeds of this generator
-    // these cases stay within 2.6 standard errors of the corrected price and at least 18
-    // away from the continuous one.  The correction is an approximation, so the corrected
-    // price must lie within four standard errors of the simulation, while the continuous
-    // price must lie more than ten standard errors away.
-    // The cases are down calls and up puts.  Reverse barriers (up calls, down puts), where
-    // the knock-out removes in-the-money payoff, are markedly less accurate at coarse
-    // monitoring.  Measured against a 2M+-path exact simulation, S = 100, T = 1: the up-out
-    // call with H = 120 and K = 100 is off by about +8-9% at 12 dates and +2.4% at 50, the
-    // down-out put with H = 90 and K = 100 by about +19% at 12 and +6% at 50.  The relative
-    // error grows as the strike approaches the barrier: at 12 dates the up-out call with
-    // H = 120 is off by about +27% at K = 110, +80% at K = 115 and 11 times at K = 119, the
-    // down-out put with H = 90 by about +55% at K = 95 and 7.5 times at K = 91.
+    // The corrected price must lie within four standard errors of the simulation (fixed seed),
+    // while the continuous price must lie more than ten standard errors away.  The cases are
+    // down calls and up puts: reverse barriers (up calls, down puts) are markedly less accurate
+    // at coarse monitoring, e.g. against a 2M+-path simulation at S = K = 100, T = 1 the
+    // up-out call with H = 120 is off by about +8-9% at 12 dates and the down-out put with
+    // H = 90 by about +19%, and the error grows as the strike approaches the barrier.
     const Size paths = 200000;
     struct Case {
         Date::serial_type days;
@@ -333,7 +329,7 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     CommonVars vars;
     for (const auto& c : cases) {
         vars.expiry = vars.today + c.days;
-        auto mc = monteCarlo(vars, c.type, c.barrier, c.optionType, c.steps, paths);
+        auto mc = monteCarlo(vars, c.type, c.barrier, c.optionType, 100.0, c.steps, paths);
         Real corrected = vars.discrete(c.type, c.barrier, c.optionType, c.steps);
         Real continuous = vars.continuous(c.type, c.barrier, c.optionType);
         std::ostringstream where;
@@ -422,10 +418,29 @@ BOOST_AUTO_TEST_CASE(testZeroVolatility) {
     const Real vanilla = 2.8969248806;
     QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Call, 12) - vanilla, 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 102.0, Option::Call, 12), 1.0e-9);
+    // the forward at maturity is 103.0455: still above 103
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.0, Option::Call, 12), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 103.0, Option::Call, 12) - vanilla, 1.0e-9);
+    // a barrier 0.005 below it: any floor on the volatility that moves it by more than 0.01% flips
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.04, Option::Call, 12), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 103.04, Option::Call, 12) - vanilla, 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 102.0, Option::Call, 12) - vanilla, 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 102.0, Option::Call, 12, 102.5), 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 102.0, Option::Call, 12, 102.5) - 0.5188513194,
                    1.0e-9);
+}
+
+BOOST_AUTO_TEST_CASE(testLargeVolatility) {
+    BOOST_TEST_MESSAGE("Testing a large volatility, where the barrier shift is about 31%...");
+
+    // sigma = 160%, T = 1, N = 12: shift = exp(beta sigma sqrt(T/N)) = 1.3088.  Reiner-Rubinstein
+    // prices at the shifted barrier computed outside QuantLib.
+    CommonVars vars;
+    vars.vol->setValue(1.6);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.0, Option::Call, 12) - 0.0177526624, 1.0e-8);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 120.0, Option::Call, 12) - 0.0902445760, 1.0e-8);
+    QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Call, 12) - 29.0453923749, 1.0e-8);
+    QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Put, 12) - 0.0431694841, 1.0e-8);
 }
 
 BOOST_AUTO_TEST_CASE(testErrorMessages) {

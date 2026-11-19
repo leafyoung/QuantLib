@@ -17,9 +17,9 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 */
 
-#include <ql/pricingengines/barrier/analyticdiscretebarrierengine.hpp>
 #include <ql/exercise.hpp>
 #include <ql/instruments/vanillaoption.hpp>
+#include <ql/pricingengines/barrier/analyticdiscretebarrierengine.hpp>
 #include <ql/pricingengines/vanilla/analyticeuropeanengine.hpp>
 #include <cmath>
 #include <utility>
@@ -97,9 +97,8 @@ namespace QuantLib {
             dynamic_cast<BarrierOption::arguments*>(continuousEngine_->getArguments());
         QL_REQUIRE(continuousArgs, "wrong argument type");
         *continuousArgs = arguments_;
-        continuousArgs->barrier =
-            shiftedBarrier(arguments_.barrierType, arguments_.barrier, sigma,
-                           T / static_cast<Real>(monitoringSteps_));
+        continuousArgs->barrier = shiftedBarrier(arguments_.barrierType, arguments_.barrier, sigma,
+                                                 T / static_cast<Real>(monitoringSteps_));
         continuousEngine_->reset();
         continuousEngine_->calculate();
 

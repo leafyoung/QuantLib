@@ -45,18 +45,16 @@ namespace QuantLib {
 
         The correction is an asymptotic approximation for small
         \f$ \sigma\sqrt{\Delta t} \f$; accuracy degrades for large
-        \f$ \Delta t \f$ and near the barrier.  Reverse barriers (up calls
-        and down puts, where the knock-out removes in-the-money payoff) are
-        markedly less accurate at coarse monitoring: for reverse
-        knock-outs the relative error grows as the strike approaches the
-        barrier and with maturity at fixed \f$ N \f$, and is not bounded by
-        figures quoted at the money.  When the strike lies beyond the barrier
-        (up call with \f$ K \ge H \f$, down put with \f$ K \le H \f$) the
-        result is exact: zero for a knock-out, the vanilla price for a
-        knock-in; the price is therefore discontinuous in the strike at
-        \f$ K = H \f$, where the exact branch takes over.  With zero
-        volatility and the spot exactly on the barrier, the convention of
-        AnalyticBarrierEngine (barrier hit at the valuation date) applies.
+        \f$ \Delta t \f$ and near the barrier.  Reverse knock-outs (up
+        calls, down puts) are markedly less accurate at coarse monitoring,
+        increasingly so as the strike approaches the barrier and with
+        maturity.  When the strike lies beyond the barrier (up call with
+        \f$ K \ge H \f$, down put with \f$ K \le H \f$) the result is
+        exact: zero for a knock-out, the vanilla price for a knock-in; the
+        price is therefore discontinuous in the strike at \f$ K = H \f$,
+        where the exact branch takes over.  With zero volatility and the
+        spot exactly on the barrier, the convention of AnalyticBarrierEngine
+        (barrier hit at the valuation date) applies.
         \f$ \sigma \f$ is the Black volatility at the expiry and the option
         strike.  Rebates are not supported.
 
