@@ -33,6 +33,7 @@
 #include <ql/quotes/simplequote.hpp>
 #include <ql/termstructures/volatility/equityfx/blackvariancesurface.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
+#include <ql/time/daycounters/actual360.hpp>
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <algorithm>
 #include <cmath>
@@ -64,27 +65,34 @@ namespace {
         CommonVars() {
             Settings::instance().evaluationDate() = today;
             process = ext::make_shared<BlackScholesMertonProcess>(
-                Handle<Quote>(spot),
-                Handle<YieldTermStructure>(flatRate(today, dividend, dc)),
+                Handle<Quote>(spot), Handle<YieldTermStructure>(flatRate(today, dividend, dc)),
                 Handle<YieldTermStructure>(flatRate(today, rate, dc)),
                 Handle<BlackVolTermStructure>(flatVol(today, vol, dc)));
         }
 
-        BarrierOption option(Barrier::Type type, Real barrier, Option::Type optionType,
-                             Real strike = 100.0, Real rebate = 0.0) const {
+        BarrierOption option(Barrier::Type type,
+                             Real barrier,
+                             Option::Type optionType,
+                             Real strike = 100.0,
+                             Real rebate = 0.0) const {
             return BarrierOption(type, barrier, rebate,
                                  ext::make_shared<PlainVanillaPayoff>(optionType, strike),
                                  ext::make_shared<EuropeanExercise>(expiry));
         }
 
-        Real discrete(Barrier::Type type, Real barrier, Option::Type optionType, Size steps,
+        Real discrete(Barrier::Type type,
+                      Real barrier,
+                      Option::Type optionType,
+                      Size steps,
                       Real strike = 100.0) const {
             BarrierOption o = option(type, barrier, optionType, strike);
             o.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(process, steps));
             return o.NPV();
         }
 
-        Real continuous(Barrier::Type type, Real barrier, Option::Type optionType,
+        Real continuous(Barrier::Type type,
+                        Real barrier,
+                        Option::Type optionType,
                         Real strike = 100.0) const {
             BarrierOption o = option(type, barrier, optionType, strike);
             o.setPricingEngine(ext::make_shared<AnalyticBarrierEngine>(process));
@@ -94,8 +102,12 @@ namespace {
 
     // Exact lognormal steps at the N monitoring dates: no time-discretization error.
     // Returns the discounted mean payoff and its standard error.
-    std::pair<Real, Real> monteCarlo(const CommonVars& vars, Barrier::Type type, Real barrier,
-                                     Option::Type optionType, Real strike, Size steps,
+    std::pair<Real, Real> monteCarlo(const CommonVars& vars,
+                                     Barrier::Type type,
+                                     Real barrier,
+                                     Option::Type optionType,
+                                     Real strike,
+                                     Size steps,
                                      Size paths) {
         Real s0 = vars.spot->value();
         Real r = vars.rate->value();
@@ -118,8 +130,8 @@ namespace {
                 hit = hit || (down ? s <= barrier : s >= barrier);
             }
             Real st = std::exp(logS);
-            Real payoff = (optionType == Option::Call) ? std::max<Real>(st - strike, 0.0)
-                                                       : std::max<Real>(strike - st, 0.0);
+            Real payoff = (optionType == Option::Call) ? std::max<Real>(st - strike, 0.0) :
+                                                         std::max<Real>(strike - st, 0.0);
             stats.add((hit == knockIn) ? Real(std::exp(-r * maturity) * payoff) : Real(0.0));
         }
         return {stats.mean(), stats.errorEstimate()};
@@ -421,7 +433,7 @@ BOOST_AUTO_TEST_CASE(testZeroVolatility) {
     // the forward at maturity is 103.0455: still above 103
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.0, Option::Call, 12), 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 103.0, Option::Call, 12) - vanilla, 1.0e-9);
-    // a barrier 0.005 below it: any floor on the volatility that moves it by more than 0.01% flips
+    // a barrier 0.005 below it: any floor on the volatility that moves it by more than 0.006% flips
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.04, Option::Call, 12), 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 103.04, Option::Call, 12) - vanilla, 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 102.0, Option::Call, 12) - vanilla, 1.0e-9);
@@ -441,6 +453,99 @@ BOOST_AUTO_TEST_CASE(testLargeVolatility) {
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 120.0, Option::Call, 12) - 0.0902445760, 1.0e-8);
     QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Call, 12) - 29.0453923749, 1.0e-8);
     QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Put, 12) - 0.0431694841, 1.0e-8);
+}
+
+BOOST_AUTO_TEST_CASE(testVolatilityClock) {
+    BOOST_TEST_MESSAGE("Testing that the time to expiry is measured on the volatility clock...");
+
+    // Actual/360 volatility surface over Actual/365 (Fixed) rate curves: the monitoring step
+    // is T_vol/N with T_vol = 365/360, while discounting runs over T = 1.  Reference prices at
+    // the barrier moved by exp(+-beta sigma sqrt(T_vol/N)), computed outside QuantLib.
+    CommonVars vars;
+    auto process = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(vars.spot), vars.process->dividendYield(), vars.process->riskFreeRate(),
+        Handle<BlackVolTermStructure>(flatVol(vars.today, vars.vol, Actual360())));
+
+    struct Case {
+        Barrier::Type type;
+        Real barrier;
+        Option::Type optionType;
+        Real expected;
+    };
+    const Case cases[] = {
+        {Barrier::DownOut, 90.0, Option::Call, 9.6143073983},
+        {Barrier::DownIn, 90.0, Option::Put, 7.9970499789},
+        {Barrier::UpIn, 120.0, Option::Call, 9.8793277723},
+        {Barrier::UpOut, 120.0, Option::Put, 7.9646482768},
+    };
+    for (const auto& c : cases) {
+        BarrierOption o = vars.option(c.type, c.barrier, c.optionType);
+        o.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(process, 12));
+        QL_CHECK_SMALL(o.NPV() - c.expected, 1.0e-8);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
+    BOOST_TEST_MESSAGE("Testing one and two dates, short maturities and extreme volatilities...");
+
+    // Reiner-Rubinstein prices at the shifted barrier computed outside QuantLib.
+    struct Case {
+        Date::serial_type days;
+        Volatility vol;
+        Size steps;
+        Barrier::Type type;
+        Real barrier;
+        Option::Type optionType;
+        Real expected;
+    };
+    const Case cases[] = {
+        // two monitoring dates
+        {365, 0.25, 2, Barrier::DownOut, 90.0, Option::Call, 10.6065575706},
+        {365, 0.25, 2, Barrier::UpOut, 120.0, Option::Put, 8.1416688799},
+        {365, 0.25, 2, Barrier::DownIn, 90.0, Option::Put, 7.2792403915},
+        // a single monitoring date at maturity, T = 731/365
+        {731, 0.25, 1, Barrier::DownOut, 90.0, Option::Call, 15.5100009519},
+        {731, 0.25, 1, Barrier::UpOut, 120.0, Option::Put, 10.3391477790},
+        {731, 0.25, 1, Barrier::UpIn, 120.0, Option::Call, 12.7216714278},
+        // thirty days
+        {30, 0.25, 12, Barrier::DownOut, 95.0, Option::Call, 2.8618269588},
+        {30, 0.25, 12, Barrier::UpOut, 105.0, Option::Put, 2.6012851255},
+        {30, 0.25, 12, Barrier::UpIn, 105.0, Option::Call, 2.6530467512},
+        {30, 0.25, 12, Barrier::DownIn, 95.0, Option::Put, 2.3747297284},
+        // volatility of 350% with four dates: the barrier moves by a factor of 2.77
+        {365, 3.5, 4, Barrier::DownOut, 90.0, Option::Call, 65.3126934883},
+        {365, 3.5, 4, Barrier::UpOut, 120.0, Option::Call, 0.1277573242},
+        {365, 3.5, 4, Barrier::UpOut, 120.0, Option::Put, 65.1878997960},
+        {365, 3.5, 4, Barrier::DownIn, 90.0, Option::Call, 24.9711068684},
+    };
+
+    CommonVars vars;
+    for (const auto& c : cases) {
+        vars.expiry = vars.today + c.days;
+        vars.vol->setValue(c.vol);
+        QL_CHECK_SMALL(vars.discrete(c.type, c.barrier, c.optionType, c.steps) - c.expected,
+                       1.0e-8);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testSpotOnBarrier) {
+    BOOST_TEST_MESSAGE("Testing a spot on the barrier...");
+
+    CommonVars vars;
+
+    // zero volatility: the barrier is hit at the valuation date, as in the continuous engine
+    vars.vol->setValue(0.0);
+    const Real vanilla = 2.8969248806;
+    QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 100.0, Option::Call, 12), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::DownIn, 100.0, Option::Call, 12) - vanilla, 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 100.0, Option::Call, 12), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 100.0, Option::Call, 12) - vanilla, 1.0e-9);
+
+    // positive volatility: the shifted barrier is away from the spot, so the option prices
+    // (Reiner-Rubinstein prices at the shifted barrier computed outside QuantLib)
+    vars.vol->setValue(0.25);
+    QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 100.0, Option::Call, 12) - 4.1893931494, 1.0e-8);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 100.0, Option::Put, 12) - 2.9290338181, 1.0e-8);
 }
 
 BOOST_AUTO_TEST_CASE(testErrorMessages) {
@@ -476,9 +581,10 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
                           ExpectedErrorMessage("strike must be positive"));
     BarrierOption nullStrike = vars.option(Barrier::DownOut, 90.0, Option::Put, 0.0);
     nullStrike.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error,
-                          ExpectedErrorMessage("strike must be positive"));
+    BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error, ExpectedErrorMessage("strike must be positive"));
+    // strike is checked before the spot
     vars.spot->setValue(0.0);
+    BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error, ExpectedErrorMessage("strike must be positive"));
     BarrierOption nullSpot = vars.option(Barrier::UpOut, 120.0, Option::Call, 121.0);
     nullSpot.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
     BOOST_CHECK_EXCEPTION(nullSpot.NPV(), Error,
