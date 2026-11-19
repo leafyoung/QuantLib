@@ -5,6 +5,7 @@
 #include <ql/experimental/inflation/cpicapfloortermpricesurface.hpp>
 #include <ql/experimental/inflation/genericindexes.hpp>
 #include <ql/experimental/inflation/interpolatedyoyoptionletstripper.hpp>
+#include <ql/experimental/inflation/jarrowyildirim.hpp
 #include <ql/experimental/inflation/kinterpolatedyoyoptionletvolatilitysurface.hpp>
 #include <ql/experimental/inflation/piecewiseyoyoptionletvolatility.hpp>
 #include <ql/experimental/inflation/polynomial2Dspline.hpp>

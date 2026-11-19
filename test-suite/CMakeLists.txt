@@ -101,6 +101,7 @@ set(QL_TEST_SOURCES
     interestrates.cpp
     interpolatedsmilesection.cpp
     interpolations.cpp
+    jarrowyildirim.cpp
     jumpdiffusion.cpp
     lazyobject.cpp
     libormarketmodel.cpp

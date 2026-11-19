@@ -8,6 +8,7 @@ this_include_HEADERS = \
     cpicapfloortermpricesurface.hpp \
     genericindexes.hpp \
     interpolatedyoyoptionletstripper.hpp \
+    jarrowyildirim.hpp \
     kinterpolatedyoyoptionletvolatilitysurface.hpp \
     piecewiseyoyoptionletvolatility.hpp \
     polynomial2Dspline.hpp \
@@ -19,6 +20,7 @@ this_include_HEADERS = \
 cpp_files = \
     cpicapfloorengines.cpp \
     cpicapfloortermpricesurface.cpp \
+    jarrowyildirim.cpp \
     yoycapfloortermpricesurface.cpp \
     yoyoptionlethelpers.cpp
 
