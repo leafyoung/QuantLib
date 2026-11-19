@@ -62,9 +62,7 @@ namespace QuantLib {
                             \p fixingStart
         \param dampingExponent  the exponent \f$ q \f$; must be positive
     */
-    Time backwardLookingVarianceTime(Time fixingStart,
-                                     Time fixingEnd,
-                                     Real dampingExponent = 1.0);
+    Time backwardLookingVarianceTime(Time fixingStart, Time fixingEnd, Real dampingExponent = 1.0);
 
 }
 

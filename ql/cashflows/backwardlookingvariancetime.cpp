@@ -36,8 +36,8 @@ namespace QuantLib {
             return elapsed;
         Real remaining = fixingEnd - elapsed;
         Real ratio = remaining / (fixingEnd - fixingStart);
-        return elapsed + remaining * std::pow(ratio, 2.0 * dampingExponent) /
-                             (2.0 * dampingExponent + 1.0);
+        return elapsed +
+               remaining * std::pow(ratio, 2.0 * dampingExponent) / (2.0 * dampingExponent + 1.0);
     }
 
 }

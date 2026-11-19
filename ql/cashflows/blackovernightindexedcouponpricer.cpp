@@ -72,14 +72,17 @@ namespace QuantLib {
                 stdDev = capletVolatility()->volatility(fixingDates.back(), effStrike) * std::sqrt(effectiveTime);
             } else {
                 // vol input is not effective:
-                // for the standard deviation see Lyashenko, Mercurio, Looking forward to backward looking rates,
-                // section 6.3. the idea is to dampen the average volatility sigma between the fixing start and fixing end
-                // date by a function going from (fixing start, 1) to (fixing end, 0), see backwardLookingVarianceTime()
+                // for the standard deviation see Lyashenko, Mercurio, Looking forward to
+                // backward looking rates, section 6.3. the idea is to dampen the average
+                // volatility sigma between the fixing start and fixing end date by a function
+                // going from (fixing start, 1) to (fixing end, 0), see
+                // backwardLookingVarianceTime()
                 Real fixingStartTime = capletVolatility()->timeFromReference(fixingDates.front());
                 Real fixingEndTime = capletVolatility()->timeFromReference(fixingDates.back());
                 Real sigma = capletVolatility()->volatility(
                     std::max(fixingDates.front(), capletVolatility()->referenceDate() + 1), effStrike);
-                Real T = backwardLookingVarianceTime(fixingStartTime, fixingEndTime, dampingExponent_);
+                Real T = backwardLookingVarianceTime(fixingStartTime, fixingEndTime,
+                                                     dampingExponent_);
                 stdDev = sigma * std::sqrt(T);
             }
             if (optionType == Option::Type::Call)
