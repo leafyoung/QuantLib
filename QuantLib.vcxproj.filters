@@ -3849,6 +3849,9 @@
     <ClCompile Include="ql\pricingengines\barrier\analyticbinarybarrierengine.cpp">
       <Filter>pricingengines\barrier</Filter>
     </ClCompile>
+    <ClCompile Include="ql\pricingengines\barrier\analyticdiscretebarrierengine.cpp">
+      <Filter>pricingengines\barrier</Filter>
+    </ClCompile>
     <ClCompile Include="ql\pricingengines\barrier\discretizedbarrieroption.cpp">
       <Filter>pricingengines\barrier</Filter>
     </ClCompile>
@@ -4027,6 +4030,9 @@
       <Filter>pricingengines\barrier</Filter>
     </ClInclude>
     <ClInclude Include="ql\pricingengines\barrier\analyticbinarybarrierengine.hpp">
+      <Filter>pricingengines\barrier</Filter>
+    </ClInclude>
+    <ClInclude Include="ql\pricingengines\barrier\analyticdiscretebarrierengine.hpp">
       <Filter>pricingengines\barrier</Filter>
     </ClInclude>
     <ClInclude Include="ql\pricingengines\barrier\fdblackscholesrebateengine.hpp">
