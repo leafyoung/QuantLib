@@ -37,7 +37,6 @@
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <algorithm>
 #include <cmath>
-#include <initializer_list>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -143,62 +142,56 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     BOOST_TEST_MESSAGE("Testing discrete barrier prices against the shifted-barrier formula...");
 
     // Reiner-Rubinstein prices at the shifted barrier H exp(+-beta sigma sqrt(T/N)), computed
-    // outside QuantLib.  S = 100, K = 100, r = 5%, q = 2%, sigma = 25%, T = 1.
-    struct Case {
-        Barrier::Type type;
-        Real barrier;
-        Option::Type optionType;
-        Size steps;
-        Real expected;
-    };
-    const Case cases[] = {
-        {Barrier::DownOut, 90.0, Option::Call, 12, 9.5740025184},
-        {Barrier::DownIn, 90.0, Option::Call, 12, 1.5497594097},
-        {Barrier::DownOut, 90.0, Option::Put, 12, 0.2962311188},
-        {Barrier::DownIn, 90.0, Option::Put, 12, 7.9306059287},
-        {Barrier::UpOut, 120.0, Option::Call, 12, 1.3308536713},
-        {Barrier::UpIn, 120.0, Option::Call, 12, 9.7929082568},
-        {Barrier::UpOut, 120.0, Option::Put, 12, 7.9103967300},
-        {Barrier::UpIn, 120.0, Option::Put, 12, 0.3164403175},
-        {Barrier::DownOut, 90.0, Option::Call, 50, 8.9369302463},
-        {Barrier::UpIn, 120.0, Option::Call, 50, 10.1605931817},
-        {Barrier::DownIn, 90.0, Option::Put, 50, 8.0586098363},
-        {Barrier::UpOut, 120.0, Option::Put, 50, 7.7474057970},
-    };
-
-    CommonVars vars;
-    for (const auto& c : cases) {
-        Real calculated = vars.discrete(c.type, c.barrier, c.optionType, c.steps);
-        QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
-    }
-}
-
-BOOST_AUTO_TEST_CASE(testReferenceValuesOtherMaturities) {
-    BOOST_TEST_MESSAGE("Testing discrete barrier prices at maturities other than one year...");
-
-    // As in testReferenceValues, with 181 days (T = 181/365) and 731 days (T = 731/365).
+    // outside QuantLib.  S = 100, r = 5%, q = 2%, sigma = 25%; maturities of 365, 181 and 731
+    // days.  The strikes other than 100 lie close to the barrier, or on the other side of it
+    // for the option type that is not decided at maturity.
     struct Case {
         Date::serial_type days;
         Barrier::Type type;
         Real barrier;
         Option::Type optionType;
+        Real strike;
+        Size steps;
         Real expected;
     };
     const Case cases[] = {
-        {181, Barrier::DownOut, 90.0, Option::Call, 7.1506589134},
-        {181, Barrier::DownIn, 90.0, Option::Put, 5.6564033695},
-        {181, Barrier::UpIn, 120.0, Option::Call, 5.4564736195},
-        {181, Barrier::UpOut, 120.0, Option::Put, 6.1438527113},
-        {731, Barrier::DownOut, 90.0, Option::Call, 12.5004180490},
-        {731, Barrier::DownIn, 90.0, Option::Put, 10.3137504186},
-        {731, Barrier::UpIn, 120.0, Option::Call, 15.3470218519},
-        {731, Barrier::UpOut, 120.0, Option::Put, 9.3739580301},
+        {365, Barrier::DownOut, 90.0, Option::Call, 100.0, 12, 9.5740025184},
+        {365, Barrier::DownIn, 90.0, Option::Call, 100.0, 12, 1.5497594097},
+        {365, Barrier::DownOut, 90.0, Option::Put, 100.0, 12, 0.2962311188},
+        {365, Barrier::DownIn, 90.0, Option::Put, 100.0, 12, 7.9306059287},
+        {365, Barrier::UpOut, 120.0, Option::Call, 100.0, 12, 1.3308536713},
+        {365, Barrier::UpIn, 120.0, Option::Call, 100.0, 12, 9.7929082568},
+        {365, Barrier::UpOut, 120.0, Option::Put, 100.0, 12, 7.9103967300},
+        {365, Barrier::UpIn, 120.0, Option::Put, 100.0, 12, 0.3164403175},
+        {365, Barrier::DownOut, 90.0, Option::Call, 100.0, 50, 8.9369302463},
+        {365, Barrier::UpIn, 120.0, Option::Call, 100.0, 50, 10.1605931817},
+        {365, Barrier::DownIn, 90.0, Option::Put, 100.0, 50, 8.0586098363},
+        {365, Barrier::UpOut, 120.0, Option::Put, 100.0, 50, 7.7474057970},
+        {181, Barrier::DownOut, 90.0, Option::Call, 100.0, 12, 7.1506589134},
+        {181, Barrier::DownIn, 90.0, Option::Put, 100.0, 12, 5.6564033695},
+        {181, Barrier::UpIn, 120.0, Option::Call, 100.0, 12, 5.4564736195},
+        {181, Barrier::UpOut, 120.0, Option::Put, 100.0, 12, 6.1438527113},
+        {731, Barrier::DownOut, 90.0, Option::Call, 100.0, 12, 12.5004180490},
+        {731, Barrier::DownIn, 90.0, Option::Put, 100.0, 12, 10.3137504186},
+        {731, Barrier::UpIn, 120.0, Option::Call, 100.0, 12, 15.3470218519},
+        {731, Barrier::UpOut, 120.0, Option::Put, 100.0, 12, 9.3739580301},
+        {365, Barrier::UpOut, 120.0, Option::Put, 121.0, 12, 19.2136547821},
+        {365, Barrier::UpOut, 120.0, Option::Put, 130.0, 12, 24.6201889747},
+        {365, Barrier::UpIn, 120.0, Option::Put, 121.0, 12, 2.0248358553},
+        {365, Barrier::UpIn, 120.0, Option::Put, 130.0, 12, 3.6253121572},
+        {365, Barrier::DownIn, 90.0, Option::Call, 89.0, 12, 3.3578422555},
+        {365, Barrier::DownIn, 90.0, Option::Call, 85.0, 12, 4.3743736856},
+        {365, Barrier::DownOut, 90.0, Option::Call, 89.0, 12, 13.9148771838},
+        {365, Barrier::UpOut, 120.0, Option::Call, 119.0, 12, 0.0185922606},
+        {365, Barrier::UpIn, 120.0, Option::Call, 119.0, 12, 4.5813155230},
+        {365, Barrier::DownOut, 90.0, Option::Put, 91.0, 12, 0.0134332196},
+        {365, Barrier::DownIn, 90.0, Option::Put, 91.0, 12, 4.5429404631},
     };
 
     CommonVars vars;
     for (const auto& c : cases) {
         vars.expiry = vars.today + c.days;
-        Real calculated = vars.discrete(c.type, c.barrier, c.optionType, 12);
+        Real calculated = vars.discrete(c.type, c.barrier, c.optionType, c.steps, c.strike);
         QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
     }
 }
@@ -209,58 +202,31 @@ BOOST_AUTO_TEST_CASE(testStrikeBeyondBarrier) {
     // The last monitoring date is maturity: an up call with K >= H or a down put with K <= H
     // pays only where the barrier is crossed at maturity.  Knock-outs are worth zero and
     // knock-ins are worth the vanilla option (Black-Scholes prices computed outside QuantLib).
-    CommonVars vars;
-    for (Size steps : std::initializer_list<Size>{1, 12, 250}) {
-        QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 120.0, Option::Call, steps, 121.0), 1.0e-14);
-        QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Put, steps, 89.0), 1.0e-14);
-        QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 120.0, Option::Call, steps, 120.0), 1.0e-14);
-        QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Put, steps, 90.0), 1.0e-14);
-        QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 120.0, Option::Call, steps, 121.0) -
-                           4.159597603529679,
-                       1.0e-9);
-        QL_CHECK_SMALL(vars.discrete(Barrier::DownIn, 90.0, Option::Put, steps, 89.0) -
-                           3.912270889154126,
-                       1.0e-9);
-        QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 120.0, Option::Call, steps, 120.0) -
-                           4.374922416029218,
-                       1.0e-9);
-        QL_CHECK_SMALL(vars.discrete(Barrier::DownIn, 90.0, Option::Put, steps, 90.0) -
-                           4.226590998651453,
-                       1.0e-9);
-    }
-}
-
-BOOST_AUTO_TEST_CASE(testStrikeNearBarrier) {
-    BOOST_TEST_MESSAGE("Testing options whose strike is close to the barrier...");
-
-    // Strikes on the inside of the exact region, and the other option type with a strike beyond
-    // the barrier: all go through the shifted barrier (Reiner-Rubinstein prices at the shifted
-    // barrier computed outside QuantLib).  N = 12, T = 1.
     struct Case {
         Barrier::Type type;
         Real barrier;
         Option::Type optionType;
         Real strike;
         Real expected;
+        Real tolerance;
     };
     const Case cases[] = {
-        {Barrier::UpOut, 120.0, Option::Put, 121.0, 19.2136547821},
-        {Barrier::UpOut, 120.0, Option::Put, 130.0, 24.6201889747},
-        {Barrier::UpIn, 120.0, Option::Put, 121.0, 2.0248358553},
-        {Barrier::UpIn, 120.0, Option::Put, 130.0, 3.6253121572},
-        {Barrier::DownIn, 90.0, Option::Call, 89.0, 3.3578422555},
-        {Barrier::DownIn, 90.0, Option::Call, 85.0, 4.3743736856},
-        {Barrier::DownOut, 90.0, Option::Call, 89.0, 13.9148771838},
-        {Barrier::UpOut, 120.0, Option::Call, 119.0, 0.0185922606},
-        {Barrier::UpIn, 120.0, Option::Call, 119.0, 4.5813155230},
-        {Barrier::DownOut, 90.0, Option::Put, 91.0, 0.0134332196},
-        {Barrier::DownIn, 90.0, Option::Put, 91.0, 4.5429404631},
+        {Barrier::UpOut, 120.0, Option::Call, 121.0, 0.0, 1.0e-14},
+        {Barrier::DownOut, 90.0, Option::Put, 89.0, 0.0, 1.0e-14},
+        {Barrier::UpOut, 120.0, Option::Call, 120.0, 0.0, 1.0e-14},
+        {Barrier::DownOut, 90.0, Option::Put, 90.0, 0.0, 1.0e-14},
+        {Barrier::UpIn, 120.0, Option::Call, 121.0, 4.159597603529679, 1.0e-9},
+        {Barrier::DownIn, 90.0, Option::Put, 89.0, 3.912270889154126, 1.0e-9},
+        {Barrier::UpIn, 120.0, Option::Call, 120.0, 4.374922416029218, 1.0e-9},
+        {Barrier::DownIn, 90.0, Option::Put, 90.0, 4.226590998651453, 1.0e-9},
     };
 
     CommonVars vars;
-    for (const auto& c : cases) {
-        Real calculated = vars.discrete(c.type, c.barrier, c.optionType, 12, c.strike);
-        QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+    for (Size steps : std::vector<Size>{1, 12, 250}) {
+        for (const auto& c : cases) {
+            Real calculated = vars.discrete(c.type, c.barrier, c.optionType, steps, c.strike);
+            QL_CHECK_SMALL(calculated - c.expected, c.tolerance);
+        }
     }
 }
 
@@ -315,9 +281,7 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     // The corrected price must lie within four standard errors of the simulation (fixed seed),
     // while the continuous price must lie more than ten standard errors away.  The cases are
     // down calls and up puts: reverse barriers (up calls, down puts) are markedly less accurate
-    // at coarse monitoring, e.g. against a 2M+-path simulation at S = K = 100, T = 1 the
-    // up-out call with H = 120 is off by about +8-9% at 12 dates and the down-out put with
-    // H = 90 by about +19%, and the error grows as the strike approaches the barrier.
+    // at coarse monitoring, increasingly so as the strike approaches the barrier.
     const Size paths = 200000;
     struct Case {
         Date::serial_type days;
@@ -364,7 +328,7 @@ BOOST_AUTO_TEST_CASE(testInOutParity) {
                               ext::make_shared<EuropeanExercise>(vars.expiry));
         vanilla.setPricingEngine(ext::make_shared<AnalyticEuropeanEngine>(vars.process));
         Real expected = vanilla.NPV();
-        for (Size steps : std::initializer_list<Size>{1, 12, 250}) {
+        for (Size steps : std::vector<Size>{1, 12, 250}) {
             Real down = vars.discrete(Barrier::DownIn, 90.0, t, steps) +
                         vars.discrete(Barrier::DownOut, 90.0, t, steps);
             Real up = vars.discrete(Barrier::UpIn, 120.0, t, steps) +
@@ -460,7 +424,9 @@ BOOST_AUTO_TEST_CASE(testVolatilityClock) {
 
     // Actual/360 volatility surface over Actual/365 (Fixed) rate curves: the monitoring step
     // is T_vol/N with T_vol = 365/360, while discounting runs over T = 1.  Reference prices at
-    // the barrier moved by exp(+-beta sigma sqrt(T_vol/N)), computed outside QuantLib.
+    // the barrier moved by exp(+-beta sigma sqrt(T_vol/N)), computed outside QuantLib.  This
+    // pins the convention of AnalyticBarrierEngine, which the corrected price inherits: the
+    // drift uses the volatility as quoted, the variance is sigma^2 T_vol.
     CommonVars vars;
     auto process = ext::make_shared<BlackScholesMertonProcess>(
         Handle<Quote>(vars.spot), vars.process->dividendYield(), vars.process->riskFreeRate(),
@@ -486,7 +452,8 @@ BOOST_AUTO_TEST_CASE(testVolatilityClock) {
 }
 
 BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
-    BOOST_TEST_MESSAGE("Testing one and two dates, short maturities and extreme volatilities...");
+    BOOST_TEST_MESSAGE(
+        "Testing one and two dates, one-week and one-month maturities and extreme volatilities...");
 
     // Reiner-Rubinstein prices at the shifted barrier computed outside QuantLib.
     struct Case {
@@ -507,6 +474,11 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
         {731, 0.25, 1, Barrier::DownOut, 90.0, Option::Call, 15.5100009519},
         {731, 0.25, 1, Barrier::UpOut, 120.0, Option::Put, 10.3391477790},
         {731, 0.25, 1, Barrier::UpIn, 120.0, Option::Call, 12.7216714278},
+        // seven days: a monitoring step of 0.0016 years (N = 12), 0.00008 (N = 252), 1e-6 (N =
+        // 20000)
+        {7, 0.25, 12, Barrier::DownOut, 98.0, Option::Call, 1.3072368442},
+        {7, 0.25, 252, Barrier::DownOut, 98.0, Option::Call, 1.2281225948},
+        {7, 0.25, 20000, Barrier::DownOut, 98.0, Option::Call, 1.2021028353},
         // thirty days
         {30, 0.25, 12, Barrier::DownOut, 95.0, Option::Call, 2.8618269588},
         {30, 0.25, 12, Barrier::UpOut, 105.0, Option::Put, 2.6012851255},
