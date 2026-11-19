@@ -101,9 +101,10 @@ namespace QuantLib {
                                    Real rhoNominalIndex,
                                    Real rhoRealIndex)
     : nominalTermStructure_(std::move(nominalTermStructure)),
-      realTermStructure_(std::move(realTermStructure)), an_(nominalMeanReversion),
-      sn_(nominalVolatility), ar_(realMeanReversion), sr_(realVolatility), sigmaI_(indexVolatility),
-      rhoNR_(rhoNominalReal), rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex) {
+      realTermStructure_(std::move(realTermStructure)), aN_(nominalMeanReversion),
+      sigmaN_(nominalVolatility), aR_(realMeanReversion), sigmaR_(realVolatility),
+      sigmaI_(indexVolatility), rhoNR_(rhoNominalReal), rhoNI_(rhoNominalIndex),
+      rhoRI_(rhoRealIndex) {
         checkCurves();
         QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive ("
                                                    << nominalMeanReversion << " given)");
@@ -138,11 +139,11 @@ namespace QuantLib {
     Real JarrowYildirim::zcInflationVariance(Time T) const {
         checkCurves();
         QL_REQUIRE(T >= 0.0, "negative time (" << T << ") given");
-        return sigmaI_ * sigmaI_ * T + sr_ * sr_ * integralBB(ar_, ar_, T) +
-               sn_ * sn_ * integralBB(an_, an_, T) -
-               2.0 * rhoRI_ * sigmaI_ * sr_ * integralB(ar_, T) +
-               2.0 * rhoNI_ * sigmaI_ * sn_ * integralB(an_, T) -
-               2.0 * rhoNR_ * sn_ * sr_ * integralBB(an_, ar_, T);
+        return sigmaI_ * sigmaI_ * T + sigmaR_ * sigmaR_ * integralBB(aR_, aR_, T) +
+               sigmaN_ * sigmaN_ * integralBB(aN_, aN_, T) -
+               2.0 * rhoRI_ * sigmaI_ * sigmaR_ * integralB(aR_, T) +
+               2.0 * rhoNI_ * sigmaI_ * sigmaN_ * integralB(aN_, T) -
+               2.0 * rhoNR_ * sigmaN_ * sigmaR_ * integralBB(aN_, aR_, T);
     }
 
     Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
@@ -158,9 +159,9 @@ namespace QuantLib {
         QL_REQUIRE(S >= 0.0, "negative time (" << S << ") given");
         QL_REQUIRE(S < T, "start time (" << S << ") must be smaller than end time (" << T << ")");
         Real exponent =
-            sr_ * expIntegral(ar_, T - S) *
-            (rhoRI_ * sigmaI_ * expIntegral(ar_, S) + rhoNR_ * sn_ * integralExpB(ar_, an_, S) -
-             sr_ * integralExpB(ar_, ar_, S));
+            sigmaR_ * expIntegral(aR_, T - S) *
+            (rhoRI_ * sigmaI_ * expIntegral(aR_, S) + rhoNR_ * sigmaN_ * integralExpB(aR_, aN_, S) -
+             sigmaR_ * integralExpB(aR_, aR_, S));
         return std::exp(exponent);
     }
 

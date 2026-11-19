@@ -149,8 +149,8 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(testZcCapletFloorletParity) {
-    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim zero-coupon caplet-floorlet parity...");
+BOOST_AUTO_TEST_CASE(testZcCapFloorParity) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim zero-coupon cap-floor parity...");
     for (auto rates : {std::make_pair(0.03, 0.012), std::make_pair(0.012, 0.03)}) {
         Setup s;
         s.nominalRate->setValue(rates.first);
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(testZcCapletFloorletParity) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
+BOOST_AUTO_TEST_CASE(testZcOptionAgainstLognormalExpectation) {
     BOOST_TEST_MESSAGE(
         "Testing Jarrow-Yildirim zero-coupon option against lognormal expectation...");
     Setup s;
@@ -185,8 +185,8 @@ BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
                 },
                 0.0, T);
             Real sd = std::sqrt(variance);
-            Real forward = std::exp((0.03 - 0.012) * T);
-            Real df = std::exp(-0.03 * T);
+            Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
+            Real df = std::exp(-s.nominalRate->value() * T);
             NormalDistribution density;
             // payoff is smooth on each side of the exercise boundary in the normal variate
             Real zStar = (std::log(strike / forward) + 0.5 * variance) / sd;
@@ -244,16 +244,16 @@ BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
         sumInvP += 1.0 / pn;
         sumInvP2 += 1.0 / (pn * pn);
     }
-    auto stats = [&](Real sum, Real sum2, Real& mean) -> Real {
-        mean = sum / samples;
+    auto standardError = [&](Real sum, Real sum2) -> Real {
+        Real mean = sum / samples;
         return std::sqrt((sum2 / samples - mean * mean) / samples);
     };
-    Real meanYoY, meanInvP;
-    Real seYoY = stats(sumY, sumY2, meanYoY);
-    Real seInvP = stats(sumInvP, sumInvP2, meanInvP);
+    Real meanYoY = sumY / samples, meanInvP = sumInvP / samples;
+    Real seYoY = standardError(sumY, sumY2);
+    Real seInvP = standardError(sumInvP, sumInvP2);
 
     // E^T[1/P_n(S,T)] = P_n(0,S)/P_n(0,T) validates the forward-measure shift
-    Real expectedInvP = std::exp(0.03 * (T - S));
+    Real expectedInvP = std::exp(s.nominalRate->value() * (T - S));
     if (std::fabs(meanInvP - expectedInvP) > 4.0 * seInvP)
         BOOST_ERROR("E[1/Pn] " << meanInvP << " expected " << expectedInvP << " +- " << seInvP);
 
@@ -282,11 +282,11 @@ BOOST_AUTO_TEST_CASE(testZcVarianceAgainstMonteCarlo) {
     // ln I_T = ln I_0 + int (r_n - r_r) dt - sigma_I^2 T/2 + sigma_I W_I(T): the
     // variance under the forward measure equals that under the risk-neutral
     // measure, since the measure change only shifts the mean. The rates are
-    // deterministic plus Ornstein-Uhlenbeck states x with unit-time kernels
+    // deterministic plus Ornstein-Uhlenbeck states x with per-step kernels
     // sigma e^{-a(h-u)} (state) and sigma B(h-u) (integral over the step), so
     // each step is sampled exactly from its joint Gaussian law
     // (xi_n, eta_n, xi_r, eta_r, omega).
-    typedef std::function<Real(Real)> Kernel;
+    using Kernel = std::function<Real(Real)>;
     std::vector<Kernel> kernels = {[&](Real u) -> Real { return s.sn * std::exp(-s.an * (h - u)); },
                                    [&](Real u) -> Real { return s.sn * bFun(s.an, h - u); },
                                    [&](Real u) -> Real { return s.sr * std::exp(-s.ar * (h - u)); },
@@ -383,6 +383,12 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
             correlations(tooNegative, tooNegative, 0.0), Error,
             ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
     }
+    BOOST_CHECK_EXCEPTION(
+        make(-0.1, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+        ExpectedErrorMessage("nominal mean reversion must be positive (-0.1 given)"));
+    BOOST_CHECK_EXCEPTION(
+        make(s.an, s.sn, -0.1, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+        ExpectedErrorMessage("real mean reversion must be positive (-0.1 given)"));
     BOOST_CHECK_EXCEPTION(
         make(0.0, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
         ExpectedErrorMessage("nominal mean reversion must be positive (0 given)"));
@@ -487,11 +493,10 @@ BOOST_AUTO_TEST_CASE(testInspectors) {
 BOOST_AUTO_TEST_CASE(testObserverRegistration) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim observer notifications...");
     Setup s;
-    auto jy = ext::make_shared<JarrowYildirim>(s.model());
+    auto jy = ext::make_shared<JarrowYildirim>(s.nominalCurve, s.realCurve, s.an, s.sn, s.ar, s.sr,
+                                               s.sI, s.rhoNR, s.rhoNI, s.rhoRI);
     Flag flag;
     flag.registerWith(jy);
-    BOOST_CHECK(jy->nominalTermStructure() == s.nominalCurve);
-    BOOST_CHECK(jy->realTermStructure() == s.realCurve);
     Real before = jy->forwardIndexRatio(5.0);
     s.realRate->setValue(0.02);
     if (!flag.isUp())

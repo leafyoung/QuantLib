@@ -133,10 +133,10 @@ namespace QuantLib {
             return nominalTermStructure_;
         }
         const Handle<YieldTermStructure>& realTermStructure() const { return realTermStructure_; }
-        Real nominalMeanReversion() const { return an_; }
-        Real nominalVolatility() const { return sn_; }
-        Real realMeanReversion() const { return ar_; }
-        Real realVolatility() const { return sr_; }
+        Real nominalMeanReversion() const { return aN_; }
+        Real nominalVolatility() const { return sigmaN_; }
+        Real realMeanReversion() const { return aR_; }
+        Real realVolatility() const { return sigmaR_; }
         Real indexVolatility() const { return sigmaI_; }
         Real rhoNominalReal() const { return rhoNR_; }
         Real rhoNominalIndex() const { return rhoNI_; }
@@ -170,7 +170,7 @@ namespace QuantLib {
         void checkCurves() const;
 
         Handle<YieldTermStructure> nominalTermStructure_, realTermStructure_;
-        Real an_, sn_, ar_, sr_, sigmaI_, rhoNR_, rhoNI_, rhoRI_;
+        Real aN_, sigmaN_, aR_, sigmaR_, sigmaI_, rhoNR_, rhoNI_, rhoRI_;
     };
 
 }
