@@ -35,7 +35,9 @@
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
 #include <ql/time/daycounters/actual365fixed.hpp>
+#include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 using namespace QuantLib;
@@ -278,7 +280,7 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
         Handle<Quote>(vars.spot), vars.process->dividendYield(), vars.process->riskFreeRate(),
         Handle<BlackVolTermStructure>(surface));
 
-    const Real beta = 0.5825971579390106;
+    constexpr double beta = 0.5825971579390106;
     for (Real strike : {85.0, 115.0}) {
         Volatility sigma = surface->blackVol(vars.expiry, strike);
         BOOST_REQUIRE(std::fabs(sigma - surface->blackVol(vars.expiry, 100.0)) > 0.01);

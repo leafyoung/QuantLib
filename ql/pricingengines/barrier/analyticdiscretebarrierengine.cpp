@@ -17,8 +17,8 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 */
 
-#include <ql/exercise.hpp>
 #include <ql/pricingengines/barrier/analyticdiscretebarrierengine.hpp>
+#include <ql/exercise.hpp>
 #include <cmath>
 #include <utility>
 
@@ -27,7 +27,7 @@ namespace QuantLib {
     namespace {
 
         // -zeta(1/2)/sqrt(2 pi)
-        const Real broadieGlassermanKouBeta = 0.5825971579390106;
+        constexpr double broadieGlassermanKouBeta = 0.5825971579390106;
 
         // The barrier moved away from the spot by exp(beta sigma sqrt(dt)).
         Real shiftedBarrier(Barrier::Type type, Real barrier, Volatility sigma, Time dt) {
