@@ -305,7 +305,7 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     // The cases are down calls and up puts.  Reverse barriers (up calls, down puts), where
     // the knock-out removes in-the-money payoff, are markedly less accurate at coarse
     // monitoring.  Measured against a 2M+-path exact simulation, S = 100, T = 1: the up-out
-    // call with H = 120 and K = 100 is off by about +8-9% at 12 dates and +2.5-3% at 50, the
+    // call with H = 120 and K = 100 is off by about +8-9% at 12 dates and +2.4% at 50, the
     // down-out put with H = 90 and K = 100 by about +19% at 12 and +6% at 50.  The relative
     // error grows as the strike approaches the barrier: at 12 dates the up-out call with
     // H = 120 is off by about +27% at K = 110, +80% at K = 115 and 11 times at K = 119, the
@@ -398,7 +398,7 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
         Handle<BlackVolTermStructure>(surface));
 
     constexpr double beta = 0.5825971579390106;
-    for (Real strike : {85.0, 115.0}) {
+    for (Real strike : std::vector<Real>{85.0, 115.0}) {
         Volatility sigma = surface->blackVol(vars.expiry, strike);
         BOOST_REQUIRE(std::fabs(sigma - surface->blackVol(vars.expiry, 100.0)) > 0.01);
 
@@ -410,6 +410,22 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
         shifted.setPricingEngine(ext::make_shared<AnalyticBarrierEngine>(process));
         QL_CHECK_SMALL(discrete.NPV() - shifted.NPV(), 1.0e-12);
     }
+}
+
+BOOST_AUTO_TEST_CASE(testZeroVolatility) {
+    BOOST_TEST_MESSAGE("Testing the zero-volatility limit...");
+
+    // The underlying follows its forward, 100 exp(0.03 t): it reaches 102 before maturity and
+    // stays above 90 (values computed outside QuantLib).
+    CommonVars vars;
+    vars.vol->setValue(0.0);
+    const Real vanilla = 2.8969248806;
+    QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Call, 12) - vanilla, 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 102.0, Option::Call, 12), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 102.0, Option::Call, 12) - vanilla, 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 102.0, Option::Call, 12, 102.5), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 102.0, Option::Call, 12, 102.5) - 0.5188513194,
+                   1.0e-9);
 }
 
 BOOST_AUTO_TEST_CASE(testErrorMessages) {

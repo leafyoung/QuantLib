@@ -103,7 +103,7 @@ namespace QuantLib {
         continuousEngine_->reset();
         continuousEngine_->calculate();
 
-        auto* continuousResults =
+        const auto* continuousResults =
             dynamic_cast<const BarrierOption::results*>(continuousEngine_->getResults());
         QL_REQUIRE(continuousResults, "wrong result type");
         results_ = *continuousResults;
