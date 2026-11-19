@@ -32,7 +32,6 @@
 #include <ql/processes/blackscholesprocess.hpp>
 #include <ql/quotes/simplequote.hpp>
 #include <ql/termstructures/volatility/equityfx/blackvariancesurface.hpp>
-#include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <algorithm>
@@ -305,13 +304,12 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     // price must lie more than ten standard errors away.
     // The cases are down calls and up puts.  Reverse barriers (up calls, down puts), where
     // the knock-out removes in-the-money payoff, are markedly less accurate at coarse
-    // monitoring.  Measured against a 2M-path simulation at S = K = 100, T = 1, the up-out
-    // call with H = 120 is off by +8.7% at 12 dates and +2.4% at 50, the down-out put with
-    // H = 90 by +19% at 12 and +5.5-6% at 50.  The relative error of a reverse knock-out
-    // grows as the strike approaches the barrier and with maturity at fixed N, and is not
-    // bounded by these figures: at 12 dates the up-out call with H = 120 is off by +27% at
-    // K = 110, +80% at K = 115 and about 11 times at K = 119, the down-out put with H = 90
-    // by +53% at K = 95 and about 7.5 times at K = 91 (absolute errors stay below 0.06).
+    // monitoring.  Measured against a 2M+-path exact simulation, S = 100, T = 1: the up-out
+    // call with H = 120 and K = 100 is off by about +8-9% at 12 dates and +2.5-3% at 50, the
+    // down-out put with H = 90 and K = 100 by about +19% at 12 and +6% at 50.  The relative
+    // error grows as the strike approaches the barrier: at 12 dates the up-out call with
+    // H = 120 is off by about +27% at K = 110, +80% at K = 115 and 11 times at K = 119, the
+    // down-out put with H = 90 by about +55% at K = 95 and 7.5 times at K = 91.
     const Size paths = 200000;
     struct Case {
         Date::serial_type days;
@@ -440,13 +438,12 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     BOOST_CHECK_EXCEPTION(digital.NPV(), Error, ExpectedErrorMessage("non-plain payoff given"));
 
     // the same input checks as the continuous engine, also where the price is exact
-    BarrierOption negativeStrike =
-        vars.option(Barrier::DownOut, 90.0, Option::Put, -1.0);
+    BarrierOption negativeStrike = vars.option(Barrier::DownOut, 90.0, Option::Put, -1.0);
     negativeStrike.setPricingEngine(
         ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
     BOOST_CHECK_EXCEPTION(negativeStrike.NPV(), Error,
                           ExpectedErrorMessage("strike must be positive"));
-    BarrierOption nullStrike = vars.option(Barrier::UpIn, 120.0, Option::Call, 0.0);
+    BarrierOption nullStrike = vars.option(Barrier::DownOut, 90.0, Option::Put, 0.0);
     nullStrike.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
     BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error,
                           ExpectedErrorMessage("strike must be positive"));
@@ -456,6 +453,18 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     BOOST_CHECK_EXCEPTION(nullSpot.NPV(), Error,
                           ExpectedErrorMessage("negative or null underlying given"));
     vars.spot->setValue(100.0);
+
+    BarrierOption americanExact(Barrier::UpOut, 120.0, 0.0,
+                                ext::make_shared<PlainVanillaPayoff>(Option::Call, 121.0),
+                                ext::make_shared<AmericanExercise>(vars.today, vars.expiry));
+    americanExact.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(americanExact.NPV(), Error,
+                          ExpectedErrorMessage("only european style option are supported"));
+    BarrierOption touchedExact = vars.option(Barrier::UpOut, 99.0, Option::Call, 100.0);
+    touchedExact.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(touchedExact.NPV(), Error, ExpectedErrorMessage("barrier touched"));
 
     // the barrier given, not the shifted one, decides whether it has been touched
     BarrierOption touched = vars.option(Barrier::DownOut, 101.0, Option::Call);
