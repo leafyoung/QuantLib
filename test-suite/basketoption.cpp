@@ -2861,13 +2861,12 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));
     const DiscountFactor df = r->discount(maturity);
     const Real s1 = 105.0, s2 = 100.0;
-    // the second process has its own dividend and risk-free curves; the day counters of the
-    // first process's dividend curve and volatility surface and of the second process's
-    // risk-free curve differ from the first risk-free curve's, which pins that the time to
-    // maturity comes from the first process's risk-free curve
+    // the second process has its own dividend and risk-free curves; every curve and volatility
+    // surface except the first risk-free curve has a different day counter, which pins that the
+    // time to maturity comes from the first process's risk-free curve
     const Handle<YieldTermStructure> q(flatRate(today, 0.03, Actual360()));
     const Handle<YieldTermStructure> r2(flatRate(today, 0.04, Actual360()));
-    const Handle<YieldTermStructure> q2(flatRate(today, 0.01, dc));
+    const Handle<YieldTermStructure> q2(flatRate(today, 0.01, Actual360()));
     const auto makeProcess = [&](Real spot, const Handle<YieldTermStructure>& dividend,
                                  const Handle<YieldTermStructure>& riskFree) {
         return ext::make_shared<BlackScholesMertonProcess>(
@@ -2915,16 +2914,20 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
         std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
-    // nearly equal volatilities at rho = 1: the naive combination s1^2 + s2^2 - 2 s1 s2 rounds
-    // to a negative number here, the spread is normal with volatility |vol1 - vol2|
+    // nearly equal volatilities a, b at rho = 1: the naive combination a^2 + b^2 - 2ab rounds to
+    // a negative number here, while the spread is normal with volatility |a - b|. The strike 3.0
+    // is deep in the money, so only the at-the-forward strike separates the correct variance from
+    // a clamped or absolute-valued naive one.
     {
         const Real a = 15.726632108963026, b = 15.72663221349127;
-        const Real expected = bachelierBlackFormula(Option::Call, 3.0, g1 - g2,
-                                                    std::abs(a - b) * std::sqrt(t), df);
-        const Real calculated = price(Option::Call, 3.0, a, b, 1.0);
-        BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
-                            "nearly equal volatilities failed: " << calculated << " vs "
-                            << expected);
+        for (Real strike : {3.0, g1 - g2}) {
+            const Real expected = bachelierBlackFormula(Option::Call, strike, g1 - g2,
+                                                        std::abs(a - b) * std::sqrt(t), df);
+            const Real calculated = price(Option::Call, strike, a, b, 1.0);
+            BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
+                                "nearly equal volatilities failed for strike " << strike << ": "
+                                << calculated << " vs " << expected);
+        }
     }
 
     // zero volatilities leave the discounted intrinsic value

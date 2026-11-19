@@ -51,9 +51,12 @@ namespace QuantLib {
         \ingroup basketengines
 
         \test the correctness of the returned value is tested by
-              put-call parity, the perfectly correlated degenerate cases,
-              the rejection of invalid inputs and Monte Carlo simulations of
-              the two normal forwards.
+              put-call parity, the effective volatility at correlations
+              -1, 0 and 1 (including nearly equal volatilities and zero
+              volatilities), a maturity on the reference date, the
+              rejection of invalid inputs, repricing when each observable
+              input changes, the source of the time to maturity and Monte
+              Carlo simulations of the two normal forwards.
     */
     class BachelierSpreadEngine : public BasketOption::engine {
       public:
