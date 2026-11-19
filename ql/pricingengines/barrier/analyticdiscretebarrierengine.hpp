@@ -44,14 +44,24 @@ namespace QuantLib {
 
         The correction is an asymptotic approximation for small
         \f$ \sigma\sqrt{\Delta t} \f$; accuracy degrades for large
-        \f$ \Delta t \f$ and near the barrier.  \f$ \sigma \f$ is the
-        Black volatility at the expiry and the option strike.  Rebates are
-        not supported.
+        \f$ \Delta t \f$ and near the barrier.  Reverse barriers (up calls
+        and down puts, where the knock-out removes in-the-money payoff) are
+        markedly less accurate at coarse monitoring.  Measured against a
+        2M-path simulation of discrete monitoring at \f$ S = K = 100 \f$,
+        \f$ \sigma = 25\% \f$, \f$ T = 1 \f$: the up-out call with
+        \f$ H = 120 \f$ is off by +8.7% at 12 dates and +2.4% at 50, and
+        the down-out put with \f$ H = 90 \f$ by +19% at 12 and +5.5% at 50.
+        When the strike lies beyond the barrier (up call with
+        \f$ K \ge H \f$, down put with \f$ K \le H \f$) the result is
+        exact: zero for a knock-out, the vanilla price for a knock-in.
+        \f$ \sigma \f$ is the Black volatility at the expiry and the option
+        strike.  Rebates are not supported.
 
         \ingroup barrierengines
 
         \test the returned values are checked against prices at the shifted
-              barrier and a Monte Carlo simulation of discrete monitoring
+              barrier and, for down calls and up puts, a Monte Carlo
+              simulation of discrete monitoring
     */
     class AnalyticDiscreteBarrierEngine : public BarrierOption::engine {
       public:

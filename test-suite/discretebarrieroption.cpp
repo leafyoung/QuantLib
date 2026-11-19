@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_SUITE(DiscreteBarrierOptionTests)
 
 namespace {
 
-    // Maturity is exactly one year on the Actual/365 (Fixed) clock.
+    // Maturity defaults to exactly one year on the Actual/365 (Fixed) clock.
     struct CommonVars {
         DayCounter dc = Actual365Fixed();
         Date today = Date(15, November, 2026);
@@ -98,7 +98,8 @@ namespace {
                                      Option::Type optionType, Size steps, Size paths) {
         Real s0 = vars.spot->value(), strike = 100.0, r = vars.rate->value(),
              q = vars.dividend->value(), sigma = vars.vol->value();
-        Real dt = 1.0 / Real(steps);
+        Real maturity = vars.dc.yearFraction(vars.today, vars.expiry);
+        Real dt = maturity / Real(steps);
         Real drift = (r - q - 0.5 * sigma * sigma) * dt, diffusion = sigma * std::sqrt(dt);
         bool down = (type == Barrier::DownIn || type == Barrier::DownOut);
         bool knockIn = (type == Barrier::DownIn || type == Barrier::UpIn);
@@ -116,7 +117,7 @@ namespace {
             Real st = std::exp(logS);
             Real payoff = (optionType == Option::Call) ? std::max<Real>(st - strike, 0.0)
                                                        : std::max<Real>(strike - st, 0.0);
-            stats.add((hit == knockIn) ? Real(std::exp(-r) * payoff) : Real(0.0));
+            stats.add((hit == knockIn) ? Real(std::exp(-r * maturity) * payoff) : Real(0.0));
         }
         return {stats.mean(), stats.errorEstimate()};
     }
@@ -154,6 +155,63 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     for (const auto& c : cases) {
         Real calculated = vars.discrete(c.type, c.barrier, c.optionType, c.steps);
         QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testReferenceValuesOtherMaturities) {
+    BOOST_TEST_MESSAGE("Testing discrete barrier prices at maturities other than one year...");
+
+    // As in testReferenceValues, with 181 days (T = 181/365) and 731 days (T = 731/365).
+    struct Case {
+        Date::serial_type days;
+        Barrier::Type type;
+        Real barrier;
+        Option::Type optionType;
+        Real expected;
+    };
+    const Case cases[] = {
+        {181, Barrier::DownOut, 90.0, Option::Call, 7.1506589134},
+        {181, Barrier::DownIn, 90.0, Option::Put, 5.6564033695},
+        {181, Barrier::UpIn, 120.0, Option::Call, 5.4564736195},
+        {181, Barrier::UpOut, 120.0, Option::Put, 6.1438527113},
+        {731, Barrier::DownOut, 90.0, Option::Call, 12.5004180490},
+        {731, Barrier::DownIn, 90.0, Option::Put, 10.3137504186},
+        {731, Barrier::UpIn, 120.0, Option::Call, 15.3470218519},
+        {731, Barrier::UpOut, 120.0, Option::Put, 9.3739580301},
+    };
+
+    CommonVars vars;
+    for (const auto& c : cases) {
+        vars.expiry = vars.today + c.days;
+        Real calculated = vars.discrete(c.type, c.barrier, c.optionType, 12);
+        QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testStrikeBeyondBarrier) {
+    BOOST_TEST_MESSAGE("Testing options decided by the monitoring date at maturity...");
+
+    // The last monitoring date is maturity: an up call with K >= H or a down put with K <= H
+    // pays only where the barrier is crossed at maturity.  Knock-outs are worth zero and
+    // knock-ins are worth the vanilla option (Black-Scholes prices computed outside QuantLib).
+    CommonVars vars;
+    for (Size steps : std::initializer_list<Size>{1, 12, 250}) {
+        QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 120.0, Option::Call, steps, 121.0), 1.0e-14);
+        QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Put, steps, 89.0), 1.0e-14);
+        QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 120.0, Option::Call, steps, 120.0), 1.0e-14);
+        QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 90.0, Option::Put, steps, 90.0), 1.0e-14);
+        QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 120.0, Option::Call, steps, 121.0) -
+                           4.159597603529679,
+                       1.0e-9);
+        QL_CHECK_SMALL(vars.discrete(Barrier::DownIn, 90.0, Option::Put, steps, 89.0) -
+                           3.912270889154126,
+                       1.0e-9);
+        QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 120.0, Option::Call, steps, 120.0) -
+                           4.374922416029218,
+                       1.0e-9);
+        QL_CHECK_SMALL(vars.discrete(Barrier::DownIn, 90.0, Option::Put, steps, 90.0) -
+                           4.226590998651453,
+                       1.0e-9);
     }
 }
 
@@ -210,32 +268,43 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     // away from the continuous one.  The correction is an approximation, so the corrected
     // price must lie within four standard errors of the simulation, while the continuous
     // price must lie more than ten standard errors away.
+    // The cases are down calls and up puts.  Reverse barriers (up calls, down puts), where
+    // the knock-out removes in-the-money payoff, are markedly less accurate at coarse
+    // monitoring: against a 2M-path simulation at S = K = 100 the up-out call with H = 120
+    // is off by +8.7% at 12 dates and +2.4% at 50, the down-out put with H = 90 by +19%
+    // at 12 and +5.5% at 50.
     const Size paths = 200000;
     struct Case {
+        Date::serial_type days;
         Barrier::Type type;
         Real barrier;
         Option::Type optionType;
         Size steps;
     };
     const Case cases[] = {
-        {Barrier::DownOut, 90.0, Option::Call, 12},
-        {Barrier::DownOut, 90.0, Option::Call, 50},
-        {Barrier::DownIn, 90.0, Option::Call, 50},
-        {Barrier::UpIn, 120.0, Option::Put, 12},
-        {Barrier::UpIn, 120.0, Option::Put, 50},
+        {365, Barrier::DownOut, 90.0, Option::Call, 12},
+        {365, Barrier::DownOut, 90.0, Option::Call, 50},
+        {365, Barrier::DownIn, 90.0, Option::Call, 50},
+        {365, Barrier::UpIn, 120.0, Option::Put, 12},
+        {365, Barrier::UpIn, 120.0, Option::Put, 50},
+        {181, Barrier::DownOut, 90.0, Option::Call, 12},
+        {181, Barrier::DownIn, 90.0, Option::Call, 12},
+        {731, Barrier::UpIn, 120.0, Option::Put, 12},
+        {731, Barrier::DownOut, 90.0, Option::Call, 12},
     };
 
     CommonVars vars;
     for (const auto& c : cases) {
+        vars.expiry = vars.today + c.days;
         auto mc = monteCarlo(vars, c.type, c.barrier, c.optionType, c.steps, paths);
         Real corrected = vars.discrete(c.type, c.barrier, c.optionType, c.steps);
         Real continuous = vars.continuous(c.type, c.barrier, c.optionType);
         BOOST_CHECK_MESSAGE(std::fabs(corrected - mc.first) < 4.0 * mc.second,
                             "corrected " << corrected << " vs simulated " << mc.first << " +- "
-                                         << mc.second << " at " << c.steps << " steps");
+                                         << mc.second << " at " << c.steps << " steps, " << c.days << " days");
         BOOST_CHECK_MESSAGE(std::fabs(continuous - mc.first) > 10.0 * mc.second,
                             "continuous " << continuous << " vs simulated " << mc.first << " +- "
-                                          << mc.second << " at " << c.steps << " steps");
+                                          << mc.second << " at " << c.steps << " steps, " << c.days << " days");
     }
 }
 

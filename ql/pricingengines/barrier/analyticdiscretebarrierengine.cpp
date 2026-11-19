@@ -19,6 +19,8 @@
 
 #include <ql/pricingengines/barrier/analyticdiscretebarrierengine.hpp>
 #include <ql/exercise.hpp>
+#include <ql/instruments/vanillaoption.hpp>
+#include <ql/pricingengines/vanilla/analyticeuropeanengine.hpp>
 #include <cmath>
 #include <utility>
 
@@ -34,6 +36,27 @@ namespace QuantLib {
             Real shift = std::exp(broadieGlassermanKouBeta * sigma * std::sqrt(dt));
             bool down = (type == Barrier::DownIn || type == Barrier::DownOut);
             return down ? Real(barrier / shift) : Real(barrier * shift);
+        }
+
+        // The last monitoring date is maturity.  An up call or a down put whose
+        // strike lies beyond the barrier pays off only where the barrier has been
+        // crossed at maturity, so the price is known exactly: zero for a knock-out,
+        // vanilla for a knock-in.
+        bool decidedAtMaturity(const BarrierOption::arguments& args,
+                               const PlainVanillaPayoff& payoff) {
+            bool up = (args.barrierType == Barrier::UpIn || args.barrierType == Barrier::UpOut);
+            return up ? (payoff.optionType() == Option::Call && payoff.strike() >= args.barrier) :
+                        (payoff.optionType() == Option::Put && payoff.strike() <= args.barrier);
+        }
+
+        Real exactValue(const BarrierOption::arguments& args,
+                        const ext::shared_ptr<StrikedTypePayoff>& payoff,
+                        const ext::shared_ptr<GeneralizedBlackScholesProcess>& process) {
+            if (args.barrierType == Barrier::UpOut || args.barrierType == Barrier::DownOut)
+                return 0.0;
+            VanillaOption vanilla(payoff, args.exercise);
+            vanilla.setPricingEngine(ext::make_shared<AnalyticEuropeanEngine>(process));
+            return vanilla.NPV();
         }
 
     }
@@ -59,6 +82,11 @@ namespace QuantLib {
 
         // the unshifted barrier is the one that was observed
         QL_REQUIRE(!triggered(process_->x0()), "barrier touched");
+
+        if (decidedAtMaturity(arguments_, *payoff)) {
+            results_.value = exactValue(arguments_, payoff, process_);
+            return;
+        }
 
         Date expiry = arguments_.exercise->lastDate();
         Time T = process_->blackVolatility()->timeFromReference(expiry);
