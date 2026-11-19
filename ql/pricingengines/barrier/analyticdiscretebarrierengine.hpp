@@ -49,9 +49,10 @@ namespace QuantLib {
         worth more, and a knock-in less, than its continuously monitored
         counterpart, as crossings between monitoring dates are not seen.
 
-        The result is derived for a constant volatility and, as stated by
-        the authors, the corrected price has an error of order
-        \f$ O(\sigma^2 \Delta t) \f$.  \f$ \sigma \f$ is read from the
+        The correction is an asymptotic approximation for small
+        \f$ \sigma\sqrt{\Delta t} \f$; its accuracy degrades for large
+        \f$ \Delta t \f$ and for spot levels close to the barrier.  It is
+        derived for a constant volatility.  \f$ \sigma \f$ is read from the
         Black volatility surface of the process at the expiry and the
         option strike; with a non-flat surface this is an approximation
         accepted by the user.

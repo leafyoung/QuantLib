@@ -196,7 +196,7 @@ BOOST_AUTO_TEST_CASE(testConvergenceToContinuous) {
 BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing against a Monte Carlo simulation of discrete monitoring...");
 
-    // Fixed seed.  The correction is only accurate to O(sigma^2 dt), so the corrected
+    // Fixed seed.  The correction is an approximation, so the corrected
     // price must lie within four standard errors of the simulation, while the
     // continuous price must lie more than ten standard errors away.
     const Size paths = 200000;
@@ -266,10 +266,11 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
     std::vector<Date> dates = {vars.today + 6 * Months, vars.expiry, vars.today + 2 * Years};
     std::vector<Real> strikes = {80.0, 100.0, 125.0};
     Matrix vols(3, 3);
+    // rows are strikes, columns are dates
     for (Size i = 0; i < 3; ++i) {
-        vols[0][i] = 0.30 - 0.04 * Real(i);
-        vols[1][i] = 0.32 - 0.04 * Real(i);
-        vols[2][i] = 0.34 - 0.04 * Real(i);
+        vols[i][0] = 0.30 - 0.04 * Real(i);
+        vols[i][1] = 0.32 - 0.04 * Real(i);
+        vols[i][2] = 0.34 - 0.04 * Real(i);
     }
     auto surface = ext::make_shared<BlackVarianceSurface>(vars.today, NullCalendar(), dates,
                                                           strikes, vols, vars.dc);
