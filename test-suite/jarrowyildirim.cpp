@@ -22,6 +22,8 @@
 #include <ql/experimental/inflation/jarrowyildirim.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/integrals/gausslobattointegral.hpp>
+#include <ql/math/matrix.hpp>
+#include <ql/math/matrixutilities/pseudosqrt.hpp>
 #include <ql/math/randomnumbers/mt19937uniformrng.hpp>
 #include <ql/models/shortrate/onefactormodels/hullwhite.hpp>
 #include <ql/quotes/simplequote.hpp>
@@ -30,6 +32,7 @@
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <cmath>
 #include <functional>
+#include <vector>
 
 using namespace QuantLib;
 using namespace boost::unit_test_framework;
@@ -62,7 +65,7 @@ namespace {
         }
     };
 
-    Real bFun(Real a, Real s) { return (1.0 - std::exp(-a * s)) / a; }
+    Real bFun(Real a, Real s) { return -std::expm1(-a * s) / a; }
 
     Real integrate(const std::function<Real(Real)>& f, Real a, Real b) {
         return GaussLobattoIntegral(1000, 1.0e-13)(f, a, b);
@@ -90,8 +93,8 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
     for (Real k : {1.05, 1.10, 1.20}) {
         Real call = jy.zcInflationOption(Option::Call, k, T);
         Real put = jy.zcInflationOption(Option::Put, k, T);
-        Real expCall = df * std::max(fT / 100.0 - k, 0.0);
-        Real expPut = df * std::max(k - fT / 100.0, 0.0);
+        Real expCall = df * std::max<Real>(fT / 100.0 - k, 0.0);
+        Real expPut = df * std::max<Real>(k - fT / 100.0, 0.0);
         if (std::fabs(call - expCall) > tol || std::fabs(put - expPut) > tol)
             BOOST_ERROR("strike " << k << ": call " << call << " put " << put << " expected "
                                   << expCall << " and " << expPut);
@@ -100,7 +103,13 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
 
 BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim closed forms against quadrature...");
+    // mean reversions from the small-a branch through the closed-form threshold
+    for (auto rates : {std::make_pair(0.08, 0.05), std::make_pair(1.0e-8, 1.0e-6),
+                       std::make_pair(1.0e-3, 0.5), std::make_pair(0.02, 0.02),
+                       std::make_pair(0.15, 1.0e-7)}) {
     Setup s;
+    s.an = rates.first;
+    s.ar = rates.second;
     JarrowYildirim jy = s.model();
     for (Real T : {0.5, 3.0, 10.0}) {
         auto integrand = [&](Real u) {
@@ -111,7 +120,7 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
         };
         Real expected = integrate(integrand, 0.0, T);
         Real calculated = jy.zcInflationVariance(T);
-        if (std::fabs(calculated - expected) > 1.0e-11)
+        if (std::fabs(calculated - expected) > 1.0e-11 * std::max<Real>(1.0, expected))
             BOOST_ERROR("V(0," << T << ") = " << calculated << " expected " << expected);
     }
     for (auto st : {std::make_pair(1.0, 2.0), std::make_pair(4.0, 6.0), std::make_pair(0.0, 3.0),
@@ -130,6 +139,7 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
                                          << " expected " << expected);
     }
     BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(testZcCapletFloorletParity) {
@@ -211,6 +221,75 @@ BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
     if (std::fabs(calculated - curveOnly) < 20.0 * seYoY)
         BOOST_ERROR("convexity " << calculated - curveOnly << " not resolved by standard error "
                                  << seYoY);
+}
+
+BOOST_AUTO_TEST_CASE(testZcVarianceAgainstMonteCarlo) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim ZC variance against Monte Carlo...");
+    Setup s;
+    JarrowYildirim jy = s.model();
+    const Real T = 5.0;
+    const Size steps = 10, samples = 200000;
+    const Real h = T / steps;
+
+    // ln I_T = ln I_0 + int (r_n - r_r) dt - sigma_I^2 T/2 + sigma_I W_I(T): the
+    // variance under the forward measure equals that under the risk-neutral
+    // measure, since the measure change only shifts the mean. The rates are
+    // deterministic plus Ornstein-Uhlenbeck states x with unit-time kernels
+    // sigma e^{-a(h-u)} (state) and sigma B(h-u) (integral over the step), so
+    // each step is sampled exactly from its joint Gaussian law
+    // (xi_n, eta_n, xi_r, eta_r, omega).
+    typedef std::function<Real(Real)> Kernel;
+    std::vector<Kernel> kernels = {
+        [&](Real u) { return s.sn * std::exp(-s.an * (h - u)); },
+        [&](Real u) { return s.sn * bFun(s.an, h - u); },
+        [&](Real u) { return s.sr * std::exp(-s.ar * (h - u)); },
+        [&](Real u) { return s.sr * bFun(s.ar, h - u); },
+        [](Real) { return 1.0; }};
+    // driving Brownian motion of each kernel: 0 = nominal, 1 = real, 2 = index
+    const Size driver[] = {0, 0, 1, 1, 2};
+    const Real rho[3][3] = {{1.0, s.rhoNR, s.rhoNI}, {s.rhoNR, 1.0, s.rhoRI},
+                            {s.rhoNI, s.rhoRI, 1.0}};
+    Matrix cov(5, 5);
+    for (Size i = 0; i < 5; ++i)
+        for (Size j = 0; j < 5; ++j)
+            cov[i][j] = rho[driver[i]][driver[j]] *
+                        integrate([&](Real u) { return kernels[i](u) * kernels[j](u); }, 0.0, h);
+    Matrix chol = pseudoSqrt(cov, SalvagingAlgorithm::None);
+
+    MersenneTwisterUniformRng rng(1119);
+    InverseCumulativeNormal inverse;
+    const Real decayN = std::exp(-s.an * h), decayR = std::exp(-s.ar * h);
+    const Real stepN = bFun(s.an, h), stepR = bFun(s.ar, h);
+    Real sum = 0.0, sum2 = 0.0, sum3 = 0.0, sum4 = 0.0;
+    for (Size i = 0; i < samples; ++i) {
+        Real xn = 0.0, xr = 0.0, z = 0.0;
+        for (Size k = 0; k < steps; ++k) {
+            Real g[5];
+            for (Real& gi : g)
+                gi = inverse(rng.next().value);
+            Real v[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+            for (Size a = 0; a < 5; ++a)
+                for (Size b = 0; b <= a; ++b)
+                    v[a] += chol[a][b] * g[b];
+            z += stepN * xn + v[1] - stepR * xr - v[3] + s.sI * v[4];
+            xn = decayN * xn + v[0];
+            xr = decayR * xr + v[2];
+        }
+        sum += z;
+        sum2 += z * z;
+        sum3 += z * z * z;
+        sum4 += z * z * z * z;
+    }
+    Real mean = sum / samples, var = sum2 / samples - mean * mean;
+    // standard error of the sample variance from the fourth central moment
+    Real m4 = sum4 / samples - 4.0 * mean * sum3 / samples +
+              6.0 * mean * mean * sum2 / samples - 3.0 * mean * mean * mean * mean;
+    Real se = std::sqrt((m4 - var * var) / samples);
+    Real calculated = jy.zcInflationVariance(T);
+    BOOST_TEST_MESSAGE("ZC variance: closed form " << calculated << ", Monte Carlo " << var
+                                                   << " +- " << se);
+    if (std::fabs(var - calculated) > 4.0 * se)
+        BOOST_ERROR("ZC variance " << calculated << " vs Monte Carlo " << var << " +- " << se);
 }
 
 BOOST_AUTO_TEST_CASE(testCorrelationValidation) {

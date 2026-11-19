@@ -3759,6 +3759,9 @@
     <ClInclude Include="ql\experimental\inflation\interpolatedyoyoptionletstripper.hpp">
       <Filter>experimental\inflation</Filter>
     </ClInclude>
+    <ClInclude Include="ql\experimental\inflation\jarrowyildirim.hpp">
+      <Filter>experimental\inflation</Filter>
+    </ClInclude>
     <ClInclude Include="ql\experimental\inflation\kinterpolatedyoyoptionletvolatilitysurface.hpp">
       <Filter>experimental\inflation</Filter>
     </ClInclude>
@@ -7010,6 +7013,9 @@
       <Filter>experimental\processes</Filter>
     </ClCompile>
     <ClCompile Include="ql\experimental\inflation\cpicapfloorengines.cpp">
+      <Filter>experimental\inflation</Filter>
+    </ClCompile>
+    <ClCompile Include="ql\experimental\inflation\jarrowyildirim.cpp">
       <Filter>experimental\inflation</Filter>
     </ClCompile>
     <ClCompile Include="ql\experimental\inflation\cpicapfloortermpricesurface.cpp">

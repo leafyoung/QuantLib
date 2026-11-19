@@ -18,6 +18,7 @@
 */
 
 #include <ql/experimental/inflation/jarrowyildirim.hpp>
+#include <ql/math/integrals/gaussianquadratures.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <algorithm>
 #include <cmath>
@@ -27,22 +28,50 @@ namespace QuantLib {
 
     namespace {
 
-        // int_0^t e^{-a s} ds
+        // Closed forms below subtract nearly equal terms when a*T is small;
+        // below this threshold the smooth integrands are integrated instead.
+        const Real closedFormThreshold = 0.1;
+
+        // int_0^T f(s) ds for an integrand varying on the scale 1/rate,
+        // by composite Gauss-Legendre (nodes on [-1,1]) with panels of width at most 1/rate
+        template <class F>
+        Real smoothIntegral(const F& f, Time T, Real rate) {
+            static const GaussLegendreIntegration gl(10);
+            Size panels = std::max<Size>(1, static_cast<Size>(std::ceil(rate * T)));
+            Real h = T / static_cast<Real>(panels), sum = 0.0;
+            for (Size i = 0; i < panels; ++i) {
+                Real mid = h * (static_cast<Real>(i) + 0.5);
+                sum += gl([&](Real x) { return f(mid + 0.5 * h * x); }) * 0.5 * h;
+            }
+            return sum;
+        }
+
+        // int_0^t e^{-a s} ds, which is also B(T-t,T) = (1 - e^{-a t})/a of a
+        // Hull-White rate with mean reversion a
         Real expIntegral(Real a, Time t) { return -std::expm1(-a * t) / a; }
 
-        // B(t,T) of a Hull-White rate with mean reversion a, for T - t = s
-        Real bond(Real a, Time s) { return expIntegral(a, s); }
+        // int_0^T B_x(u,T) du, with s = T - u
+        Real integralB(Real a, Time T) {
+            if (a * T < closedFormThreshold)
+                return smoothIntegral([&](Real s) { return expIntegral(a, s); }, T, a);
+            return (T - expIntegral(a, T)) / a;
+        }
 
-        // int_0^T B_x(u,T) du and the like, with s = T - u
-        Real integralB(Real a, Time T) { return (T - expIntegral(a, T)) / a; }
-
+        // int_0^T B_a(u,T) B_b(u,T) du
         Real integralBB(Real a, Real b, Time T) {
+            if (std::min(a, b) * T < closedFormThreshold)
+                return smoothIntegral(
+                    [&](Real s) { return expIntegral(a, s) * expIntegral(b, s); }, T,
+                    std::max(a, b));
             return (T - expIntegral(a, T) - expIntegral(b, T) + expIntegral(a + b, T)) /
                    (a * b);
         }
 
         // int_0^S e^{-a_r s} B_n(s) ds, with B_n(s) = (1 - e^{-a_n s})/a_n
         Real integralExpB(Real ar, Real an, Time S) {
+            if (an * S < closedFormThreshold)
+                return smoothIntegral(
+                    [&](Real s) { return std::exp(-ar * s) * expIntegral(an, s); }, S, ar + an);
             return (expIntegral(ar, S) - expIntegral(ar + an, S)) / an;
         }
 
@@ -103,7 +132,7 @@ namespace QuantLib {
 
     Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
         QL_REQUIRE(T > 0.0, "non-positive time " << T);
-        Real stdDev = std::sqrt(std::max(zcInflationVariance(T), 0.0));
+        Real stdDev = std::sqrt(std::max<Real>(zcInflationVariance(T), 0.0));
         return nominalCurve_->discount(T, true) *
                blackFormula(type, strike, forwardIndex(T) / baseIndex_, stdDev);
     }
@@ -111,10 +140,10 @@ namespace QuantLib {
     Real JarrowYildirim::yoyConvexity(Time S, Time T) const {
         QL_REQUIRE(S >= 0.0 && S < T, "invalid times: S = " << S << ", T = " << T);
         Real exponent =
-            sr_ * bond(ar_, T - S) *
+            sr_ * expIntegral(ar_, T - S) *
             (rhoRI_ * sigmaI_ * expIntegral(ar_, S) +
              rhoNR_ * sn_ * integralExpB(ar_, an_, S) -
-             sr_ * (expIntegral(ar_, S) - expIntegral(2.0 * ar_, S)) / ar_);
+             sr_ * integralExpB(ar_, ar_, S));
         return std::exp(exponent);
     }
 
