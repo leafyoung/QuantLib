@@ -2853,8 +2853,7 @@ BOOST_AUTO_TEST_CASE(testPearsonSpreadEngineVanillaLimit) {
 BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_TEST_MESSAGE("Testing Bachelier spread engine...");
 
-    const Date today(25, October, 2026);
-    Settings::instance().evaluationDate() = today;
+    const Date today = Settings::instance().evaluationDate();
     const DayCounter dc = Actual365Fixed();
     const Date maturity = today + 180;
     const Time t = dc.yearFraction(today, maturity);
@@ -2862,16 +2861,18 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));
     const DiscountFactor df = r->discount(maturity);
     const Real s1 = 105.0, s2 = 100.0;
-    // the second process has its own dividend and risk-free curves
-    const Handle<YieldTermStructure> q(flatRate(today, 0.03, dc));
-    // a different day counter pins that the time to maturity comes from the first process
+    // the second process has its own dividend and risk-free curves; the day counters of the
+    // first process's dividend curve and volatility surface and of the second process's
+    // risk-free curve differ from the first risk-free curve's, which pins that the time to
+    // maturity comes from the first process's risk-free curve
+    const Handle<YieldTermStructure> q(flatRate(today, 0.03, Actual360()));
     const Handle<YieldTermStructure> r2(flatRate(today, 0.04, Actual360()));
     const Handle<YieldTermStructure> q2(flatRate(today, 0.01, dc));
     const auto makeProcess = [&](Real spot, const Handle<YieldTermStructure>& dividend,
                                  const Handle<YieldTermStructure>& riskFree) {
         return ext::make_shared<BlackScholesMertonProcess>(
             Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), dividend, riskFree,
-            Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
+            Handle<BlackVolTermStructure>(flatVol(today, 0.2, Actual360())));
     };
     const auto makeFirst = [&](Real spot) { return makeProcess(spot, q, r); };
     const auto makeSecond = [&](Real spot) { return makeProcess(spot, q2, r2); };
@@ -2953,7 +2954,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                  const Handle<YieldTermStructure>& riskFree) {
             return ext::make_shared<BlackScholesMertonProcess>(
                 Handle<Quote>(spot), dividend, riskFree,
-                Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
+                Handle<BlackVolTermStructure>(flatVol(today, 0.2, Actual360())));
         };
         BasketOption option(ext::make_shared<SpreadBasketPayoff>(
                                 ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
@@ -3017,13 +3018,15 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                    ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                                exercise);
         minBasket.setPricingEngine(engine);
-        BOOST_CHECK_THROW(minBasket.NPV(), Error);
+        BOOST_CHECK_EXCEPTION(minBasket.NPV(), Error,
+                              ExpectedErrorMessage("spread payoff expected"));
         BasketOption cashOrNothing(
             ext::make_shared<SpreadBasketPayoff>(
                 ext::make_shared<CashOrNothingPayoff>(Option::Call, 3.0, 1.0)),
             exercise);
         cashOrNothing.setPricingEngine(engine);
-        BOOST_CHECK_THROW(cashOrNothing.NPV(), Error);
+        BOOST_CHECK_EXCEPTION(cashOrNothing.NPV(), Error,
+                              ExpectedErrorMessage("non-plain payoff given"));
         BasketOption past(ext::make_shared<SpreadBasketPayoff>(
                               ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                           ext::make_shared<EuropeanExercise>(today - 30));

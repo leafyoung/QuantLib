@@ -45,8 +45,8 @@ namespace QuantLib {
         year, and are passed separately. The time to maturity and the
         discount factor are taken from the first process's risk-free curve
         (reference date and day counter); the second process contributes its
-        forward only, so both processes are expected to share the same
-        reference date and day counter.
+        forward at the maturity date, computed from its own curves. The
+        correlation is fixed at construction.
 
         \ingroup basketengines
 
