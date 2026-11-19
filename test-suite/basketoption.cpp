@@ -2920,7 +2920,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     // a clamped or absolute-valued naive one.
     {
         const Real a = 15.726632108963026, b = 15.72663221349127;
-        for (Real strike : {3.0, g1 - g2}) {
+        for (Real strike : std::vector<Real>{3.0, g1 - g2}) {
             const Real expected = bachelierBlackFormula(Option::Call, strike, g1 - g2,
                                                         std::abs(a - b) * std::sqrt(t), df);
             const Real calculated = price(Option::Call, strike, a, b, 1.0);
