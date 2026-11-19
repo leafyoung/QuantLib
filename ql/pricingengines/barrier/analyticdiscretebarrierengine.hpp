@@ -35,7 +35,8 @@ namespace QuantLib {
 
         The barrier is observed at \f$ N \f$ equally spaced dates
         \f$ i \Delta t \f$, \f$ i = 1, \ldots, N \f$, \f$ \Delta t = T/N \f$
-        (the first one step after the valuation date, the last at maturity).
+        (the first one step after the reference date of the volatility term
+        structure, the last at maturity).
         The price is that of the continuously monitored option
         (AnalyticBarrierEngine) with the barrier \f$ H \f$ moved away from
         the spot to \f$ H e^{+\beta\sigma\sqrt{\Delta t}} \f$ (up barriers)
@@ -50,10 +51,18 @@ namespace QuantLib {
         2M-path simulation of discrete monitoring at \f$ S = K = 100 \f$,
         \f$ \sigma = 25\% \f$, \f$ T = 1 \f$: the up-out call with
         \f$ H = 120 \f$ is off by +8.7% at 12 dates and +2.4% at 50, and
-        the down-out put with \f$ H = 90 \f$ by +19% at 12 and +5.5% at 50.
+        the down-out put with \f$ H = 90 \f$ by +19% at 12 and +5.5-6% at
+        50.  For reverse knock-outs the relative error grows as the strike
+        approaches the barrier and with maturity at fixed \f$ N \f$, and is
+        not bounded by these figures: at 12 dates the up-out call with
+        \f$ H = 120 \f$ is off by +27% at \f$ K = 110 \f$, +80% at
+        \f$ K = 115 \f$ and about 11 times at \f$ K = 119 \f$, the
+        down-out put with \f$ H = 90 \f$ by +53% at \f$ K = 95 \f$ and about
+        7.5 times at \f$ K = 91 \f$ (the absolute errors stay below 0.06).
         When the strike lies beyond the barrier (up call with
         \f$ K \ge H \f$, down put with \f$ K \le H \f$) the result is
-        exact: zero for a knock-out, the vanilla price for a knock-in.
+        exact: zero for a knock-out, the vanilla price for a knock-in; the
+        price is therefore discontinuous in the strike at \f$ K = H \f$.
         \f$ \sigma \f$ is the Black volatility at the expiry and the option
         strike.  Rebates are not supported.
 

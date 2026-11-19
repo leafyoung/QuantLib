@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -215,6 +216,40 @@ BOOST_AUTO_TEST_CASE(testStrikeBeyondBarrier) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testStrikeNearBarrier) {
+    BOOST_TEST_MESSAGE("Testing options whose strike is close to the barrier...");
+
+    // Strikes on the inside of the exact region, and the other option type with a strike beyond
+    // the barrier: all go through the shifted barrier (Reiner-Rubinstein prices at the shifted
+    // barrier computed outside QuantLib).  N = 12, T = 1.
+    struct Case {
+        Barrier::Type type;
+        Real barrier;
+        Option::Type optionType;
+        Real strike;
+        Real expected;
+    };
+    const Case cases[] = {
+        {Barrier::UpOut, 120.0, Option::Put, 121.0, 19.2136547821},
+        {Barrier::UpOut, 120.0, Option::Put, 130.0, 24.6201889747},
+        {Barrier::UpIn, 120.0, Option::Put, 121.0, 2.0248358553},
+        {Barrier::UpIn, 120.0, Option::Put, 130.0, 3.6253121572},
+        {Barrier::DownIn, 90.0, Option::Call, 89.0, 3.3578422555},
+        {Barrier::DownIn, 90.0, Option::Call, 85.0, 4.3743736856},
+        {Barrier::DownOut, 90.0, Option::Call, 89.0, 13.9148771838},
+        {Barrier::UpOut, 120.0, Option::Call, 119.0, 0.0185922606},
+        {Barrier::UpIn, 120.0, Option::Call, 119.0, 4.5813155230},
+        {Barrier::DownOut, 90.0, Option::Put, 91.0, 0.0134332196},
+        {Barrier::DownIn, 90.0, Option::Put, 91.0, 4.5429404631},
+    };
+
+    CommonVars vars;
+    for (const auto& c : cases) {
+        Real calculated = vars.discrete(c.type, c.barrier, c.optionType, 12, c.strike);
+        QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testKnockOutExceedsContinuous) {
     BOOST_TEST_MESSAGE("Testing the direction of the discrete-monitoring correction...");
 
@@ -270,9 +305,13 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     // price must lie more than ten standard errors away.
     // The cases are down calls and up puts.  Reverse barriers (up calls, down puts), where
     // the knock-out removes in-the-money payoff, are markedly less accurate at coarse
-    // monitoring: against a 2M-path simulation at S = K = 100 the up-out call with H = 120
-    // is off by +8.7% at 12 dates and +2.4% at 50, the down-out put with H = 90 by +19%
-    // at 12 and +5.5% at 50.
+    // monitoring.  Measured against a 2M-path simulation at S = K = 100, T = 1, the up-out
+    // call with H = 120 is off by +8.7% at 12 dates and +2.4% at 50, the down-out put with
+    // H = 90 by +19% at 12 and +5.5-6% at 50.  The relative error of a reverse knock-out
+    // grows as the strike approaches the barrier and with maturity at fixed N, and is not
+    // bounded by these figures: at 12 dates the up-out call with H = 120 is off by +27% at
+    // K = 110, +80% at K = 115 and about 11 times at K = 119, the down-out put with H = 90
+    // by +53% at K = 95 and about 7.5 times at K = 91 (absolute errors stay below 0.06).
     const Size paths = 200000;
     struct Case {
         Date::serial_type days;
@@ -299,12 +338,13 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
         auto mc = monteCarlo(vars, c.type, c.barrier, c.optionType, c.steps, paths);
         Real corrected = vars.discrete(c.type, c.barrier, c.optionType, c.steps);
         Real continuous = vars.continuous(c.type, c.barrier, c.optionType);
+        std::ostringstream where;
+        where << " vs simulated " << mc.first << " +- " << mc.second << " at " << c.steps
+              << " steps, " << c.days << " days";
         BOOST_CHECK_MESSAGE(std::fabs(corrected - mc.first) < 4.0 * mc.second,
-                            "corrected " << corrected << " vs simulated " << mc.first << " +- "
-                                         << mc.second << " at " << c.steps << " steps, " << c.days << " days");
+                            "corrected " << corrected << where.str());
         BOOST_CHECK_MESSAGE(std::fabs(continuous - mc.first) > 10.0 * mc.second,
-                            "continuous " << continuous << " vs simulated " << mc.first << " +- "
-                                          << mc.second << " at " << c.steps << " steps, " << c.days << " days");
+                            "continuous " << continuous << where.str());
     }
 }
 
@@ -398,6 +438,24 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
                           ext::make_shared<EuropeanExercise>(vars.expiry));
     digital.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
     BOOST_CHECK_EXCEPTION(digital.NPV(), Error, ExpectedErrorMessage("non-plain payoff given"));
+
+    // the same input checks as the continuous engine, also where the price is exact
+    BarrierOption negativeStrike =
+        vars.option(Barrier::DownOut, 90.0, Option::Put, -1.0);
+    negativeStrike.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(negativeStrike.NPV(), Error,
+                          ExpectedErrorMessage("strike must be positive"));
+    BarrierOption nullStrike = vars.option(Barrier::UpIn, 120.0, Option::Call, 0.0);
+    nullStrike.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error,
+                          ExpectedErrorMessage("strike must be positive"));
+    vars.spot->setValue(0.0);
+    BarrierOption nullSpot = vars.option(Barrier::UpOut, 120.0, Option::Call, 121.0);
+    nullSpot.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(nullSpot.NPV(), Error,
+                          ExpectedErrorMessage("negative or null underlying given"));
+    vars.spot->setValue(100.0);
 
     // the barrier given, not the shifted one, decides whether it has been touched
     BarrierOption touched = vars.option(Barrier::DownOut, 101.0, Option::Call);

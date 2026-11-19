@@ -77,9 +77,10 @@ namespace QuantLib {
         ext::shared_ptr<PlainVanillaPayoff> payoff =
             ext::dynamic_pointer_cast<PlainVanillaPayoff>(arguments_.payoff);
         QL_REQUIRE(payoff, "non-plain payoff given");
+        QL_REQUIRE(payoff->strike() > 0.0, "strike must be positive");
         QL_REQUIRE(arguments_.exercise->type() == Exercise::European,
                    "only european style option are supported");
-
+        QL_REQUIRE(process_->x0() > 0.0, "negative or null underlying given");
         // the unshifted barrier is the one that was observed
         QL_REQUIRE(!triggered(process_->x0()), "barrier touched");
 
@@ -88,9 +89,9 @@ namespace QuantLib {
             return;
         }
 
-        Date expiry = arguments_.exercise->lastDate();
-        Time T = process_->blackVolatility()->timeFromReference(expiry);
-        Volatility sigma = process_->blackVolatility()->blackVol(expiry, payoff->strike());
+        const Date expiry = arguments_.exercise->lastDate();
+        const Time T = process_->blackVolatility()->timeFromReference(expiry);
+        const Volatility sigma = process_->blackVolatility()->blackVol(expiry, payoff->strike());
 
         auto* continuousArgs =
             dynamic_cast<BarrierOption::arguments*>(continuousEngine_->getArguments());
