@@ -2921,6 +2921,14 @@ BOOST_AUTO_TEST_CASE(testOvernightLegWeekendStub) {
     }
 }
 
+// like CHECK_OIS_COUPON_RESULT, but a NaN on either side fails
+#define CHECK_OIS_NAN_SAFE(what, calculated, expected, tolerance)                          \
+    if (!(std::fabs((calculated) - (expected)) <= (tolerance))) {                          \
+        BOOST_ERROR("Failed to reproduce " what ":"                                        \
+                    << "\n    expected:   " << std::setprecision(12) << (expected)         \
+                    << "\n    calculated: " << std::setprecision(12) << (calculated));     \
+    }
+
 namespace {
 
     // squared damping of the volatility of a backward-looking rate, integrated numerically
@@ -2943,16 +2951,16 @@ BOOST_AUTO_TEST_CASE(testBackwardLookingVarianceTime) {
     BOOST_TEST_MESSAGE("Testing the variance time of a backward-looking rate...");
 
     // linear damping: s + (end - s)^3 / (3 (end - start)^2)
-    CHECK_OIS_COUPON_RESULT("linear damping, accrual period in the future",
+    CHECK_OIS_NAN_SAFE("linear damping, accrual period in the future",
                             backwardLookingVarianceTime(0.5, 1.0), 0.5 + 0.125 / 0.75, 1e-14);
-    CHECK_OIS_COUPON_RESULT("linear damping, accrual period started",
+    CHECK_OIS_NAN_SAFE("linear damping, accrual period started",
                             backwardLookingVarianceTime(-0.25, 0.75), 0.75 * 0.75 * 0.75 / 3.0,
                             1e-14);
     // a single fixing leaves nothing to damp
     // written as an equality so that a NaN result fails
     BOOST_CHECK(backwardLookingVarianceTime(1.0, 1.0, 2.0) == 1.0);
     // an accrual period that has ended contributes only its elapsed part, which is zero
-    CHECK_OIS_COUPON_RESULT("period in the past", backwardLookingVarianceTime(-2.0, -1.0, 2.0), 0.0,
+    CHECK_OIS_NAN_SAFE("period in the past", backwardLookingVarianceTime(-2.0, -1.0, 2.0), 0.0,
                             1e-14);
 
     struct TestCase {
@@ -2966,14 +2974,14 @@ BOOST_AUTO_TEST_CASE(testBackwardLookingVarianceTime) {
     for (const auto& c : cases) {
         Real expected = integratedSquaredDamping(c.start, c.end, c.q);
         Real calculated = backwardLookingVarianceTime(c.start, c.end, c.q);
-        CHECK_OIS_COUPON_RESULT("variance time against numerical integration", calculated, expected,
+        CHECK_OIS_NAN_SAFE("variance time against numerical integration", calculated, expected,
                                 1e-12);
         BOOST_CHECK(calculated >= std::max<Real>(c.start, 0.0) && calculated <= c.end);
     }
 
     // a non-integer 2q: the Gauss-Legendre reference is only approximate for the non-smooth
     // integrand
-    CHECK_OIS_COUPON_RESULT("non-integer 2q", backwardLookingVarianceTime(-0.25, 0.75, 0.75),
+    CHECK_OIS_NAN_SAFE("non-integer 2q", backwardLookingVarianceTime(-0.25, 0.75, 0.75),
                             integratedSquaredDamping(-0.25, 0.75, 0.75), 1e-7);
 
     // faster damping lowers the variance time
@@ -3026,20 +3034,20 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
         Rate rate = capletRate(pricer, effectiveVol);
 
         Real varianceTime = integratedSquaredDamping(fixingStart, fixingEnd, q);
-        CHECK_OIS_COUPON_RESULT("effective caplet volatility", effectiveVol,
+        CHECK_OIS_NAN_SAFE("effective caplet volatility", effectiveVol,
                                 sigma * std::sqrt(varianceTime / fixingEnd), 1e-12);
 
         Real stdDev = sigma * std::sqrt(varianceTime);
         Real caplet = blackFormula(Option::Call, cap, forward, stdDev, 1.0, 0.0);
-        CHECK_OIS_COUPON_RESULT("capped rate", rate, forward - caplet, 1e-12);
+        CHECK_OIS_NAN_SAFE("capped rate", rate, forward - caplet, 1e-12);
 
         // less variance, cheaper caplet, higher capped rate
         BOOST_CHECK(rate > previousRate);
         previousRate = rate;
 
         if (q == 1.0) {
-            CHECK_OIS_COUPON_RESULT("default exponent", rate, defaultRate, 1e-14);
-            CHECK_OIS_COUPON_RESULT("default exponent volatility", effectiveVol, defaultVol, 1e-14);
+            CHECK_OIS_NAN_SAFE("default exponent", rate, defaultRate, 1e-14);
+            CHECK_OIS_NAN_SAFE("default exponent volatility", effectiveVol, defaultVol, 1e-14);
         }
     }
 
@@ -3051,8 +3059,8 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
     Rate rateB = capletRate(
         ext::make_shared<BlackCompoundingOvernightIndexedCouponPricer>(vars.vol, true, 3.0),
         effectiveVolB);
-    CHECK_OIS_COUPON_RESULT("effective input, rate", rateA, rateB, 1e-14);
-    CHECK_OIS_COUPON_RESULT("effective input, volatility", effectiveVolA, sigma, 1e-12);
+    CHECK_OIS_NAN_SAFE("effective input, rate", rateA, rateB, 1e-14);
+    CHECK_OIS_NAN_SAFE("effective input, volatility", effectiveVolA, sigma, 1e-12);
 
     BOOST_CHECK_THROW(BlackCompoundingOvernightIndexedCouponPricer(vars.vol, false, 0.0), Error);
     BOOST_CHECK_THROW(BlackCompoundingOvernightIndexedCouponPricer(vars.vol, false, -1.0), Error);
@@ -3064,10 +3072,10 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
         Rate averagedRate = averaged->rate();
         Rate averagedForward = vars.makeBaseCoupon(start, end, RateAveraging::Simple)->rate();
         Real linear = integratedSquaredDamping(fixingStart, fixingEnd, 1.0);
-        CHECK_OIS_COUPON_RESULT("averaging pricer, linear damping",
+        CHECK_OIS_NAN_SAFE("averaging pricer, linear damping",
                                 averaged->effectiveCapletVolatility(),
                                 sigma * std::sqrt(linear / fixingEnd), 1e-12);
-        CHECK_OIS_COUPON_RESULT("averaging pricer, capped rate", averagedRate,
+        CHECK_OIS_NAN_SAFE("averaging pricer, capped rate", averagedRate,
                                 averagedForward - blackFormula(Option::Call, cap, averagedForward,
                                                                sigma * std::sqrt(linear), 1.0, 0.0),
                                 1e-12);
@@ -3084,7 +3092,7 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
                 ext::make_shared<BlackCompoundingOvernightIndexedCouponPricer>(vars.vol, false, q));
             dailyRates[i++] = daily->rate();
         }
-        CHECK_OIS_COUPON_RESULT("daily cap, independent of the exponent", dailyRates[0],
+        CHECK_OIS_NAN_SAFE("daily cap, independent of the exponent", dailyRates[0],
                                 dailyRates[1], 1e-14);
     }
 
@@ -3107,15 +3115,33 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
         Rate startedRate = capped->rate();
         Real varianceTime = integratedSquaredDamping(startedFixingStart, startedFixingEnd, q);
         Rate startedForward = startedBase->rate();
-        CHECK_OIS_COUPON_RESULT("capped rate, started period", startedRate,
+        CHECK_OIS_NAN_SAFE("capped rate, started period", startedRate,
                                 startedForward - blackFormula(Option::Call, cap, startedForward,
                                                               sigma * std::sqrt(varianceTime), 1.0,
                                                               0.0),
                                 1e-12);
-        CHECK_OIS_COUPON_RESULT("effective caplet volatility, started period",
+        CHECK_OIS_NAN_SAFE("effective caplet volatility, started period",
                                 capped->effectiveCapletVolatility(),
                                 sigma * std::sqrt(varianceTime / startedFixingEnd), 1e-12);
     }
+
+    // the averaging pricer on the started period: linear damping whatever the exponent
+    auto startedAveragedBase = startedVars.makeBaseCoupon(start, end, RateAveraging::Simple);
+    auto startedAveraged =
+        startedVars.makeCoupon(start, end, cap, Null<Rate>(), RateAveraging::Simple);
+    startedAveraged->setPricer(startedVars.makeBlackPricer(RateAveraging::Simple, startedVars.vol));
+    Rate startedAveragedRate = startedAveraged->rate();
+    Rate startedAveragedForward = startedAveragedBase->rate();
+    Real startedLinear = integratedSquaredDamping(startedFixingStart, startedFixingEnd, 1.0);
+    CHECK_OIS_NAN_SAFE("averaging pricer, capped rate, started period", startedAveragedRate,
+                       startedAveragedForward - blackFormula(Option::Call, cap,
+                                                             startedAveragedForward,
+                                                             sigma * std::sqrt(startedLinear),
+                                                             1.0, 0.0),
+                       1e-12);
+    CHECK_OIS_NAN_SAFE("averaging pricer, volatility, started period",
+                       startedAveraged->effectiveCapletVolatility(),
+                       sigma * std::sqrt(startedLinear / startedFixingEnd), 1e-12);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

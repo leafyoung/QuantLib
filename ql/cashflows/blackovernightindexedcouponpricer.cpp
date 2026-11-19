@@ -81,8 +81,8 @@ namespace QuantLib {
                 Real fixingEndTime = capletVolatility()->timeFromReference(fixingDates.back());
                 Real sigma = capletVolatility()->volatility(
                     std::max(fixingDates.front(), capletVolatility()->referenceDate() + 1), effStrike);
-                Real T = backwardLookingVarianceTime(fixingStartTime, fixingEndTime,
-                                                     dampingExponent_);
+                Real T =
+                    backwardLookingVarianceTime(fixingStartTime, fixingEndTime, dampingExponent_);
                 stdDev = sigma * std::sqrt(T);
             }
             if (optionType == Option::Type::Call)
