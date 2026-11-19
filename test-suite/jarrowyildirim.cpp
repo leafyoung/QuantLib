@@ -181,7 +181,9 @@ BOOST_AUTO_TEST_CASE(testDegenerateVarianceIsNotNegative) {
     s.rhoNI = s.rhoRI = 0.0;
     JarrowYildirim jy = s.model();
     const Real T = 5.0;
-    BOOST_CHECK(jy.zeroInflationVariance(T) >= 0.0);
+    // the exact variance is (sigma_r - sigma_n)^2 * B^2, positive only at the
+    // rounding level; the clamp must not raise it above that scale
+    QL_CHECK_SMALL(jy.zeroInflationVariance(T), 1.0e-15);
     Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
     Real df = std::exp(-s.nominalRate->value() * T);
     for (Real strike : std::vector<Real>{0.9, 1.3}) {
