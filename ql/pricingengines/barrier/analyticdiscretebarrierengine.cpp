@@ -71,6 +71,7 @@ namespace QuantLib {
         continuousArgs->barrier =
             shiftedBarrier(arguments_.barrierType, arguments_.barrier, sigma,
                            T / static_cast<Real>(monitoringSteps_));
+        continuousEngine_->reset();
         continuousEngine_->calculate();
 
         auto* continuousResults =
