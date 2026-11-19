@@ -50,6 +50,10 @@ namespace QuantLib {
         The exponent \f$ q = 1 \f$ is the linear damping from one at the
         start of the accrual period to zero at its end.
 
+        If the accrual period has no part in the future, that is
+        \f$ \tau_1 \le s \f$ (in particular a single fixing, or a period
+        that has ended), nothing is damped and the result is \f$ s \f$.
+
         The power family of damping profiles follows Willems (arXiv:2004.04501,
         Section 3).
 

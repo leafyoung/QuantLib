@@ -2925,12 +2925,12 @@ namespace {
 
     // squared damping of the volatility of a backward-looking rate, integrated numerically
     Real integratedSquaredDamping(Time start, Time end, Real q) {
-        auto psiSquared = [=](Time t) {
-            Real psi = std::min(1.0, std::pow((end - t) / (end - start), q));
+        auto psiSquared = [=](Time t) -> Real {
+            Real psi = std::min<Real>(1.0, std::pow((end - t) / (end - start), q));
             return psi * psi;
         };
         GaussLegendreIntegrator integrator(64);
-        Time elapsed = std::max(start, 0.0);
+        Time elapsed = std::max<Real>(start, 0.0);
         Real total = elapsed;
         if (end > elapsed)
             total += integrator(psiSquared, elapsed, end);
@@ -2949,6 +2949,8 @@ BOOST_AUTO_TEST_CASE(testBackwardLookingVarianceTime) {
                             backwardLookingVarianceTime(-0.25, 0.75), 0.75 * 0.75 * 0.75 / 3.0, 1e-14);
     // a single fixing leaves nothing to damp
     CHECK_OIS_COUPON_RESULT("single fixing", backwardLookingVarianceTime(1.0, 1.0, 2.0), 1.0, 1e-14);
+    // an accrual period that has ended contributes only its elapsed part, which is zero
+    CHECK_OIS_COUPON_RESULT("period in the past", backwardLookingVarianceTime(-2.0, -1.0, 2.0), 0.0, 1e-14);
 
     struct TestCase {
         Time start, end;
@@ -2962,7 +2964,7 @@ BOOST_AUTO_TEST_CASE(testBackwardLookingVarianceTime) {
         Real expected = integratedSquaredDamping(c.start, c.end, c.q);
         Real calculated = backwardLookingVarianceTime(c.start, c.end, c.q);
         CHECK_OIS_COUPON_RESULT("variance time against numerical integration", calculated, expected, 1e-12);
-        BOOST_CHECK(calculated >= std::max(c.start, 0.0) && calculated <= c.end);
+        BOOST_CHECK(calculated >= std::max<Real>(c.start, 0.0) && calculated <= c.end);
     }
 
     // faster damping lowers the variance time
@@ -3041,6 +3043,27 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
 
     BOOST_CHECK_THROW(BlackCompoundingOvernightIndexedCouponPricer(vars.vol, false, 0.0), Error);
     BOOST_CHECK_THROW(BlackCompoundingOvernightIndexedCouponPricer(vars.vol, false, -1.0), Error);
+
+    // an accrual period that has already started: the damping starts at the first fixing, which lies
+    // in the past, so the variance time carries the elapsed part and the factor x^(2q) with x < 1
+    BlackONPricerVars startedVars(Date(1, August, 2035));
+    startedVars.linkVol(sigma);
+    startedVars.addFixings(Date(20, June, 2035), startedVars.today - 1);
+    auto startedBase = startedVars.makeBaseCoupon(start, end);
+    auto startedFixingDates = startedBase->fixingDates();
+    Time startedFixingStart = startedVars.vol->timeFromReference(startedFixingDates.front());
+    Time startedFixingEnd = startedVars.vol->timeFromReference(startedFixingDates.back());
+    BOOST_REQUIRE(startedFixingStart < 0.0);
+    for (Real q : {1.0, 2.0}) {
+        auto pricer = ext::make_shared<BlackCompoundingOvernightIndexedCouponPricer>(startedVars.vol, false, q);
+        auto capped = startedVars.makeCoupon(start, end, cap, Null<Rate>());
+        capped->setPricer(pricer);
+        capped->rate();
+        Real varianceTime = integratedSquaredDamping(startedFixingStart, startedFixingEnd, q);
+        CHECK_OIS_COUPON_RESULT("effective caplet volatility, started period",
+                                capped->effectiveCapletVolatility(),
+                                sigma * std::sqrt(varianceTime / startedFixingEnd), 1e-12);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -30,7 +30,7 @@ namespace QuantLib {
                                        << fixingStart << ")");
         QL_REQUIRE(dampingExponent > 0.0,
                    "damping exponent (" << dampingExponent << ") must be positive");
-        Time elapsed = std::max(fixingStart, 0.0);
+        Time elapsed = std::max<Real>(fixingStart, 0.0);
         // no part of the accrual period lies in the future: nothing is damped
         if (fixingEnd <= elapsed)
             return elapsed;
