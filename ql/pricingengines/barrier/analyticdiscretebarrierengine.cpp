@@ -64,16 +64,19 @@ namespace QuantLib {
         Time T = process_->blackVolatility()->timeFromReference(expiry);
         Volatility sigma = process_->blackVolatility()->blackVol(expiry, payoff->strike());
 
-        auto* args = dynamic_cast<BarrierOption::arguments*>(continuousEngine_->getArguments());
-        QL_REQUIRE(args, "wrong argument type");
-        *args = arguments_;
-        args->barrier = shiftedBarrier(arguments_.barrierType, arguments_.barrier, sigma,
-                                       T / static_cast<Real>(monitoringSteps_));
+        auto* continuousArgs =
+            dynamic_cast<BarrierOption::arguments*>(continuousEngine_->getArguments());
+        QL_REQUIRE(continuousArgs, "wrong argument type");
+        *continuousArgs = arguments_;
+        continuousArgs->barrier =
+            shiftedBarrier(arguments_.barrierType, arguments_.barrier, sigma,
+                           T / static_cast<Real>(monitoringSteps_));
         continuousEngine_->calculate();
 
-        auto* results = dynamic_cast<const BarrierOption::results*>(continuousEngine_->getResults());
-        QL_REQUIRE(results, "wrong result type");
-        results_ = *results;
+        auto* continuousResults =
+            dynamic_cast<const BarrierOption::results*>(continuousEngine_->getResults());
+        QL_REQUIRE(continuousResults, "wrong result type");
+        results_ = *continuousResults;
     }
 
 }

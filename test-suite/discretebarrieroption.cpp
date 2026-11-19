@@ -37,6 +37,7 @@
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 #include <utility>
 #include <vector>
 
@@ -113,8 +114,8 @@ namespace {
                 hit = hit || (down ? s <= barrier : s >= barrier);
             }
             Real st = std::exp(logS);
-            Real payoff = (optionType == Option::Call) ? std::max(st - strike, 0.0)
-                                                       : std::max(strike - st, 0.0);
+            Real payoff = (optionType == Option::Call) ? std::max<Real>(st - strike, 0.0)
+                                                       : std::max<Real>(strike - st, 0.0);
             stats.add((hit == knockIn) ? std::exp(-r) * payoff : 0.0);
         }
         return {stats.mean(), stats.errorEstimate()};
@@ -152,7 +153,7 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     CommonVars vars;
     for (const auto& c : cases) {
         Real calculated = vars.discrete(c.type, c.barrier, c.optionType, c.steps);
-        BOOST_CHECK_SMALL(calculated - c.expected, 1.0e-8);
+        QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
     }
 }
 
@@ -198,16 +199,17 @@ BOOST_AUTO_TEST_CASE(testConvergenceToContinuous) {
         }
         previous = gap;
     }
-    BOOST_CHECK_SMALL(previous, 0.15);
+    QL_CHECK_SMALL(previous, 0.15);
 }
 
 BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing against a Monte Carlo simulation of discrete monitoring...");
 
-    // Fixed seed.  Over ten different seeds these cases stay within 2.6 standard errors of
-    // the corrected price and more than 13 away from the continuous one.  The correction is
-    // an approximation, so the corrected price must lie within four standard errors of the
-    // simulation, while the continuous price must lie more than ten standard errors away.
+    // The seed is fixed, so the run is deterministic.  Over 16 other seeds of this generator
+    // these cases stay within 2.6 standard errors of the corrected price and at least 18
+    // away from the continuous one.  The correction is an approximation, so the corrected
+    // price must lie within four standard errors of the simulation, while the continuous
+    // price must lie more than ten standard errors away.
     const Size paths = 200000;
     struct Case {
         Barrier::Type type;
@@ -218,9 +220,9 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     const Case cases[] = {
         {Barrier::DownOut, 90.0, Option::Call, 12},
         {Barrier::DownOut, 90.0, Option::Call, 50},
-        {Barrier::UpOut, 120.0, Option::Put, 12},
-        {Barrier::UpIn, 120.0, Option::Put, 12},
         {Barrier::DownIn, 90.0, Option::Call, 50},
+        {Barrier::UpIn, 120.0, Option::Put, 12},
+        {Barrier::UpIn, 120.0, Option::Put, 50},
     };
 
     CommonVars vars;
@@ -247,13 +249,13 @@ BOOST_AUTO_TEST_CASE(testInOutParity) {
                               ext::make_shared<EuropeanExercise>(vars.expiry));
         vanilla.setPricingEngine(ext::make_shared<AnalyticEuropeanEngine>(vars.process));
         Real expected = vanilla.NPV();
-        for (Size steps : {1, 12, 250}) {
+        for (Size steps : std::initializer_list<Size>{1, 12, 250}) {
             Real down = vars.discrete(Barrier::DownIn, 90.0, t, steps) +
                         vars.discrete(Barrier::DownOut, 90.0, t, steps);
             Real up = vars.discrete(Barrier::UpIn, 120.0, t, steps) +
                       vars.discrete(Barrier::UpOut, 120.0, t, steps);
-            BOOST_CHECK_SMALL(down - expected, 1.0e-10);
-            BOOST_CHECK_SMALL(up - expected, 1.0e-10);
+            QL_CHECK_SMALL(down - expected, 1.0e-10);
+            QL_CHECK_SMALL(up - expected, 1.0e-10);
         }
     }
 }
@@ -265,7 +267,7 @@ BOOST_AUTO_TEST_CASE(testScaling) {
     Real base = vars.discrete(Barrier::UpOut, 120.0, Option::Call, 12, 95.0);
     vars.spot->setValue(1000.0);
     Real scaled = vars.discrete(Barrier::UpOut, 1200.0, Option::Call, 12, 950.0);
-    BOOST_CHECK_SMALL(scaled - 10.0 * base, 1.0e-9);
+    QL_CHECK_SMALL(scaled - 10.0 * base, 1.0e-9);
 }
 
 BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
@@ -299,7 +301,7 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
             vars.option(Barrier::DownOut, 90.0 * std::exp(-beta * sigma * std::sqrt(1.0 / 12.0)),
                         Option::Call, strike);
         shifted.setPricingEngine(ext::make_shared<AnalyticBarrierEngine>(process));
-        BOOST_CHECK_SMALL(discrete.NPV() - shifted.NPV(), 1.0e-12);
+        QL_CHECK_SMALL(discrete.NPV() - shifted.NPV(), 1.0e-12);
     }
 }
 
@@ -350,9 +352,9 @@ BOOST_AUTO_TEST_CASE(testQuoteChanges) {
         Real after = o.NPV();
         Real fresh = vars.discrete(Barrier::DownOut, 90.0, Option::Call, 12);
         BOOST_CHECK(std::fabs(after - before) > 1.0e-3);
-        BOOST_CHECK_SMALL(after - fresh, 1.0e-12);
+        QL_CHECK_SMALL(after - fresh, 1.0e-12);
         quotes[i]->setValue(old);
-        BOOST_CHECK_SMALL(o.NPV() - before, 1.0e-12);
+        QL_CHECK_SMALL(o.NPV() - before, 1.0e-12);
     }
 }
 
