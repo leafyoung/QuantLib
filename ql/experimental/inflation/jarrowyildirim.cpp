@@ -106,10 +106,10 @@ namespace QuantLib {
       sigmaI_(indexVolatility), rhoNR_(rhoNominalReal), rhoNI_(rhoNominalIndex),
       rhoRI_(rhoRealIndex) {
         checkCurves();
-        QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive ("
-                                                   << nominalMeanReversion << " given)");
+        QL_REQUIRE(nominalMeanReversion > 0.0,
+                   "non-positive nominal mean reversion (" << nominalMeanReversion << ") given");
         QL_REQUIRE(realMeanReversion > 0.0,
-                   "real mean reversion must be positive (" << realMeanReversion << " given)");
+                   "non-positive real mean reversion (" << realMeanReversion << ") given");
         QL_REQUIRE(nominalVolatility >= 0.0,
                    "negative nominal volatility (" << nominalVolatility << ") given");
         QL_REQUIRE(realVolatility >= 0.0,
@@ -136,7 +136,7 @@ namespace QuantLib {
         return realTermStructure_->discount(T) / nominalTermStructure_->discount(T);
     }
 
-    Real JarrowYildirim::zcInflationVariance(Time T) const {
+    Real JarrowYildirim::zeroInflationVariance(Time T) const {
         checkCurves();
         QL_REQUIRE(T >= 0.0, "negative time (" << T << ") given");
         Real variance = sigmaI_ * sigmaI_ * T + sigmaR_ * sigmaR_ * integralBB(aR_, aR_, T) +
@@ -148,10 +148,10 @@ namespace QuantLib {
         return std::max<Real>(variance, 0.0);
     }
 
-    Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
+    Real JarrowYildirim::zeroInflationOption(Option::Type type, Real strike, Time T) const {
         QL_REQUIRE(T > 0.0, "non-positive time (" << T << ") given");
         QL_REQUIRE(strike >= 0.0, "negative strike (" << strike << ") given");
-        Real stdDev = std::sqrt(zcInflationVariance(T));
+        Real stdDev = std::sqrt(zeroInflationVariance(T));
         return blackFormula(type, strike, forwardIndexRatio(T), stdDev,
                             nominalTermStructure_->discount(T));
     }

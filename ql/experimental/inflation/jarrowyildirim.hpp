@@ -149,14 +149,14 @@ namespace QuantLib {
         //! total variance of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure
         /*! This is \f$ V(0,T) \f$, defined for \f$ T \ge 0 \f$ and never negative.
          */
-        Real zcInflationVariance(Time T) const;
+        Real zeroInflationVariance(Time T) const;
 
         //! price of a zero-coupon inflation cap/floor
         /*! Per unit notional and discounted on the nominal curve; it pays
             \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$. The strike
             \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
         */
-        Real zcInflationOption(Option::Type type, Real strike, Time T) const;
+        Real zeroInflationOption(Option::Type type, Real strike, Time T) const;
 
         //! year-on-year convexity factor \f$ E^T[I_T/I_S]/(F(0,T)/F(0,S)) \f$
         /*! Defined for \f$ 0 \le S < T \f$. */

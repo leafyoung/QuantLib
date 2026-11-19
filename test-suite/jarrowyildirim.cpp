@@ -90,15 +90,14 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
         Real carry = rates.first - rates.second;
         Real fS = std::exp(carry * S), fT = std::exp(carry * T);
         QL_CHECK_CLOSE(jy.forwardIndexRatio(T), fT, 1.0e-10);
-        if (jy.yoyConvexity(S, T) != 1.0)
-            BOOST_ERROR("convexity " << jy.yoyConvexity(S, T) << " expected exactly 1");
+        BOOST_CHECK_EQUAL(jy.yoyConvexity(S, T), 1.0);
         Real expectedYoY = fT / fS;
         QL_CHECK_CLOSE(jy.yoyForwardRatio(S, T), expectedYoY, 1.0e-10);
-        BOOST_CHECK_EQUAL(jy.zcInflationVariance(T), 0.0);
+        BOOST_CHECK_EQUAL(jy.zeroInflationVariance(T), 0.0);
         Real df = std::exp(-rates.first * T);
         for (Real k : {0.85, 0.95, 1.05, 1.10, 1.20}) {
-            Real call = jy.zcInflationOption(Option::Call, k, T);
-            Real put = jy.zcInflationOption(Option::Put, k, T);
+            Real call = jy.zeroInflationOption(Option::Call, k, T);
+            Real put = jy.zeroInflationOption(Option::Put, k, T);
             Real expCall = df * std::max<Real>(fT - k, 0.0);
             Real expPut = df * std::max<Real>(k - fT, 0.0);
             QL_CHECK_CLOSE(call, expCall, 1.0e-10);
@@ -112,14 +111,14 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     // mean reversions from the small-a branch through the closed-form threshold
     // including one tiny and one large mean reversion, which exercise the
     // choice of integration panels and of the branch for each term
-    for (auto rates :
+    for (auto meanReversions :
          {std::make_pair(0.08, 0.05), std::make_pair(1.0e-8, 1.0e-6), std::make_pair(1.0e-3, 0.5),
           std::make_pair(0.02, 0.02), std::make_pair(0.15, 1.0e-7), std::make_pair(1.0e-3, 2.0),
           std::make_pair(1.0e-8, 1.0), std::make_pair(1.0e-8, 0.05), std::make_pair(2.0e-4, 2.0),
           std::make_pair(2.0, 1.0e-8), std::make_pair(1.0, 2.0e-4)}) {
         Setup s;
-        s.an = rates.first;
-        s.ar = rates.second;
+        s.an = meanReversions.first;
+        s.ar = meanReversions.second;
         JarrowYildirim jy = s.model();
         for (Real T : {0.5, 3.0, 10.0, 30.0}) {
             auto integrand = [&](Real u) -> Real {
@@ -129,7 +128,7 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
                        2.0 * s.rhoNR * s.sn * s.sr * bn * br;
             };
             Real expected = integrate(integrand, 0.0, T);
-            Real calculated = jy.zcInflationVariance(T);
+            Real calculated = jy.zeroInflationVariance(T);
             QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
         }
         for (auto st :
@@ -150,8 +149,8 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(testZcCapFloorParity) {
-    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim zero-coupon cap-floor parity...");
+BOOST_AUTO_TEST_CASE(testZeroInflationCapFloorParity) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim zero-coupon inflation cap-floor parity...");
     for (auto rates : {std::make_pair(0.03, 0.012), std::make_pair(0.012, 0.03)}) {
         Setup s;
         s.nominalRate->setValue(rates.first);
@@ -159,8 +158,8 @@ BOOST_AUTO_TEST_CASE(testZcCapFloorParity) {
         JarrowYildirim jy = s.model();
         for (Real T : {1.0, 5.0, 10.0}) {
             for (Real k : {0.95, 1.0, 1.1, 1.3}) {
-                Real call = jy.zcInflationOption(Option::Call, k, T);
-                Real put = jy.zcInflationOption(Option::Put, k, T);
+                Real call = jy.zeroInflationOption(Option::Call, k, T);
+                Real put = jy.zeroInflationOption(Option::Put, k, T);
                 Real expected =
                     std::exp(-rates.first * T) * (std::exp((rates.first - rates.second) * T) - k);
                 QL_CHECK_CLOSE(call - put, expected, 1.0e-10);
@@ -182,18 +181,18 @@ BOOST_AUTO_TEST_CASE(testDegenerateVarianceIsNotNegative) {
     s.rhoNI = s.rhoRI = 0.0;
     JarrowYildirim jy = s.model();
     const Real T = 5.0;
-    BOOST_CHECK(jy.zcInflationVariance(T) >= 0.0);
+    BOOST_CHECK(jy.zeroInflationVariance(T) >= 0.0);
     Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
     Real df = std::exp(-s.nominalRate->value() * T);
     for (Real strike : std::vector<Real>{0.9, 1.3}) {
-        QL_CHECK_CLOSE(jy.zcInflationOption(Option::Call, strike, T),
+        QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, strike, T),
                        df * std::max<Real>(forward - strike, 0.0), 1.0e-6);
-        QL_CHECK_CLOSE(jy.zcInflationOption(Option::Put, strike, T),
+        QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Put, strike, T),
                        df * std::max<Real>(strike - forward, 0.0), 1.0e-6);
     }
 }
 
-BOOST_AUTO_TEST_CASE(testZcOptionAgainstLognormalExpectation) {
+BOOST_AUTO_TEST_CASE(testZeroInflationOptionAgainstLognormalExpectation) {
     BOOST_TEST_MESSAGE(
         "Testing Jarrow-Yildirim zero-coupon option against lognormal expectation...");
     Setup s;
@@ -220,8 +219,8 @@ BOOST_AUTO_TEST_CASE(testZcOptionAgainstLognormalExpectation) {
             };
             Real callExpected = df * integrate(payoff, zStar, 12.0);
             Real putExpected = -df * integrate(payoff, -12.0, zStar);
-            Real call = jy.zcInflationOption(Option::Call, strike, T);
-            Real put = jy.zcInflationOption(Option::Put, strike, T);
+            Real call = jy.zeroInflationOption(Option::Call, strike, T);
+            Real put = jy.zeroInflationOption(Option::Put, strike, T);
             QL_CHECK_CLOSE(call, callExpected, 1.0e-6);
             QL_CHECK_CLOSE(put, putExpected, 1.0e-6);
             QL_CHECK_CLOSE(call, df * blackFormula(Option::Call, strike, forward, sd), 1.0e-9);
@@ -295,7 +294,7 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
                                  << seYoY);
 }
 
-BOOST_AUTO_TEST_CASE(testZcVarianceAgainstMonteCarlo) {
+BOOST_AUTO_TEST_CASE(testZeroInflationVarianceAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim ZC variance against Monte Carlo...");
     Setup s;
     s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
@@ -358,23 +357,26 @@ BOOST_AUTO_TEST_CASE(testZcVarianceAgainstMonteCarlo) {
     Real m4 = sum4 / samples - 4.0 * mean * sum3 / samples + 6.0 * mean * mean * sum2 / samples -
               3.0 * mean * mean * mean * mean;
     Real se = std::sqrt((m4 - var * var) / samples);
-    Real calculated = jy.zcInflationVariance(T);
+    Real calculated = jy.zeroInflationVariance(T);
     BOOST_TEST_MESSAGE("ZC variance: closed form " << calculated << ", Monte Carlo " << var
                                                    << " +- " << se);
     if (std::fabs(var - calculated) > 4.0 * se)
         BOOST_ERROR("ZC variance " << calculated << " vs Monte Carlo " << var << " +- " << se);
 }
 
-BOOST_AUTO_TEST_CASE(testParameterValidation) {
-    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim parameter validation...");
+BOOST_AUTO_TEST_CASE(testConstructorValidation) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim constructor validation...");
     Setup s;
     auto make = [&](Real an, Real sn, Real ar, Real sr, Real sI, Real rhoNR, Real rhoNI,
                     Real rhoRI) {
         JarrowYildirim(s.nominalCurve, s.realCurve, an, sn, ar, sr, sI, rhoNR, rhoNI, rhoRI);
     };
+    // arguments are (rhoNR, rhoNI, rhoRI)
     auto correlations = [&](Real rhoNR, Real rhoNI, Real rhoRI) {
         make(s.an, s.sn, s.ar, s.sr, s.sI, rhoNR, rhoNI, rhoRI);
     };
+    ExpectedErrorMessage notPsd("correlation matrix is not positive semi-definite (determinant ");
+
     // just outside the bounds, in each position; the other entries are in range
     for (Real rho : std::vector<Real>{1.05, -1.05}) {
         std::ostringstream expected;
@@ -388,24 +390,20 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
         BOOST_CHECK_EXCEPTION(correlations(rho, rho, rho), Error,
                               ExpectedErrorMessage(expected.str()));
     }
-    BOOST_CHECK_EXCEPTION(correlations(1.2, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("correlation 1.2 outside [-1, 1]"));
-    BOOST_CHECK_EXCEPTION(correlations(0.0, -1.2, 0.0), Error,
-                          ExpectedErrorMessage("correlation -1.2 outside [-1, 1]"));
-    BOOST_CHECK_EXCEPTION(
-        correlations(0.9, 0.9, 0.0), Error,
-        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
-    BOOST_CHECK_EXCEPTION(
-        correlations(0.9, 0.9, -0.9), Error,
-        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
-    // arguments are (rhoNR, rhoNI, rhoRI); only rhoRI makes the determinant negative here
-    BOOST_CHECK_EXCEPTION(
-        correlations(0.9, 0.0, 0.6), Error,
-        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+    // barely outside; these matrices are positive semi-definite, so only the range check
+    // rejects them (the printed value rounds to +-1)
+    Real barely = 1.0 + 1.0e-10;
+    ExpectedErrorMessage outside("outside [-1, 1]");
+    BOOST_CHECK_EXCEPTION(correlations(barely, barely, barely), Error, outside);
+    BOOST_CHECK_EXCEPTION(correlations(-barely, -barely, barely), Error, outside);
+    BOOST_CHECK_EXCEPTION(correlations(barely, -barely, -barely), Error, outside);
+
+    // determinant guard; in the (0.9, 0.0, 0.6) case only rhoRI makes the determinant negative
+    BOOST_CHECK_EXCEPTION(correlations(0.9, 0.9, 0.0), Error, notPsd);
+    BOOST_CHECK_EXCEPTION(correlations(0.9, 0.9, -0.9), Error, notPsd);
+    BOOST_CHECK_EXCEPTION(correlations(0.9, 0.0, 0.6), Error, notPsd);
     // determinant of about -2.6e-4 lies far outside the tolerance
-    BOOST_CHECK_EXCEPTION(
-        correlations(0.7072, 0.7072, 0.0), Error,
-        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+    BOOST_CHECK_EXCEPTION(correlations(0.7072, 0.7072, 0.0), Error, notPsd);
     BOOST_CHECK_NO_THROW(correlations(1.0, 1.0, 1.0));
     // singular matrices are accepted, including the endpoint -1
     BOOST_CHECK_NO_THROW(correlations(-1.0, -1.0, 1.0));
@@ -417,33 +415,26 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
     // determinants of about -2e-12, -5e-12 and -1e-10 are outside it
     for (Real excess : std::vector<Real>{1.0e-12, 2.5e-12, 5.0e-11}) {
         Real tooNegative = std::sqrt(0.5 + excess);
-        BOOST_CHECK_EXCEPTION(
-            correlations(tooNegative, tooNegative, 0.0), Error,
-            ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+        BOOST_CHECK_EXCEPTION(correlations(tooNegative, tooNegative, 0.0), Error, notPsd);
     }
-    BOOST_CHECK_EXCEPTION(
-        make(-0.1, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-        ExpectedErrorMessage("nominal mean reversion must be positive (-0.1 given)"));
-    BOOST_CHECK_EXCEPTION(
-        make(s.an, s.sn, -0.1, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-        ExpectedErrorMessage("real mean reversion must be positive (-0.1 given)"));
-    BOOST_CHECK_EXCEPTION(
-        make(0.0, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-        ExpectedErrorMessage("nominal mean reversion must be positive (0 given)"));
-    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, 0.0, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("real mean reversion must be positive (0 given)"));
+
+    // mean reversions: zero and negative values are rejected
+    for (Real a : std::vector<Real>{0.0, -0.1}) {
+        std::ostringstream expectedNominal, expectedReal;
+        expectedNominal << "non-positive nominal mean reversion (" << a << ") given";
+        expectedReal << "non-positive real mean reversion (" << a << ") given";
+        BOOST_CHECK_EXCEPTION(make(a, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+                              ExpectedErrorMessage(expectedNominal.str()));
+        BOOST_CHECK_EXCEPTION(make(s.an, s.sn, a, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+                              ExpectedErrorMessage(expectedReal.str()));
+    }
+    // volatilities: barely negative values are rejected
     BOOST_CHECK_EXCEPTION(make(s.an, -1.0e-8, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
                           ExpectedErrorMessage("negative nominal volatility (-1e-08) given"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, -1.0e-8, s.sI, 0.0, 0.0, 0.0), Error,
                           ExpectedErrorMessage("negative real volatility (-1e-08) given"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, s.sr, -1.0e-8, 0.0, 0.0, 0.0), Error,
                           ExpectedErrorMessage("negative index volatility (-1e-08) given"));
-    BOOST_CHECK_EXCEPTION(make(s.an, -0.1, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("negative nominal volatility (-0.1) given"));
-    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, -0.1, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("negative real volatility (-0.1) given"));
-    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, s.sr, -0.1, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("negative index volatility (-0.1) given"));
 
     Handle<YieldTermStructure> empty;
     BOOST_CHECK_EXCEPTION(
@@ -463,30 +454,44 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
         JarrowYildirim(s.nominalCurve, otherDayCounter, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0,
                        0.0),
         Error, ExpectedErrorMessage("nominal and real curves must have the same day counter"));
+}
 
-    // time arguments
+BOOST_AUTO_TEST_CASE(testMethodArgumentValidation) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim method argument validation...");
+    Setup s;
     JarrowYildirim jy = s.model();
-    BOOST_CHECK_EXCEPTION(jy.forwardIndexRatio(-1.0), Error,
-                          ExpectedErrorMessage("negative time (-1) given"));
-    BOOST_CHECK_EXCEPTION(jy.zcInflationVariance(-1.0), Error,
-                          ExpectedErrorMessage("negative time (-1) given"));
-    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, 0.0), Error,
+
+    // negative times, including barely negative ones
+    for (Real t : std::vector<Real>{-1.0, -1.0e-8}) {
+        std::ostringstream negative, nonPositive;
+        negative << "negative time (" << t << ") given";
+        nonPositive << "non-positive time (" << t << ") given";
+        BOOST_CHECK_EXCEPTION(jy.forwardIndexRatio(t), Error, ExpectedErrorMessage(negative.str()));
+        BOOST_CHECK_EXCEPTION(jy.zeroInflationVariance(t), Error,
+                              ExpectedErrorMessage(negative.str()));
+        BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, 1.0, t), Error,
+                              ExpectedErrorMessage(nonPositive.str()));
+        BOOST_CHECK_EXCEPTION(jy.yoyConvexity(t, 2.0), Error, ExpectedErrorMessage(negative.str()));
+        BOOST_CHECK_EXCEPTION(jy.yoyForwardRatio(t, 2.0), Error,
+                              ExpectedErrorMessage(negative.str()));
+    }
+    BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, 1.0, 0.0), Error,
                           ExpectedErrorMessage("non-positive time (0) given"));
-    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, -1.0), Error,
-                          ExpectedErrorMessage("non-positive time (-1) given"));
-    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(-1.0, 2.0), Error,
-                          ExpectedErrorMessage("negative time (-1) given"));
     BOOST_CHECK_EXCEPTION(jy.yoyConvexity(3.0, 3.0), Error,
                           ExpectedErrorMessage("start time (3) must be smaller than end time (3)"));
     BOOST_CHECK_EXCEPTION(jy.yoyConvexity(4.0, 3.0), Error,
                           ExpectedErrorMessage("start time (4) must be smaller than end time (3)"));
-    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, -0.1, 1.0), Error,
+
+    // negative strikes, including barely negative ones
+    BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, -0.1, 1.0), Error,
                           ExpectedErrorMessage("negative strike (-0.1) given"));
-    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, -1.0e-8, 1.0), Error,
+    BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, -1.0e-8, 1.0), Error,
                           ExpectedErrorMessage("negative strike (-1e-08) given"));
-    BOOST_CHECK_NO_THROW(jy.zcInflationOption(Option::Call, 0.0, 1.0));
+
+    // boundary values are accepted
+    BOOST_CHECK_NO_THROW(jy.zeroInflationOption(Option::Call, 0.0, 1.0));
     BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(0.0));
-    BOOST_CHECK_NO_THROW(jy.zcInflationVariance(0.0));
+    BOOST_CHECK_NO_THROW(jy.zeroInflationVariance(0.0));
     BOOST_CHECK_NO_THROW(jy.yoyConvexity(0.0, 1.0));
 }
 
@@ -501,8 +506,8 @@ BOOST_AUTO_TEST_CASE(testCurveConventionsAfterRelinking) {
         ext::make_shared<FlatForward>(s.today + 1, Handle<Quote>(s.realRate), Actual365Fixed()));
     ExpectedErrorMessage message("nominal and real curves must have the same reference date");
     BOOST_CHECK_EXCEPTION(jy.forwardIndexRatio(2.0), Error, message);
-    BOOST_CHECK_EXCEPTION(jy.zcInflationVariance(2.0), Error, message);
-    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, 2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.zeroInflationVariance(2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, 1.0, 2.0), Error, message);
     BOOST_CHECK_EXCEPTION(jy.yoyConvexity(1.0, 2.0), Error, message);
     BOOST_CHECK_EXCEPTION(jy.yoyForwardRatio(1.0, 2.0), Error, message);
     real.linkTo(ext::make_shared<FlatForward>(s.today, Handle<Quote>(s.realRate), Actual360()));
@@ -536,8 +541,8 @@ BOOST_AUTO_TEST_CASE(testInspectors) {
     BOOST_CHECK(jy.realTermStructure() == s.realCurve);
 }
 
-BOOST_AUTO_TEST_CASE(testObserverRegistration) {
-    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim observer notifications...");
+BOOST_AUTO_TEST_CASE(testObservability) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim observability...");
     Setup s;
     auto jy = ext::make_shared<JarrowYildirim>(s.nominalCurve, s.realCurve, s.an, s.sn, s.ar, s.sr,
                                                s.sI, s.rhoNR, s.rhoNI, s.rhoRI);
