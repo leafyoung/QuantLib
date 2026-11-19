@@ -78,25 +78,31 @@ namespace {
 
 BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim model with zero volatilities...");
-    Setup s;
-    s.sn = s.sr = s.sI = 0.0;
-    JarrowYildirim jy = s.model();
-    Real S = 2.0, T = 5.0;
-    Real fS = std::exp((0.03 - 0.012) * S), fT = std::exp((0.03 - 0.012) * T);
-    QL_CHECK_CLOSE(jy.forwardIndexRatio(T), fT, 1.0e-10);
-    if (jy.yoyConvexity(S, T) != 1.0)
-        BOOST_ERROR("convexity " << jy.yoyConvexity(S, T) << " expected exactly 1");
-    Real expectedYoY = fT / fS;
-    QL_CHECK_CLOSE(jy.yoyForward(S, T), expectedYoY, 1.0e-10);
-    BOOST_CHECK_EQUAL(jy.zcInflationVariance(T), 0.0);
-    Real df = std::exp(-0.03 * T);
-    for (Real k : {1.05, 1.10, 1.20}) {
-        Real call = jy.zcInflationOption(Option::Call, k, T);
-        Real put = jy.zcInflationOption(Option::Put, k, T);
-        Real expCall = df * std::max<Real>(fT - k, 0.0);
-        Real expPut = df * std::max<Real>(k - fT, 0.0);
-        QL_CHECK_CLOSE(call, expCall, 1.0e-10);
-        QL_CHECK_CLOSE(put, expPut, 1.0e-10);
+    // nominal rate above and below the real rate: forward index ratio above and below 1
+    for (auto rates : {std::make_pair(0.03, 0.012), std::make_pair(0.012, 0.03)}) {
+        Setup s;
+        s.nominalRate->setValue(rates.first);
+        s.realRate->setValue(rates.second);
+        s.sn = s.sr = s.sI = 0.0;
+        JarrowYildirim jy = s.model();
+        Real S = 2.0, T = 5.0;
+        Real carry = rates.first - rates.second;
+        Real fS = std::exp(carry * S), fT = std::exp(carry * T);
+        QL_CHECK_CLOSE(jy.forwardIndexRatio(T), fT, 1.0e-10);
+        if (jy.yoyConvexity(S, T) != 1.0)
+            BOOST_ERROR("convexity " << jy.yoyConvexity(S, T) << " expected exactly 1");
+        Real expectedYoY = fT / fS;
+        QL_CHECK_CLOSE(jy.yoyForwardRatio(S, T), expectedYoY, 1.0e-10);
+        BOOST_CHECK_EQUAL(jy.zcInflationVariance(T), 0.0);
+        Real df = std::exp(-rates.first * T);
+        for (Real k : {0.85, 0.95, 1.05, 1.10, 1.20}) {
+            Real call = jy.zcInflationOption(Option::Call, k, T);
+            Real put = jy.zcInflationOption(Option::Put, k, T);
+            Real expCall = df * std::max<Real>(fT - k, 0.0);
+            Real expPut = df * std::max<Real>(k - fT, 0.0);
+            QL_CHECK_CLOSE(call, expCall, 1.0e-10);
+            QL_CHECK_CLOSE(put, expPut, 1.0e-10);
+        }
     }
 }
 
@@ -145,14 +151,19 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
 
 BOOST_AUTO_TEST_CASE(testZcCapletFloorletParity) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim zero-coupon caplet-floorlet parity...");
-    Setup s;
-    JarrowYildirim jy = s.model();
-    for (Real T : {1.0, 5.0, 10.0}) {
-        for (Real k : {0.95, 1.0, 1.1, 1.3}) {
-            Real call = jy.zcInflationOption(Option::Call, k, T);
-            Real put = jy.zcInflationOption(Option::Put, k, T);
-            Real expected = std::exp(-0.03 * T) * (jy.forwardIndexRatio(T) - k);
-            QL_CHECK_CLOSE(call - put, expected, 1.0e-10);
+    for (auto rates : {std::make_pair(0.03, 0.012), std::make_pair(0.012, 0.03)}) {
+        Setup s;
+        s.nominalRate->setValue(rates.first);
+        s.realRate->setValue(rates.second);
+        JarrowYildirim jy = s.model();
+        for (Real T : {1.0, 5.0, 10.0}) {
+            for (Real k : {0.95, 1.0, 1.1, 1.3}) {
+                Real call = jy.zcInflationOption(Option::Call, k, T);
+                Real put = jy.zcInflationOption(Option::Put, k, T);
+                Real expected =
+                    std::exp(-rates.first * T) * (std::exp((rates.first - rates.second) * T) - k);
+                QL_CHECK_CLOSE(call - put, expected, 1.0e-10);
+            }
         }
     }
 }
@@ -174,7 +185,7 @@ BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
                 },
                 0.0, T);
             Real sd = std::sqrt(variance);
-            Real forward = jy.forwardIndexRatio(T);
+            Real forward = std::exp((0.03 - 0.012) * T);
             Real df = std::exp(-0.03 * T);
             NormalDistribution density;
             // payoff is smooth on each side of the exercise boundary in the normal variate
@@ -196,6 +207,7 @@ BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
 BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim YoY forward against Monte Carlo...");
     Setup s;
+    s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
     JarrowYildirim jy = s.model();
     const Real S = 4.0, T = 6.0;
     const Size samples = 1000000;
@@ -245,7 +257,7 @@ BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
     if (std::fabs(meanInvP - expectedInvP) > 4.0 * seInvP)
         BOOST_ERROR("E[1/Pn] " << meanInvP << " expected " << expectedInvP << " +- " << seInvP);
 
-    Real calculated = jy.yoyForward(S, T);
+    Real calculated = jy.yoyForwardRatio(S, T);
     BOOST_TEST_MESSAGE("YoY forward: closed form " << calculated << ", Monte Carlo " << meanYoY
                                                    << " +- " << seYoY);
     Real curveOnly = jy.forwardIndexRatio(T) / jy.forwardIndexRatio(S);
@@ -261,6 +273,7 @@ BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
 BOOST_AUTO_TEST_CASE(testZcVarianceAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim ZC variance against Monte Carlo...");
     Setup s;
+    s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
     JarrowYildirim jy = s.model();
     const Real T = 5.0;
     const Size steps = 10, samples = 200000;
@@ -358,11 +371,13 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
     BOOST_CHECK_NO_THROW(correlations(1.0, 1.0, 1.0));
     // singular matrices are accepted, including the endpoint -1
     BOOST_CHECK_NO_THROW(correlations(-1.0, -1.0, 1.0));
-    // determinant of about -1e-13 is within the rounding tolerance
-    Real nearSingular = std::sqrt(0.5 + 5.0e-14);
-    BOOST_CHECK_NO_THROW(correlations(nearSingular, nearSingular, 0.0));
-    // determinants of about -5e-12 and -1e-10 are outside it
-    for (Real excess : std::vector<Real>{2.5e-12, 5.0e-11}) {
+    // determinants of about -1e-13 and -5e-13 are within the rounding tolerance
+    for (Real excess : std::vector<Real>{5.0e-14, 2.5e-13}) {
+        Real nearSingular = std::sqrt(0.5 + excess);
+        BOOST_CHECK_NO_THROW(correlations(nearSingular, nearSingular, 0.0));
+    }
+    // determinants of about -2e-12, -5e-12 and -1e-10 are outside it
+    for (Real excess : std::vector<Real>{1.0e-12, 2.5e-12, 5.0e-11}) {
         Real tooNegative = std::sqrt(0.5 + excess);
         BOOST_CHECK_EXCEPTION(
             correlations(tooNegative, tooNegative, 0.0), Error,
@@ -437,11 +452,36 @@ BOOST_AUTO_TEST_CASE(testCurveConventionsAfterRelinking) {
     BOOST_CHECK_EXCEPTION(jy.zcInflationVariance(2.0), Error, message);
     BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, 1.0, 2.0), Error, message);
     BOOST_CHECK_EXCEPTION(jy.yoyConvexity(1.0, 2.0), Error, message);
-    BOOST_CHECK_EXCEPTION(jy.yoyForward(1.0, 2.0), Error, message);
+    BOOST_CHECK_EXCEPTION(jy.yoyForwardRatio(1.0, 2.0), Error, message);
     real.linkTo(ext::make_shared<FlatForward>(s.today, Handle<Quote>(s.realRate), Actual360()));
     BOOST_CHECK_EXCEPTION(
         jy.forwardIndexRatio(2.0), Error,
         ExpectedErrorMessage("nominal and real curves must have the same day counter"));
+}
+
+BOOST_AUTO_TEST_CASE(testInspectors) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim inspectors...");
+    Setup s;
+    // distinct values, so that a swapped accessor is detected
+    s.an = 0.11;
+    s.sn = 0.013;
+    s.ar = 0.07;
+    s.sr = 0.017;
+    s.sI = 0.09;
+    s.rhoNR = 0.45;
+    s.rhoNI = 0.25;
+    s.rhoRI = -0.35;
+    JarrowYildirim jy = s.model();
+    BOOST_CHECK_EQUAL(jy.nominalMeanReversion(), s.an);
+    BOOST_CHECK_EQUAL(jy.nominalVolatility(), s.sn);
+    BOOST_CHECK_EQUAL(jy.realMeanReversion(), s.ar);
+    BOOST_CHECK_EQUAL(jy.realVolatility(), s.sr);
+    BOOST_CHECK_EQUAL(jy.indexVolatility(), s.sI);
+    BOOST_CHECK_EQUAL(jy.rhoNominalReal(), s.rhoNR);
+    BOOST_CHECK_EQUAL(jy.rhoNominalIndex(), s.rhoNI);
+    BOOST_CHECK_EQUAL(jy.rhoRealIndex(), s.rhoRI);
+    BOOST_CHECK(jy.nominalTermStructure() == s.nominalCurve);
+    BOOST_CHECK(jy.realTermStructure() == s.realCurve);
 }
 
 BOOST_AUTO_TEST_CASE(testObserverRegistration) {

@@ -90,8 +90,8 @@ namespace QuantLib {
 
     }
 
-    JarrowYildirim::JarrowYildirim(Handle<YieldTermStructure> nominalCurve,
-                                   Handle<YieldTermStructure> realCurve,
+    JarrowYildirim::JarrowYildirim(Handle<YieldTermStructure> nominalTermStructure,
+                                   Handle<YieldTermStructure> realTermStructure,
                                    Real nominalMeanReversion,
                                    Real nominalVolatility,
                                    Real realMeanReversion,
@@ -100,10 +100,10 @@ namespace QuantLib {
                                    Real rhoNominalReal,
                                    Real rhoNominalIndex,
                                    Real rhoRealIndex)
-    : nominalCurve_(std::move(nominalCurve)), realCurve_(std::move(realCurve)),
-      an_(nominalMeanReversion), sn_(nominalVolatility), ar_(realMeanReversion),
-      sr_(realVolatility), sigmaI_(indexVolatility), rhoNR_(rhoNominalReal),
-      rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex) {
+    : nominalTermStructure_(std::move(nominalTermStructure)),
+      realTermStructure_(std::move(realTermStructure)), an_(nominalMeanReversion),
+      sn_(nominalVolatility), ar_(realMeanReversion), sr_(realVolatility), sigmaI_(indexVolatility),
+      rhoNR_(rhoNominalReal), rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex) {
         checkCurves();
         QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive ("
                                                    << nominalMeanReversion << " given)");
@@ -116,23 +116,23 @@ namespace QuantLib {
         QL_REQUIRE(indexVolatility >= 0.0,
                    "negative index volatility (" << indexVolatility << ") given");
         checkCorrelations(rhoNominalReal, rhoNominalIndex, rhoRealIndex);
-        registerWith(nominalCurve_);
-        registerWith(realCurve_);
+        registerWith(nominalTermStructure_);
+        registerWith(realTermStructure_);
     }
 
     void JarrowYildirim::checkCurves() const {
-        QL_REQUIRE(!nominalCurve_.empty(), "empty nominal curve");
-        QL_REQUIRE(!realCurve_.empty(), "empty real curve");
-        QL_REQUIRE(nominalCurve_->referenceDate() == realCurve_->referenceDate(),
+        QL_REQUIRE(!nominalTermStructure_.empty(), "empty nominal curve");
+        QL_REQUIRE(!realTermStructure_.empty(), "empty real curve");
+        QL_REQUIRE(nominalTermStructure_->referenceDate() == realTermStructure_->referenceDate(),
                    "nominal and real curves must have the same reference date");
-        QL_REQUIRE(nominalCurve_->dayCounter() == realCurve_->dayCounter(),
+        QL_REQUIRE(nominalTermStructure_->dayCounter() == realTermStructure_->dayCounter(),
                    "nominal and real curves must have the same day counter");
     }
 
     Real JarrowYildirim::forwardIndexRatio(Time T) const {
         checkCurves();
         QL_REQUIRE(T >= 0.0, "negative time (" << T << ") given");
-        return realCurve_->discount(T) / nominalCurve_->discount(T);
+        return realTermStructure_->discount(T) / nominalTermStructure_->discount(T);
     }
 
     Real JarrowYildirim::zcInflationVariance(Time T) const {
@@ -149,7 +149,8 @@ namespace QuantLib {
         QL_REQUIRE(T > 0.0, "non-positive time (" << T << ") given");
         QL_REQUIRE(strike >= 0.0, "negative strike (" << strike << ") given");
         Real stdDev = std::sqrt(std::max<Real>(zcInflationVariance(T), 0.0));
-        return blackFormula(type, strike, forwardIndexRatio(T), stdDev, nominalCurve_->discount(T));
+        return blackFormula(type, strike, forwardIndexRatio(T), stdDev,
+                            nominalTermStructure_->discount(T));
     }
 
     Real JarrowYildirim::yoyConvexity(Time S, Time T) const {
@@ -163,7 +164,7 @@ namespace QuantLib {
         return std::exp(exponent);
     }
 
-    Real JarrowYildirim::yoyForward(Time S, Time T) const {
+    Real JarrowYildirim::yoyForwardRatio(Time S, Time T) const {
         return forwardIndexRatio(T) / forwardIndexRatio(S) * yoyConvexity(S, T);
     }
 

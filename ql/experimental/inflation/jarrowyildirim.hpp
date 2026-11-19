@@ -93,10 +93,12 @@ namespace QuantLib {
     */
     class JarrowYildirim : public Observer, public Observable {
       public:
-        /*! \param nominalCurve  curve of nominal discount factors
-            \param realCurve  curve of real discount factors; it must have the same
-                              reference date and day counter as the nominal curve,
-                              which is checked at construction and at each call
+        /*! \param nominalTermStructure  curve of nominal discount factors; it must not be
+                              empty, checked at construction and at each call
+            \param realTermStructure  curve of real discount factors; it must not be empty
+                              and must have the same reference date and day counter
+                              as the nominal curve, checked at construction and at
+                              each call
             \param nominalMeanReversion  \f$ a_n > 0 \f$
             \param nominalVolatility  absolute (normal) volatility \f$ \sigma_n \ge 0 \f$
                                         of the nominal short rate
@@ -116,8 +118,8 @@ namespace QuantLib {
             observers when either changes; results are computed on demand from
             the current curves.
         */
-        JarrowYildirim(Handle<YieldTermStructure> nominalCurve,
-                       Handle<YieldTermStructure> realCurve,
+        JarrowYildirim(Handle<YieldTermStructure> nominalTermStructure,
+                       Handle<YieldTermStructure> realTermStructure,
                        Real nominalMeanReversion,
                        Real nominalVolatility,
                        Real realMeanReversion,
@@ -127,8 +129,10 @@ namespace QuantLib {
                        Real rhoNominalIndex,
                        Real rhoRealIndex);
 
-        const Handle<YieldTermStructure>& nominalTermStructure() const { return nominalCurve_; }
-        const Handle<YieldTermStructure>& realTermStructure() const { return realCurve_; }
+        const Handle<YieldTermStructure>& nominalTermStructure() const {
+            return nominalTermStructure_;
+        }
+        const Handle<YieldTermStructure>& realTermStructure() const { return realTermStructure_; }
         Real nominalMeanReversion() const { return an_; }
         Real nominalVolatility() const { return sn_; }
         Real realMeanReversion() const { return ar_; }
@@ -155,15 +159,17 @@ namespace QuantLib {
         //! \f$ E^T[I_T/I_S]/(F(0,T)/F(0,S)) \f$, the convexity factor, for \f$ 0 \le S < T \f$
         Real yoyConvexity(Time S, Time T) const;
 
-        //! \f$ E^T[I_T/I_S] \f$ for \f$ 0 \le S < T \f$
-        Real yoyForward(Time S, Time T) const;
+        /*! \f$ E^T[I_T/I_S] \f$ for \f$ 0 \le S < T \f$: one plus the
+            year-on-year forward rate over \f$ [S,T] \f$ (not a rate itself).
+        */
+        Real yoyForwardRatio(Time S, Time T) const;
 
         void update() override { notifyObservers(); }
 
       private:
         void checkCurves() const;
 
-        Handle<YieldTermStructure> nominalCurve_, realCurve_;
+        Handle<YieldTermStructure> nominalTermStructure_, realTermStructure_;
         Real an_, sn_, ar_, sr_, sigmaI_, rhoNR_, rhoNI_, rhoRI_;
     };
 
