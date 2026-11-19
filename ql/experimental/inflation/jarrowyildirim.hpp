@@ -142,25 +142,29 @@ namespace QuantLib {
         Real rhoNominalIndex() const { return rhoNI_; }
         Real rhoRealIndex() const { return rhoRI_; }
 
-        //! \f$ F(0,T)/I_0 = P_r(0,T)/P_n(0,T) \f$, for \f$ T \ge 0 \f$
+        //! forward index over the base index, \f$ F(0,T)/I_0 = P_r(0,T)/P_n(0,T) \f$
+        /*! Defined for \f$ T \ge 0 \f$. */
         Real forwardIndexRatio(Time T) const;
 
-        //! total variance \f$ V(0,T) \f$ of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure,
-        //! for \f$ T \ge 0 \f$
+        //! total variance of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure
+        /*! This is \f$ V(0,T) \f$, defined for \f$ T \ge 0 \f$ and never negative.
+         */
         Real zcInflationVariance(Time T) const;
 
-        /*! Price, per unit notional and discounted on the nominal curve, of
-            a zero-coupon inflation cap/floor paying
-            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$; the strike
+        //! price of a zero-coupon inflation cap/floor
+        /*! Per unit notional and discounted on the nominal curve; it pays
+            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$. The strike
             \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
         */
         Real zcInflationOption(Option::Type type, Real strike, Time T) const;
 
-        //! \f$ E^T[I_T/I_S]/(F(0,T)/F(0,S)) \f$, the convexity factor, for \f$ 0 \le S < T \f$
+        //! year-on-year convexity factor \f$ E^T[I_T/I_S]/(F(0,T)/F(0,S)) \f$
+        /*! Defined for \f$ 0 \le S < T \f$. */
         Real yoyConvexity(Time S, Time T) const;
 
-        /*! \f$ E^T[I_T/I_S] \f$ for \f$ 0 \le S < T \f$: one plus the
-            year-on-year forward rate over \f$ [S,T] \f$ (not a rate itself).
+        //! year-on-year forward ratio \f$ E^T[I_T/I_S] \f$
+        /*! Defined for \f$ 0 \le S < T \f$. It is one plus the year-on-year
+            forward rate over \f$ [S,T] \f$, not a rate itself.
         */
         Real yoyForwardRatio(Time S, Time T) const;
 

@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -168,6 +169,30 @@ BOOST_AUTO_TEST_CASE(testZcCapFloorParity) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testDegenerateVarianceIsNotNegative) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim variance for nearly degenerate parameters...");
+    // identical, perfectly correlated rate factors and no index volatility: the exact
+    // variance is of order 1e-19 and the six-term sum can round below zero
+    Setup s;
+    s.an = s.ar = 0.05;
+    s.sn = 0.01;
+    s.sr = 0.01 * (1.0 + 7.0e-9);
+    s.sI = 0.0;
+    s.rhoNR = 1.0;
+    s.rhoNI = s.rhoRI = 0.0;
+    JarrowYildirim jy = s.model();
+    const Real T = 5.0;
+    BOOST_CHECK(jy.zcInflationVariance(T) >= 0.0);
+    Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
+    Real df = std::exp(-s.nominalRate->value() * T);
+    for (Real strike : std::vector<Real>{0.9, 1.3}) {
+        QL_CHECK_CLOSE(jy.zcInflationOption(Option::Call, strike, T),
+                       df * std::max<Real>(forward - strike, 0.0), 1.0e-6);
+        QL_CHECK_CLOSE(jy.zcInflationOption(Option::Put, strike, T),
+                       df * std::max<Real>(strike - forward, 0.0), 1.0e-6);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testZcOptionAgainstLognormalExpectation) {
     BOOST_TEST_MESSAGE(
         "Testing Jarrow-Yildirim zero-coupon option against lognormal expectation...");
@@ -204,7 +229,7 @@ BOOST_AUTO_TEST_CASE(testZcOptionAgainstLognormalExpectation) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
+BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim YoY forward against Monte Carlo...");
     Setup s;
     s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
@@ -350,6 +375,19 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
     auto correlations = [&](Real rhoNR, Real rhoNI, Real rhoRI) {
         make(s.an, s.sn, s.ar, s.sr, s.sI, rhoNR, rhoNI, rhoRI);
     };
+    // just outside the bounds, in each position; the other entries are in range
+    for (Real rho : std::vector<Real>{1.05, -1.05}) {
+        std::ostringstream expected;
+        expected << "correlation " << rho << " outside [-1, 1]";
+        BOOST_CHECK_EXCEPTION(correlations(rho, 0.0, 0.0), Error,
+                              ExpectedErrorMessage(expected.str()));
+        BOOST_CHECK_EXCEPTION(correlations(0.0, rho, 0.0), Error,
+                              ExpectedErrorMessage(expected.str()));
+        BOOST_CHECK_EXCEPTION(correlations(0.0, 0.0, rho), Error,
+                              ExpectedErrorMessage(expected.str()));
+        BOOST_CHECK_EXCEPTION(correlations(rho, rho, rho), Error,
+                              ExpectedErrorMessage(expected.str()));
+    }
     BOOST_CHECK_EXCEPTION(correlations(1.2, 0.0, 0.0), Error,
                           ExpectedErrorMessage("correlation 1.2 outside [-1, 1]"));
     BOOST_CHECK_EXCEPTION(correlations(0.0, -1.2, 0.0), Error,
@@ -394,6 +432,12 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
         ExpectedErrorMessage("nominal mean reversion must be positive (0 given)"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, 0.0, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
                           ExpectedErrorMessage("real mean reversion must be positive (0 given)"));
+    BOOST_CHECK_EXCEPTION(make(s.an, -1.0e-8, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("negative nominal volatility (-1e-08) given"));
+    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, -1.0e-8, s.sI, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("negative real volatility (-1e-08) given"));
+    BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, s.sr, -1.0e-8, 0.0, 0.0, 0.0), Error,
+                          ExpectedErrorMessage("negative index volatility (-1e-08) given"));
     BOOST_CHECK_EXCEPTION(make(s.an, -0.1, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
                           ExpectedErrorMessage("negative nominal volatility (-0.1) given"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, -0.1, s.sI, 0.0, 0.0, 0.0), Error,
@@ -438,6 +482,8 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
                           ExpectedErrorMessage("start time (4) must be smaller than end time (3)"));
     BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, -0.1, 1.0), Error,
                           ExpectedErrorMessage("negative strike (-0.1) given"));
+    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, -1.0e-8, 1.0), Error,
+                          ExpectedErrorMessage("negative strike (-1e-08) given"));
     BOOST_CHECK_NO_THROW(jy.zcInflationOption(Option::Call, 0.0, 1.0));
     BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(0.0));
     BOOST_CHECK_NO_THROW(jy.zcInflationVariance(0.0));

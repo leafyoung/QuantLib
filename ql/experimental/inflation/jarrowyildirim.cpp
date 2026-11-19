@@ -139,17 +139,19 @@ namespace QuantLib {
     Real JarrowYildirim::zcInflationVariance(Time T) const {
         checkCurves();
         QL_REQUIRE(T >= 0.0, "negative time (" << T << ") given");
-        return sigmaI_ * sigmaI_ * T + sigmaR_ * sigmaR_ * integralBB(aR_, aR_, T) +
-               sigmaN_ * sigmaN_ * integralBB(aN_, aN_, T) -
-               2.0 * rhoRI_ * sigmaI_ * sigmaR_ * integralB(aR_, T) +
-               2.0 * rhoNI_ * sigmaI_ * sigmaN_ * integralB(aN_, T) -
-               2.0 * rhoNR_ * sigmaN_ * sigmaR_ * integralBB(aN_, aR_, T);
+        Real variance = sigmaI_ * sigmaI_ * T + sigmaR_ * sigmaR_ * integralBB(aR_, aR_, T) +
+                        sigmaN_ * sigmaN_ * integralBB(aN_, aN_, T) -
+                        2.0 * rhoRI_ * sigmaI_ * sigmaR_ * integralB(aR_, T) +
+                        2.0 * rhoNI_ * sigmaI_ * sigmaN_ * integralB(aN_, T) -
+                        2.0 * rhoNR_ * sigmaN_ * sigmaR_ * integralBB(aN_, aR_, T);
+        // the six terms cancel for nearly degenerate parameters and can round to a tiny negative
+        return std::max<Real>(variance, 0.0);
     }
 
     Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
         QL_REQUIRE(T > 0.0, "non-positive time (" << T << ") given");
         QL_REQUIRE(strike >= 0.0, "negative strike (" << strike << ") given");
-        Real stdDev = std::sqrt(std::max<Real>(zcInflationVariance(T), 0.0));
+        Real stdDev = std::sqrt(zcInflationVariance(T));
         return blackFormula(type, strike, forwardIndexRatio(T), stdDev,
                             nominalTermStructure_->discount(T));
     }
