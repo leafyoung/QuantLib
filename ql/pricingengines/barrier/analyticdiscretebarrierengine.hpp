@@ -48,17 +48,20 @@ namespace QuantLib {
         the barrier (up call with \f$ K \ge H \f$, down put with
         \f$ K \le H \f$) the last monitoring date decides the payoff and the
         result is exact: zero for a knock-out, the vanilla price for a
-        knock-in.
+        knock-in.  The result is stated for a constant volatility; on a
+        non-flat surface the volatility read at the expiry and the strike is
+        an approximation.
 
         \warning The correction is an asymptotic approximation for small
-                 \f$ \sigma\sqrt{\Delta t} \f$.  Reverse knock-outs (up
-                 calls, down puts) are markedly less accurate at coarse
-                 monitoring, increasingly so as the strike approaches the
-                 barrier and with maturity.  The price is discontinuous in
-                 the strike at \f$ K = H \f$, where the exact branch takes
-                 over.  With zero volatility and the spot exactly on the
-                 barrier, the convention of AnalyticBarrierEngine (barrier
-                 hit at the valuation date) applies.
+                 \f$ \sigma\sqrt{\Delta t} \f$.  Reverse barriers (up
+                 calls, down puts, knock-in or knock-out) are markedly less
+                 accurate at coarse monitoring, increasingly so as the strike
+                 approaches the barrier and with maturity.  The price is
+                 discontinuous in the strike at \f$ K = H \f$, where the
+                 exact branch takes over.  With zero volatility and the spot
+                 exactly on the barrier, the convention of
+                 AnalyticBarrierEngine (barrier hit at the valuation date)
+                 applies.
 
         \ingroup barrierengines
 

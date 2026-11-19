@@ -512,6 +512,19 @@ BOOST_AUTO_TEST_CASE(testSpotOnBarrier) {
     QL_CHECK_SMALL(vars.discrete(Barrier::DownIn, 100.0, Option::Call, 12) - vanilla, 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 100.0, Option::Call, 12), 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 100.0, Option::Call, 12) - vanilla, 1.0e-9);
+    // an up call with K < H goes through the shifted barrier, not the exact branch
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 100.0, Option::Call, 12, 95.0), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 100.0, Option::Call, 12, 95.0) - 7.6530720031,
+                   1.0e-9);
+
+    // a negative carry takes the forward below the up barrier, which the spot is on: still hit
+    vars.rate->setValue(0.01);
+    vars.dividend->setValue(0.03);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 100.0, Option::Call, 12, 95.0), 1.0e-9);
+    QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 100.0, Option::Call, 12, 95.0) - 2.9898191487,
+                   1.0e-9);
+    vars.rate->setValue(0.05);
+    vars.dividend->setValue(0.02);
 
     // positive volatility: the shifted barrier is away from the spot, so the option prices
     // (Reiner-Rubinstein prices at the shifted barrier computed outside QuantLib)
@@ -574,6 +587,32 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     touchedExact.setPricingEngine(
         ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
     BOOST_CHECK_EXCEPTION(touchedExact.NPV(), Error, ExpectedErrorMessage("barrier touched"));
+
+    // the order of the checks: rebate, payoff, strike, exercise, spot, barrier touched
+    auto americanOption = [&](Real strike, Real rebate) {
+        BarrierOption o(Barrier::DownOut, 90.0, rebate,
+                        ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
+                        ext::make_shared<AmericanExercise>(vars.today, vars.expiry));
+        o.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+        return o;
+    };
+    BarrierOption rebatedAmerican = americanOption(100.0, 3.0);
+    BOOST_CHECK_EXCEPTION(rebatedAmerican.NPV(), Error,
+                          ExpectedErrorMessage("rebates are not supported"));
+    BarrierOption negativeStrikeAmerican = americanOption(-1.0, 0.0);
+    BOOST_CHECK_EXCEPTION(negativeStrikeAmerican.NPV(), Error,
+                          ExpectedErrorMessage("strike must be positive"));
+    vars.spot->setValue(0.0);
+    BarrierOption nullSpotAmerican = americanOption(100.0, 0.0);
+    BOOST_CHECK_EXCEPTION(nullSpotAmerican.NPV(), Error,
+                          ExpectedErrorMessage("only european style option are supported"));
+    // a null spot is also below the barrier: the spot is checked first
+    BarrierOption nullSpotBelowBarrier = vars.option(Barrier::DownOut, 90.0, Option::Call);
+    nullSpotBelowBarrier.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(nullSpotBelowBarrier.NPV(), Error,
+                          ExpectedErrorMessage("negative or null underlying given"));
+    vars.spot->setValue(100.0);
 
     // the barrier given, not the shifted one, decides whether it has been touched
     BarrierOption touched = vars.option(Barrier::DownOut, 101.0, Option::Call);
