@@ -164,7 +164,8 @@ namespace QuantLib {
 
         //! year-on-year forward ratio \f$ E^T[I_T/I_S] \f$
         /*! Defined for \f$ 0 \le S < T \f$. It is one plus the year-on-year
-            forward rate over \f$ [S,T] \f$, not a rate itself.
+            forward return over \f$ [S,T] \f$ (\f$ 1 + (T-S)f \f$ for an
+            annualized forward rate \f$ f \f$), not a rate itself.
         */
         Real yoyForwardRatio(Time S, Time T) const;
 

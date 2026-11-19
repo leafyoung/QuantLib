@@ -34,11 +34,17 @@ namespace QuantLib {
         constexpr double closedFormThreshold = 0.1;
 
         // int_0^T f(s) ds for an integrand varying on the scale 1/rate,
-        // by composite Gauss-Legendre (nodes on [-1,1]) with panels of width at most 1/rate
+        // by composite Gauss-Legendre (nodes on [-1,1]) with panels of width at most 1/rate.
+        // The rate enters the panel count capped: when rate*T is extreme the faster
+        // factor is a transient narrower than a panel, whose contribution to the
+        // integral is negligible, so the panels follow the slower scale instead of
+        // an unattainable count.
         template <class F>
         Real smoothIntegral(const F& f, Time T, Real rate) {
             static const GaussLegendreIntegration gl(10);
-            Size panels = std::max<Size>(1, static_cast<Size>(std::ceil(rate * T)));
+            constexpr double panelRateCap = 1000.0;
+            Real rateTimesT = std::min<Real>(rate * T, panelRateCap);
+            Size panels = std::max<Size>(1, static_cast<Size>(std::ceil(rateTimesT)));
             Real h = T / static_cast<Real>(panels), sum = 0.0;
             for (Size i = 0; i < panels; ++i) {
                 Real mid = h * (static_cast<Real>(i) + 0.5);

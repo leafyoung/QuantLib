@@ -234,7 +234,9 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
     s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
     JarrowYildirim jy = s.model();
     const Real S = 4.0, T = 6.0;
-    const Size samples = 1000000;
+    // antithetic pairs: 250000 draws double into 500000 paths, which keeps the
+    // convexity-resolution and accuracy guards well above their thresholds
+    const Size samples = 250000;
 
     // Exact joint law of the Ornstein-Uhlenbeck states at S under the
     // nominal T-forward measure: the real state carries the index-correlation
@@ -255,24 +257,29 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
     auto nominalDyn = nominal.dynamics(), realDyn = real.dynamics();
     MersenneTwisterUniformRng rng(20261119);
     InverseCumulativeNormal inverse;
+    // antithetic pairs: each draw is evaluated at (z1, z2) and (-z1, -z2)
+    const Size paths = 2 * samples;
     Real sumY = 0.0, sumY2 = 0.0, sumInvP = 0.0, sumInvP2 = 0.0;
     for (Size i = 0; i < samples; ++i) {
         Real z1 = inverse(rng.next().value), z2 = inverse(rng.next().value);
-        Real xn = meanN + sdN * z1;
-        Real xr = meanR + sdR * (rho * z1 + std::sqrt(1.0 - rho * rho) * z2);
-        Real pn = nominal.discountBond(S, T, nominalDyn->shortRate(S, xn));
-        Real pr = real.discountBond(S, T, realDyn->shortRate(S, xr));
-        Real y = pr / pn;
-        sumY += y;
-        sumY2 += y * y;
-        sumInvP += 1.0 / pn;
-        sumInvP2 += 1.0 / (pn * pn);
+        Real w1[2] = {z1, -z1}, w2[2] = {z2, -z2};
+        for (Size j = 0; j < 2; ++j) {
+            Real xn = meanN + sdN * w1[j];
+            Real xr = meanR + sdR * (rho * w1[j] + std::sqrt(1.0 - rho * rho) * w2[j]);
+            Real pn = nominal.discountBond(S, T, nominalDyn->shortRate(S, xn));
+            Real pr = real.discountBond(S, T, realDyn->shortRate(S, xr));
+            Real y = pr / pn;
+            sumY += y;
+            sumY2 += y * y;
+            sumInvP += 1.0 / pn;
+            sumInvP2 += 1.0 / (pn * pn);
+        }
     }
     auto standardError = [&](Real sum, Real sum2) -> Real {
-        Real mean = sum / samples;
-        return std::sqrt((sum2 / samples - mean * mean) / samples);
+        Real mean = sum / paths;
+        return std::sqrt((sum2 / paths - mean * mean) / paths);
     };
-    Real meanYoY = sumY / samples, meanInvP = sumInvP / samples;
+    Real meanYoY = sumY / paths, meanInvP = sumInvP / paths;
     Real seYoY = standardError(sumY, sumY2);
     Real seInvP = standardError(sumInvP, sumInvP2);
 
@@ -490,6 +497,10 @@ BOOST_AUTO_TEST_CASE(testMethodArgumentValidation) {
 
     // boundary values are accepted
     BOOST_CHECK_NO_THROW(jy.zeroInflationOption(Option::Call, 0.0, 1.0));
+    // at zero strike the call is the discounted forward ratio and the put is worthless
+    QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, 0.0, 1.0),
+                   jy.forwardIndexRatio(1.0) * s.nominalCurve->discount(1.0), 1.0e-12);
+    QL_CHECK_SMALL(jy.zeroInflationOption(Option::Put, 0.0, 1.0), 1.0e-15);
     BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(0.0));
     BOOST_CHECK_NO_THROW(jy.zeroInflationVariance(0.0));
     BOOST_CHECK_NO_THROW(jy.yoyConvexity(0.0, 1.0));
