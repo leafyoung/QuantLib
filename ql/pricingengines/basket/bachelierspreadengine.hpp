@@ -66,9 +66,9 @@ namespace QuantLib {
         void calculate() const override;
 
       private:
-        ext::shared_ptr<GeneralizedBlackScholesProcess> process1_, process2_;
-        Handle<Quote> vol1_, vol2_;
-        Real rho_;
+        const ext::shared_ptr<GeneralizedBlackScholesProcess> process1_, process2_;
+        const Handle<Quote> vol1_, vol2_;
+        const Real rho_;
     };
 }
 

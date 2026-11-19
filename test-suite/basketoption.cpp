@@ -2864,7 +2864,8 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const Real s1 = 105.0, s2 = 100.0;
     // the second process has its own dividend and risk-free curves
     const Handle<YieldTermStructure> q(flatRate(today, 0.03, dc));
-    const Handle<YieldTermStructure> r2(flatRate(today, 0.04, dc));
+    // a different day counter pins that the time to maturity comes from the first process
+    const Handle<YieldTermStructure> r2(flatRate(today, 0.04, Actual360()));
     const Handle<YieldTermStructure> q2(flatRate(today, 0.01, dc));
     const auto makeProcess = [&](Real spot, const Handle<YieldTermStructure>& dividend,
                                  const Handle<YieldTermStructure>& riskFree) {
@@ -2909,7 +2910,8 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
 
     // rho = 1 with equal volatilities leaves a deterministic spread
     const Real intrinsic = df * std::max<Real>(g1 - g2 - 3.0, 0.0);
-    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
+    BOOST_CHECK_MESSAGE(
+        std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
     // nearly equal volatilities at rho = 1: the naive combination s1^2 + s2^2 - 2 s1 s2 rounds
@@ -2919,7 +2921,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
         const Real expected = bachelierBlackFormula(Option::Call, 3.0, g1 - g2,
                                                     std::abs(a - b) * std::sqrt(t), df);
         const Real calculated = price(Option::Call, 3.0, a, b, 1.0);
-        BOOST_CHECK_MESSAGE(std::isfinite(calculated) && std::abs(calculated - expected) <= tolerance,
+        BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
                             "nearly equal volatilities failed: " << calculated << " vs "
                             << expected);
     }
@@ -2996,6 +2998,9 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_CHECK_THROW(BachelierSpreadEngine(nullptr, makeSecond(s2), makeVol(8.0),
                                             makeVol(12.0), 0.0),
                       Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), nullptr, makeVol(8.0),
+                                            makeVol(12.0), 0.0),
+                      Error);
     BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
                                             makeVol(12.0), 1.5),
                       Error);
@@ -3057,7 +3062,8 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
         const Real exact = price(Option::Call, strike, vol1, vol2, rho);
         const Real error = 4.0 * stats.errorEstimate();
         BOOST_CHECK_MESSAGE(std::abs(stats.mean() - exact) <= error,
-                            "Monte Carlo mismatch: exact " << exact << ", simulated " << stats.mean()
+                            "Monte Carlo mismatch: exact " << exact << ", simulated "
+                            << stats.mean()
                             << " +/- " << error);
     }
 }
