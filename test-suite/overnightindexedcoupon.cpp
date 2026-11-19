@@ -2967,6 +2967,10 @@ BOOST_AUTO_TEST_CASE(testBackwardLookingVarianceTime) {
         BOOST_CHECK(calculated >= std::max<Real>(c.start, 0.0) && calculated <= c.end);
     }
 
+    // a non-integer 2q: the Gauss-Legendre reference is only approximate for the non-smooth integrand
+    CHECK_OIS_COUPON_RESULT("non-integer 2q", backwardLookingVarianceTime(-0.25, 0.75, 0.75),
+                            integratedSquaredDamping(-0.25, 0.75, 0.75), 1e-7);
+
     // faster damping lowers the variance time
     Real previous = backwardLookingVarianceTime(0.5, 1.0, 0.25);
     for (Real q : {0.5, 1.0, 2.0, 4.0}) {
@@ -3043,6 +3047,16 @@ BOOST_AUTO_TEST_CASE(testBlackONPricerDampingExponent) {
 
     BOOST_CHECK_THROW(BlackCompoundingOvernightIndexedCouponPricer(vars.vol, false, 0.0), Error);
     BOOST_CHECK_THROW(BlackCompoundingOvernightIndexedCouponPricer(vars.vol, false, -1.0), Error);
+
+    // the averaging pricer uses the linear damping
+    {
+        auto averaged = vars.makeCoupon(start, end, cap, Null<Rate>(), RateAveraging::Simple);
+        averaged->setPricer(vars.makeBlackPricer(RateAveraging::Simple, vars.vol));
+        averaged->rate();
+        Real linear = integratedSquaredDamping(fixingStart, fixingEnd, 1.0);
+        CHECK_OIS_COUPON_RESULT("averaging pricer, linear damping", averaged->effectiveCapletVolatility(),
+                                sigma * std::sqrt(linear / fixingEnd), 1e-12);
+    }
 
     // an accrual period that has already started: the damping starts at the first fixing, which lies
     // in the past, so the variance time carries the elapsed part and the factor x^(2q) with x < 1
