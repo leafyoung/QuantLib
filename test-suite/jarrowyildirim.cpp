@@ -162,32 +162,35 @@ BOOST_AUTO_TEST_CASE(testZcOptionStandardDeviation) {
         "Testing Jarrow-Yildirim zero-coupon option against lognormal expectation...");
     Setup s;
     JarrowYildirim jy = s.model();
-    const Real T = 5.0, strike = 1.1;
-    // total variance from direct quadrature of the integrand, independent of the model
-    Real variance = integrate(
-        [&](Real u) -> Real {
-            Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
-            return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
-                   2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
-                   2.0 * s.rhoNR * s.sn * s.sr * bn * br;
-        },
-        0.0, T);
-    Real sd = std::sqrt(variance);
-    Real forward = jy.forwardIndexRatio(T);
-    Real df = std::exp(-0.03 * T);
-    NormalDistribution density;
-    // payoff is smooth on each side of the exercise boundary in the normal variate
-    Real zStar = (std::log(strike / forward) + 0.5 * variance) / sd;
-    auto payoff = [&](Real z) -> Real {
-        return (forward * std::exp(sd * z - 0.5 * variance) - strike) * density(z);
-    };
-    Real callExpected = df * integrate(payoff, zStar, 12.0);
-    Real putExpected = -df * integrate(payoff, -12.0, zStar);
-    Real call = jy.zcInflationOption(Option::Call, strike, T);
-    Real put = jy.zcInflationOption(Option::Put, strike, T);
-    QL_CHECK_CLOSE(call, callExpected, 1.0e-6);
-    QL_CHECK_CLOSE(put, putExpected, 1.0e-6);
-    QL_CHECK_CLOSE(call, df * blackFormula(Option::Call, strike, forward, sd), 1.0e-9);
+    for (Real T : std::vector<Real>{1.0, 5.0}) {
+        for (Real strike : std::vector<Real>{0.7, 1.1, 1.6}) {
+            // total variance from direct quadrature of the integrand, independent of the model
+            Real variance = integrate(
+                [&](Real u) -> Real {
+                    Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
+                    return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
+                           2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
+                           2.0 * s.rhoNR * s.sn * s.sr * bn * br;
+                },
+                0.0, T);
+            Real sd = std::sqrt(variance);
+            Real forward = jy.forwardIndexRatio(T);
+            Real df = std::exp(-0.03 * T);
+            NormalDistribution density;
+            // payoff is smooth on each side of the exercise boundary in the normal variate
+            Real zStar = (std::log(strike / forward) + 0.5 * variance) / sd;
+            auto payoff = [&](Real z) -> Real {
+                return (forward * std::exp(sd * z - 0.5 * variance) - strike) * density(z);
+            };
+            Real callExpected = df * integrate(payoff, zStar, 12.0);
+            Real putExpected = -df * integrate(payoff, -12.0, zStar);
+            Real call = jy.zcInflationOption(Option::Call, strike, T);
+            Real put = jy.zcInflationOption(Option::Put, strike, T);
+            QL_CHECK_CLOSE(call, callExpected, 1.0e-6);
+            QL_CHECK_CLOSE(put, putExpected, 1.0e-6);
+            QL_CHECK_CLOSE(call, df * blackFormula(Option::Call, strike, forward, sd), 1.0e-9);
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(testYoYConvexityAgainstMonteCarlo) {
@@ -344,17 +347,38 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
     BOOST_CHECK_EXCEPTION(
         correlations(0.9, 0.9, -0.9), Error,
         ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+    // arguments are (rhoNR, rhoNI, rhoRI); only rhoRI makes the determinant negative here
+    BOOST_CHECK_EXCEPTION(
+        correlations(0.9, 0.0, 0.6), Error,
+        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+    // determinant of about -2.6e-4 lies far outside the tolerance
+    BOOST_CHECK_EXCEPTION(
+        correlations(0.7072, 0.7072, 0.0), Error,
+        ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
     BOOST_CHECK_NO_THROW(correlations(1.0, 1.0, 1.0));
-    BOOST_CHECK_EXCEPTION(make(0.0, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("nominal mean reversion must be positive"));
+    // singular matrices are accepted, including the endpoint -1
+    BOOST_CHECK_NO_THROW(correlations(-1.0, -1.0, 1.0));
+    // determinant of about -1e-13 is within the rounding tolerance
+    Real nearSingular = std::sqrt(0.5 + 5.0e-14);
+    BOOST_CHECK_NO_THROW(correlations(nearSingular, nearSingular, 0.0));
+    // determinants of about -5e-12 and -1e-10 are outside it
+    for (Real excess : std::vector<Real>{2.5e-12, 5.0e-11}) {
+        Real tooNegative = std::sqrt(0.5 + excess);
+        BOOST_CHECK_EXCEPTION(
+            correlations(tooNegative, tooNegative, 0.0), Error,
+            ExpectedErrorMessage("correlation matrix is not positive semi-definite (determinant "));
+    }
+    BOOST_CHECK_EXCEPTION(
+        make(0.0, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
+        ExpectedErrorMessage("nominal mean reversion must be positive (0 given)"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, 0.0, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("real mean reversion must be positive"));
+                          ExpectedErrorMessage("real mean reversion must be positive (0 given)"));
     BOOST_CHECK_EXCEPTION(make(s.an, -0.1, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("negative nominal volatility"));
+                          ExpectedErrorMessage("negative nominal volatility (-0.1) given"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, -0.1, s.sI, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("negative real volatility"));
+                          ExpectedErrorMessage("negative real volatility (-0.1) given"));
     BOOST_CHECK_EXCEPTION(make(s.an, s.sn, s.ar, s.sr, -0.1, 0.0, 0.0, 0.0), Error,
-                          ExpectedErrorMessage("negative index volatility"));
+                          ExpectedErrorMessage("negative index volatility (-0.1) given"));
 
     Handle<YieldTermStructure> empty;
     BOOST_CHECK_EXCEPTION(
@@ -391,6 +415,9 @@ BOOST_AUTO_TEST_CASE(testParameterValidation) {
                           ExpectedErrorMessage("start time (3) must be smaller than end time (3)"));
     BOOST_CHECK_EXCEPTION(jy.yoyConvexity(4.0, 3.0), Error,
                           ExpectedErrorMessage("start time (4) must be smaller than end time (3)"));
+    BOOST_CHECK_EXCEPTION(jy.zcInflationOption(Option::Call, -0.1, 1.0), Error,
+                          ExpectedErrorMessage("negative strike (-0.1) given"));
+    BOOST_CHECK_NO_THROW(jy.zcInflationOption(Option::Call, 0.0, 1.0));
     BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(0.0));
     BOOST_CHECK_NO_THROW(jy.zcInflationVariance(0.0));
     BOOST_CHECK_NO_THROW(jy.yoyConvexity(0.0, 1.0));
@@ -423,6 +450,8 @@ BOOST_AUTO_TEST_CASE(testObserverRegistration) {
     auto jy = ext::make_shared<JarrowYildirim>(s.model());
     Flag flag;
     flag.registerWith(jy);
+    BOOST_CHECK(jy->nominalTermStructure() == s.nominalCurve);
+    BOOST_CHECK(jy->realTermStructure() == s.realCurve);
     Real before = jy->forwardIndexRatio(5.0);
     s.realRate->setValue(0.02);
     if (!flag.isUp())

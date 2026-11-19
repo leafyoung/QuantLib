@@ -127,6 +127,8 @@ namespace QuantLib {
                        Real rhoNominalIndex,
                        Real rhoRealIndex);
 
+        const Handle<YieldTermStructure>& nominalTermStructure() const { return nominalCurve_; }
+        const Handle<YieldTermStructure>& realTermStructure() const { return realCurve_; }
         Real nominalMeanReversion() const { return an_; }
         Real nominalVolatility() const { return sn_; }
         Real realMeanReversion() const { return ar_; }
@@ -146,7 +148,7 @@ namespace QuantLib {
         /*! Price, per unit notional and discounted on the nominal curve, of
             a zero-coupon inflation cap/floor paying
             \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$; the strike
-            \f$ K \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
+            \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
         */
         Real zcInflationOption(Option::Type type, Real strike, Time T) const;
 

@@ -105,11 +105,16 @@ namespace QuantLib {
       sr_(realVolatility), sigmaI_(indexVolatility), rhoNR_(rhoNominalReal),
       rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex) {
         checkCurves();
-        QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive");
-        QL_REQUIRE(realMeanReversion > 0.0, "real mean reversion must be positive");
-        QL_REQUIRE(nominalVolatility >= 0.0, "negative nominal volatility");
-        QL_REQUIRE(realVolatility >= 0.0, "negative real volatility");
-        QL_REQUIRE(indexVolatility >= 0.0, "negative index volatility");
+        QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive ("
+                                                   << nominalMeanReversion << " given)");
+        QL_REQUIRE(realMeanReversion > 0.0,
+                   "real mean reversion must be positive (" << realMeanReversion << " given)");
+        QL_REQUIRE(nominalVolatility >= 0.0,
+                   "negative nominal volatility (" << nominalVolatility << ") given");
+        QL_REQUIRE(realVolatility >= 0.0,
+                   "negative real volatility (" << realVolatility << ") given");
+        QL_REQUIRE(indexVolatility >= 0.0,
+                   "negative index volatility (" << indexVolatility << ") given");
         checkCorrelations(rhoNominalReal, rhoNominalIndex, rhoRealIndex);
         registerWith(nominalCurve_);
         registerWith(realCurve_);
@@ -142,9 +147,9 @@ namespace QuantLib {
 
     Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
         QL_REQUIRE(T > 0.0, "non-positive time (" << T << ") given");
+        QL_REQUIRE(strike >= 0.0, "negative strike (" << strike << ") given");
         Real stdDev = std::sqrt(std::max<Real>(zcInflationVariance(T), 0.0));
-        return nominalCurve_->discount(T) *
-               blackFormula(type, strike, forwardIndexRatio(T), stdDev);
+        return blackFormula(type, strike, forwardIndexRatio(T), stdDev, nominalCurve_->discount(T));
     }
 
     Real JarrowYildirim::yoyConvexity(Time S, Time T) const {
