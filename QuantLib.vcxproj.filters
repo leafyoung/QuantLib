@@ -7015,10 +7015,10 @@
     <ClCompile Include="ql\experimental\inflation\cpicapfloorengines.cpp">
       <Filter>experimental\inflation</Filter>
     </ClCompile>
-    <ClCompile Include="ql\experimental\inflation\jarrowyildirim.cpp">
+    <ClCompile Include="ql\experimental\inflation\cpicapfloortermpricesurface.cpp">
       <Filter>experimental\inflation</Filter>
     </ClCompile>
-    <ClCompile Include="ql\experimental\inflation\cpicapfloortermpricesurface.cpp">
+    <ClCompile Include="ql\experimental\inflation\jarrowyildirim.cpp">
       <Filter>experimental\inflation</Filter>
     </ClCompile>
     <ClCompile Include="ql\experimental\finitedifferences\fdklugeextouspreadengine.cpp">

@@ -30,8 +30,10 @@
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
 #include <ql/time/daycounters/actual365fixed.hpp>
+#include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 #include <vector>
 
 using namespace QuantLib;
@@ -107,38 +109,38 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     for (auto rates : {std::make_pair(0.08, 0.05), std::make_pair(1.0e-8, 1.0e-6),
                        std::make_pair(1.0e-3, 0.5), std::make_pair(0.02, 0.02),
                        std::make_pair(0.15, 1.0e-7)}) {
-    Setup s;
-    s.an = rates.first;
-    s.ar = rates.second;
-    JarrowYildirim jy = s.model();
-    for (Real T : {0.5, 3.0, 10.0}) {
-        auto integrand = [&](Real u) {
-            Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
-            return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
-                   2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
-                   2.0 * s.rhoNR * s.sn * s.sr * bn * br;
-        };
-        Real expected = integrate(integrand, 0.0, T);
-        Real calculated = jy.zcInflationVariance(T);
-        if (std::fabs(calculated - expected) > 1.0e-11 * std::max<Real>(1.0, expected))
-            BOOST_ERROR("V(0," << T << ") = " << calculated << " expected " << expected);
-    }
-    for (auto st : {std::make_pair(1.0, 2.0), std::make_pair(4.0, 6.0), std::make_pair(0.0, 3.0),
-                    std::make_pair(7.0, 7.5)}) {
-        Real S = st.first, T = st.second;
-        auto integrand = [&](Real u) {
-            Real delta = bFun(s.ar, T - u) - bFun(s.ar, S - u);
-            return s.sr * delta *
-                   (s.rhoRI * s.sI + s.rhoNR * s.sn * bFun(s.an, S - u) -
-                    s.sr * bFun(s.ar, S - u));
-        };
-        Real expected = S > 0.0 ? integrate(integrand, 0.0, S) : 0.0;
-        Real calculated = std::log(jy.yoyConvexity(S, T));
-        if (std::fabs(calculated - expected) > 1.0e-12)
-            BOOST_ERROR("log convexity(" << S << "," << T << ") = " << calculated
-                                         << " expected " << expected);
-    }
-    BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
+        Setup s;
+        s.an = rates.first;
+        s.ar = rates.second;
+        JarrowYildirim jy = s.model();
+        for (Real T : {0.5, 3.0, 10.0}) {
+            auto integrand = [&](Real u) {
+                Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
+                return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
+                       2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
+                       2.0 * s.rhoNR * s.sn * s.sr * bn * br;
+            };
+            Real expected = integrate(integrand, 0.0, T);
+            Real calculated = jy.zcInflationVariance(T);
+            if (std::fabs(calculated - expected) > 1.0e-11 * std::max<Real>(1.0, expected))
+                BOOST_ERROR("V(0," << T << ") = " << calculated << " expected " << expected);
+        }
+        for (auto st : {std::make_pair(1.0, 2.0), std::make_pair(4.0, 6.0), std::make_pair(0.0, 3.0),
+                        std::make_pair(7.0, 7.5)}) {
+            Real S = st.first, T = st.second;
+            auto integrand = [&](Real u) {
+                Real delta = bFun(s.ar, T - u) - bFun(s.ar, S - u);
+                return s.sr * delta *
+                       (s.rhoRI * s.sI + s.rhoNR * s.sn * bFun(s.an, S - u) -
+                        s.sr * bFun(s.ar, S - u));
+            };
+            Real expected = S > 0.0 ? integrate(integrand, 0.0, S) : 0.0;
+            Real calculated = std::log(jy.yoyConvexity(S, T));
+            if (std::fabs(calculated - expected) > 1.0e-12)
+                BOOST_ERROR("log convexity(" << S << "," << T << ") = " << calculated
+                                             << " expected " << expected);
+        }
+        BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
     }
 }
 
