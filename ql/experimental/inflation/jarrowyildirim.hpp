@@ -153,7 +153,7 @@ namespace QuantLib {
 
         //! price of a zero-coupon inflation cap/floor
         /*! Per unit notional and discounted on the nominal curve; it pays
-            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$. The strike
+            \f$ \max(\pm(I_T/I_0 - K),0) \f$. Defined for \f$ T > 0 \f$. The strike
             \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
         */
         Real zeroInflationOption(Option::Type type, Real strike, Time T) const;
