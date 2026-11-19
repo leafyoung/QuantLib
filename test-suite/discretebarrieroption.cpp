@@ -31,6 +31,7 @@
 #include <ql/pricingengines/vanilla/analyticeuropeanengine.hpp>
 #include <ql/processes/blackscholesprocess.hpp>
 #include <ql/quotes/simplequote.hpp>
+#include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
 #include <ql/termstructures/volatility/equityfx/blackvariancesurface.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
 #include <ql/time/daycounters/actual360.hpp>
@@ -95,6 +96,13 @@ namespace {
                         Real strike = 100.0) const {
             BarrierOption o = option(type, barrier, optionType, strike);
             o.setPricingEngine(ext::make_shared<AnalyticBarrierEngine>(process));
+            return o.NPV();
+        }
+
+        Real vanilla(Option::Type optionType, Real strike = 100.0) const {
+            VanillaOption o(ext::make_shared<PlainVanillaPayoff>(optionType, strike),
+                            ext::make_shared<EuropeanExercise>(expiry));
+            o.setPricingEngine(ext::make_shared<AnalyticEuropeanEngine>(process));
             return o.NPV();
         }
     };
@@ -183,6 +191,8 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
         {365, Barrier::DownIn, 90.0, Option::Call, 85.0, 12, 4.3743736856},
         {365, Barrier::DownOut, 90.0, Option::Call, 89.0, 12, 13.9148771838},
         {365, Barrier::UpOut, 120.0, Option::Call, 119.0, 12, 0.0185922606},
+        {365, Barrier::UpOut, 120.0, Option::Call, 119.99, 12, 0.0109309881},
+        {365, Barrier::DownOut, 90.0, Option::Put, 90.5, 12, 0.0096422182},
         {365, Barrier::UpIn, 120.0, Option::Call, 119.0, 12, 4.5813155230},
         {365, Barrier::DownOut, 90.0, Option::Put, 91.0, 12, 0.0134332196},
         {365, Barrier::DownIn, 90.0, Option::Put, 91.0, 12, 4.5429404631},
@@ -240,7 +250,7 @@ BOOST_AUTO_TEST_CASE(testCorrectionDirection) {
         Real downOut = vars.discrete(Barrier::DownOut, 90.0, t, 12);
         Real upOutCont = vars.continuous(Barrier::UpOut, 120.0, t);
         Real upOut = vars.discrete(Barrier::UpOut, 120.0, t, 12);
-        Real vanilla = vars.continuous(Barrier::DownOut, 1.0e-6, t); // never knocked out
+        Real vanilla = vars.vanilla(t);
         Real downInCont = vars.continuous(Barrier::DownIn, 90.0, t);
         Real downIn = vars.discrete(Barrier::DownIn, 90.0, t, 12);
         Real upInCont = vars.continuous(Barrier::UpIn, 120.0, t);
@@ -324,10 +334,7 @@ BOOST_AUTO_TEST_CASE(testInOutParity) {
     CommonVars vars;
     const Option::Type types[] = {Option::Call, Option::Put};
     for (Option::Type t : types) {
-        VanillaOption vanilla(ext::make_shared<PlainVanillaPayoff>(t, 100.0),
-                              ext::make_shared<EuropeanExercise>(vars.expiry));
-        vanilla.setPricingEngine(ext::make_shared<AnalyticEuropeanEngine>(vars.process));
-        Real expected = vanilla.NPV();
+        Real expected = vars.vanilla(t);
         for (Size steps : std::vector<Size>{1, 12, 250}) {
             Real down = vars.discrete(Barrier::DownIn, 90.0, t, steps) +
                         vars.discrete(Barrier::DownOut, 90.0, t, steps);
@@ -397,7 +404,7 @@ BOOST_AUTO_TEST_CASE(testZeroVolatility) {
     // the forward at maturity is 103.0455: still above 103
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.0, Option::Call, 12), 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 103.0, Option::Call, 12) - vanilla, 1.0e-9);
-    // a barrier 0.005 below it: any floor on the volatility that moves it by more than 0.006% flips
+    // a barrier 0.0053% below the forward 103.0455: it is still hit at maturity
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 103.04, Option::Call, 12), 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 103.04, Option::Call, 12) - vanilla, 1.0e-9);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 102.0, Option::Call, 12) - vanilla, 1.0e-9);
@@ -452,8 +459,7 @@ BOOST_AUTO_TEST_CASE(testVolatilityClock) {
 }
 
 BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
-    BOOST_TEST_MESSAGE(
-        "Testing one and two dates, one-week and one-month maturities and extreme volatilities...");
+    BOOST_TEST_MESSAGE("Testing coarse and fine monitoring and extreme inputs...");
 
     // Reiner-Rubinstein prices at the shifted barrier computed outside QuantLib.
     struct Case {
@@ -474,8 +480,8 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
         {731, 0.25, 1, Barrier::DownOut, 90.0, Option::Call, 15.5100009519},
         {731, 0.25, 1, Barrier::UpOut, 120.0, Option::Put, 10.3391477790},
         {731, 0.25, 1, Barrier::UpIn, 120.0, Option::Call, 12.7216714278},
-        // seven days: a monitoring step of 0.0016 years (N = 12), 0.00008 (N = 252), 1e-6 (N =
-        // 20000)
+        // seven days: monitoring steps of 0.0016 years (N = 12), 0.00008 (N = 252) and
+        // 1e-6 (N = 20000)
         {7, 0.25, 12, Barrier::DownOut, 98.0, Option::Call, 1.3072368442},
         {7, 0.25, 252, Barrier::DownOut, 98.0, Option::Call, 1.2281225948},
         {7, 0.25, 20000, Barrier::DownOut, 98.0, Option::Call, 1.2021028353},
@@ -498,6 +504,27 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
         QL_CHECK_SMALL(vars.discrete(c.type, c.barrier, c.optionType, c.steps) - c.expected,
                        1.0e-8);
     }
+}
+
+BOOST_AUTO_TEST_CASE(testVolatilityReferenceDate) {
+    BOOST_TEST_MESSAGE("Testing a volatility surface with a later reference date...");
+
+    // The surface starts 180 days after the evaluation date, so the monitoring step is
+    // T_vol/N with T_vol = 185/365 while discounting runs over T = 1 (Reiner-Rubinstein prices
+    // with the barrier moved by exp(+-beta sigma sqrt(T_vol/N)), computed outside QuantLib).
+    CommonVars vars;
+    auto surface = ext::make_shared<BlackConstantVol>(vars.today + 180, NullCalendar(),
+                                                      Handle<Quote>(vars.vol), vars.dc);
+    auto process = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(vars.spot), vars.process->dividendYield(), vars.process->riskFreeRate(),
+        Handle<BlackVolTermStructure>(surface));
+
+    BarrierOption downOut = vars.option(Barrier::DownOut, 90.0, Option::Call);
+    downOut.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(process, 12));
+    QL_CHECK_SMALL(downOut.NPV() - 7.7642968072, 1.0e-8);
+    BarrierOption upIn = vars.option(Barrier::UpIn, 120.0, Option::Put);
+    upIn.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(process, 12));
+    QL_CHECK_SMALL(upIn.NPV() - 0.0343192764, 1.0e-8);
 }
 
 BOOST_AUTO_TEST_CASE(testSpotOnBarrier) {
@@ -598,6 +625,13 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     };
     BarrierOption rebatedAmerican = americanOption(100.0, 3.0);
     BOOST_CHECK_EXCEPTION(rebatedAmerican.NPV(), Error,
+                          ExpectedErrorMessage("rebates are not supported"));
+    BarrierOption rebatedDigital(Barrier::DownOut, 90.0, 3.0,
+                                 ext::make_shared<CashOrNothingPayoff>(Option::Call, 100.0, 1.0),
+                                 ext::make_shared<EuropeanExercise>(vars.expiry));
+    rebatedDigital.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+    BOOST_CHECK_EXCEPTION(rebatedDigital.NPV(), Error,
                           ExpectedErrorMessage("rebates are not supported"));
     BarrierOption negativeStrikeAmerican = americanOption(-1.0, 0.0);
     BOOST_CHECK_EXCEPTION(negativeStrikeAmerican.NPV(), Error,
