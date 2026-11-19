@@ -69,7 +69,9 @@ namespace QuantLib {
         \f]
         which follows from \f$ E^T[I_T/I_S] = E^T[P_r(S,T)/P_n(S,T)] \f$.
 
-        Times are year fractions.
+        Times are year fractions from the common reference date of the nominal and
+        real curves, measured with their common day counter (both are enforced to
+        match).
 
         \test the closed forms are checked against numerical quadrature and
               an exact Monte Carlo simulation of the Gaussian factors
@@ -98,18 +100,19 @@ namespace QuantLib {
         Real rhoRealIndex() const { return rhoRI_; }
         Real baseIndex() const { return baseIndex_; }
 
-        //! \f$ F(0,T) = I_0 P_r(0,T)/P_n(0,T) \f$
+        //! \f$ F(0,T) = I_0 P_r(0,T)/P_n(0,T) \f$, for \f$ T \ge 0 \f$
         Real forwardIndex(Time T) const;
 
-        //! total variance \f$ V(0,T) \f$ of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure
+        //! total variance \f$ V(0,T) \f$ of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure,
+        //! for \f$ T \ge 0 \f$
         Real zcInflationVariance(Time T) const;
 
         /*! Price of a zero-coupon inflation cap/floor paying
-            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T \f$.
+            \f$ \max(\pm(I_T/I_0 - K),0) \f$ at \f$ T > 0 \f$.
         */
         Real zcInflationOption(Option::Type type, Real strike, Time T) const;
 
-        //! \f$ E^T[I_T/I_S]/(F(0,T)/F(0,S)) \f$, the convexity factor
+        //! \f$ E^T[I_T/I_S]/(F(0,T)/F(0,S)) \f$, the convexity factor, for \f$ 0 \le S < T \f$
         Real yoyConvexity(Time S, Time T) const;
 
         //! \f$ E^T[I_T/I_S] \f$ for \f$ 0 \le S < T \f$

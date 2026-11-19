@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace QuantLib {
 
@@ -41,19 +42,21 @@ namespace QuantLib {
             Real h = T / static_cast<Real>(panels), sum = 0.0;
             for (Size i = 0; i < panels; ++i) {
                 Real mid = h * (static_cast<Real>(i) + 0.5);
-                sum += gl([&](Real x) { return f(mid + 0.5 * h * x); }) * 0.5 * h;
+                sum += gl([&](Real x) -> Real { return f(mid + 0.5 * h * x); }) * 0.5 * h;
             }
             return sum;
         }
 
         // int_0^t e^{-a s} ds, which is also B(T-t,T) = (1 - e^{-a t})/a of a
         // Hull-White rate with mean reversion a
-        Real expIntegral(Real a, Time t) { return -std::expm1(-a * t) / a; }
+        Real expIntegral(Real a, Time t) {
+            return -std::expm1(-a * t) / a;
+        }
 
         // int_0^T B_x(u,T) du, with s = T - u
         Real integralB(Real a, Time T) {
             if (a * T < closedFormThreshold)
-                return smoothIntegral([&](Real s) { return expIntegral(a, s); }, T, a);
+                return smoothIntegral([&](Real s) -> Real { return expIntegral(a, s); }, T, a);
             return (T - expIntegral(a, T)) / a;
         }
 
@@ -61,29 +64,28 @@ namespace QuantLib {
         Real integralBB(Real a, Real b, Time T) {
             if (std::min(a, b) * T < closedFormThreshold)
                 return smoothIntegral(
-                    [&](Real s) { return expIntegral(a, s) * expIntegral(b, s); }, T,
+                    [&](Real s) -> Real { return expIntegral(a, s) * expIntegral(b, s); }, T,
                     std::max(a, b));
-            return (T - expIntegral(a, T) - expIntegral(b, T) + expIntegral(a + b, T)) /
-                   (a * b);
+            return (T - expIntegral(a, T) - expIntegral(b, T) + expIntegral(a + b, T)) / (a * b);
         }
 
         // int_0^S e^{-a_r s} B_n(s) ds, with B_n(s) = (1 - e^{-a_n s})/a_n
         Real integralExpB(Real ar, Real an, Time S) {
             if (an * S < closedFormThreshold)
                 return smoothIntegral(
-                    [&](Real s) { return std::exp(-ar * s) * expIntegral(an, s); }, S, ar + an);
+                    [&](Real s) -> Real { return std::exp(-ar * s) * expIntegral(an, s); }, S,
+                    ar + an);
             return (expIntegral(ar, S) - expIntegral(ar + an, S)) / an;
         }
 
         void checkCorrelations(Real rhoNR, Real rhoNI, Real rhoRI) {
-            for (Real rho : {rhoNR, rhoNI, rhoRI})
-                QL_REQUIRE(rho >= -1.0 && rho <= 1.0,
-                           "correlation " << rho << " outside [-1, 1]");
-            Real det = 1.0 - rhoNR * rhoNR - rhoNI * rhoNI - rhoRI * rhoRI +
-                       2.0 * rhoNR * rhoNI * rhoRI;
-            QL_REQUIRE(det >= -1.0e-12,
-                       "correlation matrix is not positive semi-definite "
-                       "(determinant " << det << ")");
+            for (Real rho : std::vector<Real>{rhoNR, rhoNI, rhoRI})
+                QL_REQUIRE(rho >= -1.0 && rho <= 1.0, "correlation " << rho << " outside [-1, 1]");
+            Real det =
+                1.0 - rhoNR * rhoNR - rhoNI * rhoNI - rhoRI * rhoRI + 2.0 * rhoNR * rhoNI * rhoRI;
+            QL_REQUIRE(det >= -1.0e-12, "correlation matrix is not positive semi-definite "
+                                        "(determinant "
+                                            << det << ")");
         }
 
     }
@@ -101,10 +103,14 @@ namespace QuantLib {
                                    Real baseIndex)
     : nominalCurve_(std::move(nominalCurve)), realCurve_(std::move(realCurve)),
       an_(nominalMeanReversion), sn_(nominalVolatility), ar_(realMeanReversion),
-      sr_(realVolatility), sigmaI_(indexVolatility), rhoNR_(rhoNominalReal), rhoNI_(rhoNominalIndex),
-      rhoRI_(rhoRealIndex), baseIndex_(baseIndex) {
+      sr_(realVolatility), sigmaI_(indexVolatility), rhoNR_(rhoNominalReal),
+      rhoNI_(rhoNominalIndex), rhoRI_(rhoRealIndex), baseIndex_(baseIndex) {
         QL_REQUIRE(!nominalCurve_.empty(), "empty nominal curve");
         QL_REQUIRE(!realCurve_.empty(), "empty real curve");
+        QL_REQUIRE(nominalCurve_->referenceDate() == realCurve_->referenceDate(),
+                   "nominal and real curves must have the same reference date");
+        QL_REQUIRE(nominalCurve_->dayCounter() == realCurve_->dayCounter(),
+                   "nominal and real curves must have the same day counter");
         QL_REQUIRE(nominalMeanReversion > 0.0, "nominal mean reversion must be positive");
         QL_REQUIRE(realMeanReversion > 0.0, "real mean reversion must be positive");
         QL_REQUIRE(nominalVolatility >= 0.0, "negative nominal volatility");
@@ -118,7 +124,7 @@ namespace QuantLib {
 
     Real JarrowYildirim::forwardIndex(Time T) const {
         QL_REQUIRE(T >= 0.0, "negative time " << T);
-        return baseIndex_ * realCurve_->discount(T, true) / nominalCurve_->discount(T, true);
+        return baseIndex_ * realCurve_->discount(T) / nominalCurve_->discount(T);
     }
 
     Real JarrowYildirim::zcInflationVariance(Time T) const {
@@ -133,7 +139,7 @@ namespace QuantLib {
     Real JarrowYildirim::zcInflationOption(Option::Type type, Real strike, Time T) const {
         QL_REQUIRE(T > 0.0, "non-positive time " << T);
         Real stdDev = std::sqrt(std::max<Real>(zcInflationVariance(T), 0.0));
-        return nominalCurve_->discount(T, true) *
+        return nominalCurve_->discount(T) *
                blackFormula(type, strike, forwardIndex(T) / baseIndex_, stdDev);
     }
 
@@ -141,8 +147,7 @@ namespace QuantLib {
         QL_REQUIRE(S >= 0.0 && S < T, "invalid times: S = " << S << ", T = " << T);
         Real exponent =
             sr_ * expIntegral(ar_, T - S) *
-            (rhoRI_ * sigmaI_ * expIntegral(ar_, S) +
-             rhoNR_ * sn_ * integralExpB(ar_, an_, S) -
+            (rhoRI_ * sigmaI_ * expIntegral(ar_, S) + rhoNR_ * sn_ * integralExpB(ar_, an_, S) -
              sr_ * integralExpB(ar_, ar_, S));
         return std::exp(exponent);
     }
