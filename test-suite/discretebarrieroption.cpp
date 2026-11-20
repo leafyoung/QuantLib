@@ -172,7 +172,8 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     // Reiner-Rubinstein prices at the shifted barrier H exp(+-beta sigma sqrt(T/N)), computed
     // outside QuantLib.  S = 100, r = 5%, q = 2%, sigma = 25%; maturities of 365, 181 and 731
     // days.  The strikes other than 100 lie close to the barrier, or on the other side of it
-    // for the option type that is not decided at maturity.
+    // for the option type that is not decided at maturity.  The boundary between the exact and
+    // the shifted-barrier branch is pinned to within 1e-5 of the barrier.
     struct Case {
         Date::serial_type days;
         Barrier::Type type;
@@ -630,6 +631,9 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     const std::string touchedMessage = "barrier touched";
 
     check(Barrier::DownOut, 90.0, 3.0, plain(Option::Call, 100.0), european(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 0.01, plain(Option::Call, 100.0), european(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 1.0e-9, plain(Option::Call, 100.0), european(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 1.0e-13, plain(Option::Call, 100.0), european(), rebateMessage);
     check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), american(), exerciseMessage);
     check(Barrier::DownOut, 90.0, 0.0, digital, european(), "non-plain payoff given");
 
