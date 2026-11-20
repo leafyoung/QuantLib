@@ -33,7 +33,7 @@ namespace QuantLib {
     /*! The payoff of each period is paid at the end of the period and
         is that of an option on the ratio of the asset prices at its end
         and start, with strike equal to the moneyness.  Local floors and
-        caps, when given, are applied to it.
+        caps, when given, clamp that payoff directly.
 
         \ingroup cliquetengines
 

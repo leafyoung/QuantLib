@@ -40,10 +40,12 @@ namespace QuantLib {
         percentage of the spot price at the beginning of each period.
 
         Optionally, the payoff of each period can be floored and capped
-        by passing a local floor and/or a local cap: the period payoff
-        is then min(max(payoff, localFloor), localCap), with the payoff
-        as defined by the engine in use.  A null floor means a floor of 0
-        (the payoff is never negative) and a null cap means no cap.
+        by passing a local floor and/or a local cap.  Both are expressed
+        in the units of the moneyness, i.e. as fractions of the asset price
+        at the start of the period: the period payoff, divided by that
+        price, is clamped to min(max(payoff, localFloor), localCap).
+        A null floor means a floor of 0 (the payoff is never negative)
+        and a null cap means no cap.
 
         \todo
         - add global caps/floors

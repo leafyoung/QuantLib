@@ -500,8 +500,8 @@ namespace {
         // the strikes of the unclamped payoff and of the floored and capped levels
         const Real sgn = type == Option::Call ? 1.0 : -1.0;
         std::vector<Real> points = {-12.0, 12.0};
-        for (Real bound : {Real(0.0), floor == Null<Real>() ? Real(0.0) : floor,
-                           cap == Null<Real>() ? Real(0.0) : cap}) {
+        for (Real bound : std::vector<Real>{Real(0.0), floor == Null<Real>() ? Real(0.0) : floor,
+                                            cap == Null<Real>() ? Real(0.0) : cap}) {
             Real strike = moneyness + sgn * bound;
             Real z = strike > 0.0 ? (std::log(strike) - mu) / stdDev : -100.0;
             if (z > -12.0 && z < 12.0)
@@ -641,7 +641,7 @@ BOOST_AUTO_TEST_CASE(testLocalFloorCapOnSmile) {
     for (Option::Type type : {Option::Call, Option::Put}) {
         // the clamped payoff is the floor plus the options struck at the floored and capped levels
         const Real sgn = type == Option::Call ? 1.0 : -1.0;
-        auto price = [&](const ext::shared_ptr<PricingEngine>& engine, Real moneyness) {
+        auto price = [&](const ext::shared_ptr<PricingEngine>& engine, Real moneyness) -> Real {
             auto payoff = ext::make_shared<PercentageStrikePayoff>(type, moneyness);
             CliquetOption option(payoff, exercise, reset);
             option.setPricingEngine(engine);
