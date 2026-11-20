@@ -55,15 +55,16 @@ namespace QuantLib {
         \warning The correction is an asymptotic approximation for small
                  \f$ \sigma\sqrt{\Delta t} \f$.  Reverse knock-outs (up-out
                  calls, down-out puts) are markedly less accurate at coarse
-                 monitoring, increasingly so as the strike approaches the
-                 barrier and with maturity; their knock-in counterparts
-                 carry the same absolute error with the opposite sign
-                 (in-out parity), typically a few percent of the in-price.
-                 The price is discontinuous in the strike at
-                 \f$ K = H \f$, where the exact branch takes over.  With
-                 zero volatility and the spot exactly on the barrier, the
-                 convention of AnalyticBarrierEngine (barrier hit at the
-                 valuation date) applies.
+                 monitoring: relative to the out-price their error grows as
+                 the strike approaches the barrier and as maturity grows.
+                 Their knock-in counterparts carry the same absolute error
+                 with the opposite sign (in-out parity), about 1% of the
+                 in-price at monthly monitoring, a few percent at quarterly
+                 monitoring and more beyond.  The price is discontinuous in
+                 the strike at \f$ K = H \f$, where the exact branch takes
+                 over.  With zero volatility and the spot exactly on the
+                 barrier, the convention of AnalyticBarrierEngine (barrier
+                 hit at the valuation date) applies.
 
         \ingroup barrierengines
 
