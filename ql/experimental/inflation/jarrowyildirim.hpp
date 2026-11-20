@@ -151,8 +151,10 @@ namespace QuantLib {
         Real zeroInflationVariance(Time T) const;
 
         //! price of a zero-coupon inflation cap/floor
-        /*! Per unit notional and discounted on the nominal curve; it pays
-            \f$ \max(\pm(I_T/I_0 - K),0) \f$. Defined for \f$ T > 0 \f$. The strike
+        /*! Per unit notional and discounted on the nominal curve.
+            Option::Call is the zero-coupon cap, paying \f$ \max(I_T/I_0 - K,0) \f$, and
+            Option::Put is the floor, paying \f$ \max(K - I_T/I_0,0) \f$. Defined for \f$ T > 0 \f$.
+           The strike
             \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level; for
             a market zero-coupon cap/floor quoted with an annual strike rate \f$ k \f$ it is
             \f$ K = (1+k)^T \f$.

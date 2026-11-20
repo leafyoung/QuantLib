@@ -95,8 +95,8 @@ namespace QuantLib {
             Real det =
                 1.0 - rhoNR * rhoNR - rhoNI * rhoNI - rhoRI * rhoRI + 2.0 * rhoNR * rhoNI * rhoRI;
             QL_REQUIRE(det >= -1.0e-12,
-                       "correlation matrix is not positive semi-definite (determinant "
-                           << det << " given)");
+                       "correlation matrix is not positive semi-definite (determinant " << det
+                                                                                        << ")");
         }
 
     }

@@ -477,13 +477,13 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
     BOOST_CHECK_NO_THROW(correlations(1.0, 1.0, 1.0));
     // singular matrices are accepted, including the endpoint -1
     BOOST_CHECK_NO_THROW(correlations(-1.0, -1.0, 1.0));
-    // determinants of about -1e-13 and -5e-13 are within the rounding tolerance
-    for (Real excess : std::vector<Real>{5.0e-14, 2.5e-13}) {
+    // determinants of about -1e-13, -5e-13 and -9e-13 are within the rounding tolerance
+    for (Real excess : std::vector<Real>{5.0e-14, 2.5e-13, 4.5e-13}) {
         Real nearSingular = std::sqrt(0.5 + excess);
         BOOST_CHECK_NO_THROW(correlations(nearSingular, nearSingular, 0.0));
     }
-    // determinants of about -2e-12, -5e-12 and -1e-10 are outside it
-    for (Real excess : std::vector<Real>{1.0e-12, 2.5e-12, 5.0e-11}) {
+    // determinants of about -1.1e-12, -2e-12, -5e-12 and -1e-10 are outside it
+    for (Real excess : std::vector<Real>{5.5e-13, 1.0e-12, 2.5e-12, 5.0e-11}) {
         Real tooNegative = std::sqrt(0.5 + excess);
         BOOST_CHECK_EXCEPTION(correlations(tooNegative, tooNegative, 0.0), Error, notPsd);
     }
