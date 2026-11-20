@@ -53,9 +53,10 @@ namespace QuantLib {
                  approximate at one or two monitoring dates.  Reverse
                  barriers (up calls, down puts) are much less accurate at
                  coarse monitoring; a knock-in carries the opposite-signed
-                 error of the matching knock-out.  The price is discontinuous in the strike at
-                 \f$ K = H \f$.  With zero volatility and the spot on the
-                 barrier, the convention of AnalyticBarrierEngine applies.
+                 error of the matching knock-out.  The price is
+                 discontinuous in the strike at \f$ K = H \f$.  With zero
+                 volatility and the spot on the barrier, the convention of
+                 AnalyticBarrierEngine applies.
 
         \ingroup barrierengines
 

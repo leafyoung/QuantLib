@@ -114,10 +114,11 @@ namespace {
                          Option::Type optionType,
                          Real strike,
                          Size steps,
-                         Date::serial_type days) {
+                         Date::serial_type days,
+                         Volatility vol = 0.25) {
         std::ostringstream out;
         out << "type " << type << ", barrier " << barrier << ", option " << optionType
-            << ", strike " << strike << ", steps " << steps << ", days " << days;
+            << ", strike " << strike << ", steps " << steps << ", days " << days << ", vol " << vol;
         return out.str();
     }
 
@@ -539,8 +540,7 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
         vars.expiry = vars.today + c.days;
         vars.vol->setValue(c.vol);
         checkPrice(vars.discrete(c.type, c.barrier, c.optionType, c.steps), c.expected, 1.0e-8,
-                   describe(c.type, c.barrier, c.optionType, 100.0, c.steps, c.days) + ", vol " +
-                       std::to_string(c.vol));
+                   describe(c.type, c.barrier, c.optionType, 100.0, c.steps, c.days, c.vol));
     }
 }
 
