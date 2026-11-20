@@ -116,7 +116,7 @@ namespace {
                          Size steps,
                          Date::serial_type days) {
         std::ostringstream out;
-        out << "type " << int(type) << ", barrier " << barrier << ", option " << int(optionType)
+        out << "type " << type << ", barrier " << barrier << ", option " << optionType
             << ", strike " << strike << ", steps " << steps << ", days " << days;
         return out.str();
     }
@@ -214,6 +214,10 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
         {365, Barrier::UpOut, 120.0, Option::Call, 119.99, 12, 0.0109309881},
         {365, Barrier::UpOut, 120.0, Option::Call, 119.9999, 12, 0.0108676868},
         {365, Barrier::DownOut, 90.0, Option::Put, 90.005, 12, 0.0066575506},
+        {365, Barrier::DownOut, 90.0, Option::Put, 90.0001, 12, 0.0066315532},
+        {365, Barrier::DownIn, 90.0, Option::Put, 90.0001, 12, 4.2199916487},
+        {365, Barrier::DownOut, 90.0, Option::Put, 90.00001, 12, 0.0066310763},
+        {365, Barrier::DownIn, 90.0, Option::Put, 90.00001, 12, 4.2199631426},
         {365, Barrier::DownOut, 90.0, Option::Put, 90.5, 12, 0.0096422182},
         {365, Barrier::UpIn, 120.0, Option::Call, 119.0, 12, 4.5813155230},
         {365, Barrier::DownOut, 90.0, Option::Put, 91.0, 12, 0.0134332196},
@@ -598,7 +602,7 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     CommonVars vars;
 
     BOOST_CHECK_EXCEPTION(AnalyticDiscreteBarrierEngine(vars.process, 0), Error,
-                          ExpectedErrorMessage("at least one monitoring date"));
+                          ExpectedErrorMessage("at least one monitoring date is required"));
 
     auto european = [&]() { return ext::make_shared<EuropeanExercise>(vars.expiry); };
     auto american = [&]() { return ext::make_shared<AmericanExercise>(vars.today, vars.expiry); };
@@ -618,7 +622,8 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
         BOOST_CHECK_EXCEPTION(o.NPV(), Error, ExpectedErrorMessage(message));
     };
     const auto digital = ext::make_shared<CashOrNothingPayoff>(Option::Call, 100.0, 1.0);
-    const std::string rebateMessage = "rebates are not supported";
+    const std::string rebateMessage =
+        "rebates are not supported by the discrete-monitoring correction";
     const std::string exerciseMessage = "only european style option are supported";
     const std::string strikeMessage = "strike must be positive";
     const std::string spotMessage = "negative or null underlying given";
@@ -648,7 +653,6 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     check(Barrier::DownOut, 90.0, 0.0, plain(Option::Put, 0.0), european(), strikeMessage);
     check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), american(), exerciseMessage);
     check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), european(), spotMessage);
-    vars.spot->setValue(100.0);
 }
 
 BOOST_AUTO_TEST_CASE(testQuoteChanges) {
