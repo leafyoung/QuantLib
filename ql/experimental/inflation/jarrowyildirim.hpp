@@ -88,6 +88,20 @@ namespace QuantLib {
         real curves, measured with their common day counter (both are enforced to
         match).
 
+        References:
+
+        Jarrow, Robert, and Yildiray Yildirim, 2003. Pricing Treasury
+        Inflation Protected Securities and Related Derivatives using an
+        HJM Model. Journal of Financial and Quantitative Analysis,
+        Volume 38, Issue 2, 337-358.
+
+        Brigo, Damiano, and Fabio Mercurio, 2006. Interest Rate Models -
+        Theory and Practice, 2nd edition, Springer: section 15.3 (the
+        Jarrow-Yildirim model), section 16.3 (the year-on-year swap under
+        the model; the convexity factor implemented by yoyConvexity is
+        equation 16.15) and section 17.1 (the Jarrow-Yildirim caplet, of
+        which the zero-coupon option is the first-period case).
+
         \test the closed forms are checked against numerical quadrature and
               an exact Monte Carlo simulation of the Gaussian factors
     */
@@ -146,8 +160,7 @@ namespace QuantLib {
         Real forwardIndexRatio(Time T) const;
 
         //! total variance of \f$ \ln I_T \f$ under the nominal \f$ T \f$-forward measure
-        /*! This is \f$ V(0,T) \f$, defined for \f$ T \ge 0 \f$ and never negative.
-         */
+        /*! This is \f$ V(0,T) \f$, defined for \f$ T \ge 0 \f$ and never negative. */
         Real zeroInflationVariance(Time T) const;
 
         //! price of a zero-coupon inflation cap/floor
