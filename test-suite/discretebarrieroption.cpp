@@ -514,7 +514,9 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
         {365, 0.25, 2, Barrier::DownOut, 90.0, Option::Call, 10.6065575706},
         {365, 0.25, 2, Barrier::UpOut, 120.0, Option::Put, 8.1416688799},
         {365, 0.25, 2, Barrier::DownIn, 90.0, Option::Put, 7.2792403915},
-        // a single monitoring date at maturity, T = 731/365
+        // a single monitoring date at maturity, T = 731/365; the barrier shift is
+        // approximate here (the down-out call is about 3.5% below the exact price), so these
+        // rows pin the engine's value, not the exact price
         {731, 0.25, 1, Barrier::DownOut, 90.0, Option::Call, 15.5100009519},
         {731, 0.25, 1, Barrier::UpOut, 120.0, Option::Put, 10.3391477790},
         {731, 0.25, 1, Barrier::UpIn, 120.0, Option::Call, 12.7216714278},
@@ -570,7 +572,8 @@ BOOST_AUTO_TEST_CASE(testSpotOnBarrier) {
 
     CommonVars vars;
 
-    // zero volatility: the barrier is hit at the valuation date, as in the continuous engine
+    // zero volatility with the spot on the barrier: the value follows the continuous engine's
+    // convention (barrier hit at the valuation date), which differs from the discrete contract
     vars.vol->setValue(0.0);
     const Real vanilla = 2.8969248806;
     QL_CHECK_SMALL(vars.discrete(Barrier::DownOut, 100.0, Option::Call, 12), 1.0e-9);
@@ -582,7 +585,8 @@ BOOST_AUTO_TEST_CASE(testSpotOnBarrier) {
     QL_CHECK_SMALL(vars.discrete(Barrier::UpIn, 100.0, Option::Call, 12, 95.0) - 7.6530720031,
                    1.0e-9);
 
-    // a negative carry takes the forward below the up barrier, which the spot is on: still hit
+    // a negative carry takes the forward below the up barrier, which the spot is on; the
+    // zero-volatility convention applies as above
     vars.rate->setValue(0.01);
     vars.dividend->setValue(0.03);
     QL_CHECK_SMALL(vars.discrete(Barrier::UpOut, 100.0, Option::Call, 12, 95.0), 1.0e-9);

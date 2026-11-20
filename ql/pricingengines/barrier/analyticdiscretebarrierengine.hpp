@@ -50,13 +50,19 @@ namespace QuantLib {
         knock-out, the vanilla price for a knock-in.
 
         \warning The correction is asymptotic: regular barriers are also
-                 approximate at one or two monitoring dates.  Reverse
+                 approximate at one or two monitoring dates.  With a
+                 single date every payoff is decided at maturity, but only
+                 the shapes beyond the barrier are priced exactly; the
+                 others are off by several percent, and a knock-in that
+                 cannot be triggered still gets a positive price.  Reverse
                  barriers (up calls, down puts) are much less accurate at
                  coarse monitoring; a knock-in carries the opposite-signed
                  error of the matching knock-out.  The price is
                  discontinuous in the strike at \f$ K = H \f$.  With zero
-                 volatility and the spot on the barrier, the convention of
-                 AnalyticBarrierEngine applies.
+                 volatility and the spot on the barrier, the value follows
+                 the convention of AnalyticBarrierEngine (the barrier is
+                 hit at the valuation date), which differs from the price
+                 for any positive volatility.
 
         \ingroup barrierengines
 
