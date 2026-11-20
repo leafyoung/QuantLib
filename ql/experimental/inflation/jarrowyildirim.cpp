@@ -86,7 +86,8 @@ namespace QuantLib {
 
         void checkCorrelations(Real rhoNR, Real rhoNI, Real rhoRI) {
             for (Real rho : std::vector<Real>{rhoNR, rhoNI, rhoRI})
-                QL_REQUIRE(rho >= -1.0 && rho <= 1.0, "correlation " << rho << " outside [-1, 1]");
+                QL_REQUIRE(rho >= -1.0 && rho <= 1.0,
+                           "correlation (" << rho << ") outside [-1, 1] given");
             Real det =
                 1.0 - rhoNR * rhoNR - rhoNI * rhoNI - rhoRI * rhoRI + 2.0 * rhoNR * rhoNI * rhoRI;
             QL_REQUIRE(det >= -1.0e-12,

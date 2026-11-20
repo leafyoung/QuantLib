@@ -93,18 +93,17 @@ namespace QuantLib {
     */
     class JarrowYildirim : public Observer, public Observable {
       public:
-        /*! \param nominalTermStructure  curve of nominal discount factors; it must not be
-                              empty, checked at construction and at each call
+        /*! \param nominalTermStructure  curve of nominal discount factors; it must not
+                be empty, checked at construction and at each call
             \param realTermStructure  curve of real discount factors; it must not be empty
-                              and must have the same reference date and day counter
-                              as the nominal curve, checked at construction and at
-                              each call
+                and must have the same reference date and day counter as the nominal
+                curve, checked at construction and at each call
             \param nominalMeanReversion  \f$ a_n > 0 \f$
-            \param nominalVolatility  absolute (normal) volatility \f$ \sigma_n \ge 0 \f$
-                                        of the nominal short rate
+            \param nominalVolatility  absolute (normal) volatility \f$ \sigma_n \ge 0 \f$ of
+                the nominal short rate
             \param realMeanReversion  \f$ a_r > 0 \f$
-            \param realVolatility  absolute (normal) volatility \f$ \sigma_r \ge 0 \f$ of the real
-                                    short rate
+            \param realVolatility  absolute (normal) volatility \f$ \sigma_r \ge 0 \f$ of
+                the real short rate
             \param indexVolatility  lognormal volatility \f$ \sigma_I \ge 0 \f$ of the index
             \param rhoNominalReal  correlation \f$ \rho_{nr} \f$
             \param rhoNominalIndex  correlation \f$ \rho_{nI} \f$
@@ -146,7 +145,7 @@ namespace QuantLib {
         /*! Defined for \f$ T \ge 0 \f$. */
         Real forwardIndexRatio(Time T) const;
 
-        //! total variance of \f$ \ln I_T \f$ under the \f$ T \f$-forward measure
+        //! total variance of \f$ \ln I_T \f$ under the nominal \f$ T \f$-forward measure
         /*! This is \f$ V(0,T) \f$, defined for \f$ T \ge 0 \f$ and never negative.
          */
         Real zeroInflationVariance(Time T) const;
@@ -154,7 +153,9 @@ namespace QuantLib {
         //! price of a zero-coupon inflation cap/floor
         /*! Per unit notional and discounted on the nominal curve; it pays
             \f$ \max(\pm(I_T/I_0 - K),0) \f$. Defined for \f$ T > 0 \f$. The strike
-            \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level.
+            \f$ K \ge 0 \f$ is a ratio on \f$ I_T/I_0 \f$, not a rate or an index level; for
+            a market zero-coupon cap/floor quoted with an annual strike rate \f$ k \f$ it is
+            \f$ K = (1+k)^T \f$.
         */
         Real zeroInflationOption(Option::Type type, Real strike, Time T) const;
 

@@ -29,6 +29,7 @@
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/quotes/simplequote.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
+#include <ql/termstructures/yield/zerocurve.hpp>
 #include <ql/time/daycounters/actual360.hpp>
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <algorithm>
@@ -80,7 +81,7 @@ namespace {
 BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim model with zero volatilities...");
     // nominal rate above and below the real rate: forward index ratio above and below 1
-    for (auto rates : {std::make_pair(0.03, 0.012), std::make_pair(0.012, 0.03)}) {
+    for (auto rates : std::vector<std::pair<Real, Real>>{{0.03, 0.012}, {0.012, 0.03}}) {
         Setup s;
         s.nominalRate->setValue(rates.first);
         s.realRate->setValue(rates.second);
@@ -95,7 +96,7 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
         QL_CHECK_CLOSE(jy.yoyForwardRatio(S, T), expectedYoY, 1.0e-10);
         BOOST_CHECK_EQUAL(jy.zeroInflationVariance(T), 0.0);
         Real df = std::exp(-rates.first * T);
-        for (Real k : {0.85, 0.95, 1.05, 1.10, 1.20}) {
+        for (Real k : std::vector<Real>{0.85, 0.95, 1.05, 1.10, 1.20}) {
             Real call = jy.zeroInflationOption(Option::Call, k, T);
             Real put = jy.zeroInflationOption(Option::Put, k, T);
             Real expCall = df * std::max<Real>(fT - k, 0.0);
@@ -106,21 +107,61 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversCurves) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversNonFlatCurves) {
+    BOOST_TEST_MESSAGE(
+        "Testing Jarrow-Yildirim model with zero volatilities on non-flat curves...");
+    // zero rates at yearly nodes, with distinct and non-proportional nominal and real shapes;
+    // with Actual/365 (Fixed) and 365-day steps the node times are exactly 0, 1, ..., 6
+    Setup s;
+    s.sn = s.sr = s.sI = 0.0;
+    std::vector<Date> dates;
+    for (Integer year = 0; year <= 6; ++year)
+        dates.push_back(s.today + 365 * year);
+    std::vector<Rate> nominalZeros = {0.020, 0.025, 0.032, 0.035, 0.036, 0.040, 0.041};
+    std::vector<Rate> realZeros = {0.010, 0.004, 0.012, 0.020, 0.018, 0.011, 0.015};
+    Handle<YieldTermStructure> nominal(
+        ext::make_shared<ZeroCurve>(dates, nominalZeros, Actual365Fixed()));
+    Handle<YieldTermStructure> real(
+        ext::make_shared<ZeroCurve>(dates, realZeros, Actual365Fixed()));
+    JarrowYildirim jy(nominal, real, s.an, s.sn, s.ar, s.sr, s.sI, s.rhoNR, s.rhoNI, s.rhoRI);
+    // discount factors at the nodes: exp(-z t)
+    auto pn = [&](Size t) -> Real { return std::exp(-nominalZeros[t] * Real(t)); };
+    auto pr = [&](Size t) -> Real { return std::exp(-realZeros[t] * Real(t)); };
+    for (Size t = 1; t <= 6; ++t)
+        QL_CHECK_CLOSE(jy.forwardIndexRatio(Real(t)), pr(t) / pn(t), 1.0e-10);
+    for (auto st : std::vector<std::pair<Size, Size>>{{1, 2}, {2, 5}, {3, 6}, {1, 6}}) {
+        Size S = st.first, T = st.second;
+        QL_CHECK_CLOSE(jy.yoyForwardRatio(Real(S), Real(T)), (pr(T) * pn(S)) / (pr(S) * pn(T)),
+                       1.0e-10);
+    }
+    for (Real k : std::vector<Real>{0.85, 1.0, 1.10}) {
+        Real expectedCall = pn(5) * std::max<Real>(pr(5) / pn(5) - k, 0.0);
+        Real expectedPut = pn(5) * std::max<Real>(k - pr(5) / pn(5), 0.0);
+        QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, k, 5.0), expectedCall, 1.0e-10);
+        QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Put, k, 5.0), expectedPut, 1.0e-10);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim closed forms against quadrature...");
-    // mean reversions from the small-a branch through the closed-form threshold
+    // mean reversions from the small-a branch through the closed-form threshold,
     // including one tiny and one large mean reversion, which exercise the
     // choice of integration panels and of the branch for each term
-    for (auto meanReversions :
-         {std::make_pair(0.08, 0.05), std::make_pair(1.0e-8, 1.0e-6), std::make_pair(1.0e-3, 0.5),
-          std::make_pair(0.02, 0.02), std::make_pair(0.15, 1.0e-7), std::make_pair(1.0e-3, 2.0),
-          std::make_pair(1.0e-8, 1.0), std::make_pair(1.0e-8, 0.05), std::make_pair(2.0e-4, 2.0),
-          std::make_pair(2.0, 1.0e-8), std::make_pair(1.0, 2.0e-4)}) {
+    using Pair = std::pair<Real, Real>;
+    std::vector<Pair> meanReversions = {{0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},
+                                        {0.02, 0.02},  {0.15, 1.0e-7},   {1.0e-3, 2.0},
+                                        {1.0e-8, 1.0}, {1.0e-8, 0.05},   {2.0e-4, 2.0},
+                                        {2.0, 1.0e-8}, {1.0, 2.0e-4}};
+    // rate times maturity beyond the panel cap; for these only the variance is compared,
+    // since the log-convexity is of the order of the rounding error of the logarithm
+    std::vector<Pair> extremeMeanReversions = {{1.0e-3, 50.0}, {50.0, 1.0e-3}};
+
+    auto checkVariance = [](const Pair& pair) {
         Setup s;
-        s.an = meanReversions.first;
-        s.ar = meanReversions.second;
+        s.an = pair.first;
+        s.ar = pair.second;
         JarrowYildirim jy = s.model();
-        for (Real T : {0.5, 3.0, 10.0, 30.0}) {
+        for (Real T : std::vector<Real>{0.5, 3.0, 10.0, 30.0, 31.0}) {
             auto integrand = [&](Real u) -> Real {
                 Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
                 return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
@@ -131,9 +172,19 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
             Real calculated = jy.zeroInflationVariance(T);
             QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
         }
+    };
+    for (const Pair& pair : meanReversions)
+        checkVariance(pair);
+    for (const Pair& pair : extremeMeanReversions)
+        checkVariance(pair);
+
+    for (const Pair& pair : meanReversions) {
+        Setup s;
+        s.an = pair.first;
+        s.ar = pair.second;
+        JarrowYildirim jy = s.model();
         for (auto st :
-             {std::make_pair(1.0, 2.0), std::make_pair(4.0, 6.0), std::make_pair(0.0, 3.0),
-              std::make_pair(7.0, 7.5), std::make_pair(10.0, 30.0), std::make_pair(30.0, 31.0)}) {
+             std::vector<Pair>{{1.0, 2.0}, {4.0, 6.0}, {7.0, 7.5}, {10.0, 30.0}, {30.0, 31.0}}) {
             Real S = st.first, T = st.second;
             auto integrand = [&](Real u) -> Real {
                 Real delta = bFun(s.ar, T - u) - bFun(s.ar, S - u);
@@ -141,23 +192,24 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
                        (s.rhoRI * s.sI + s.rhoNR * s.sn * bFun(s.an, S - u) -
                         s.sr * bFun(s.ar, S - u));
             };
-            Real expected = S > 0.0 ? integrate(integrand, 0.0, S) : Real(0.0);
+            Real expected = integrate(integrand, 0.0, S);
             Real calculated = std::log(jy.yoyConvexity(S, T));
             QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
         }
+        // nothing is integrated for S = 0, so the factor is exactly one
         BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
     }
 }
 
 BOOST_AUTO_TEST_CASE(testZeroInflationCapFloorParity) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim zero-coupon inflation cap-floor parity...");
-    for (auto rates : {std::make_pair(0.03, 0.012), std::make_pair(0.012, 0.03)}) {
+    for (auto rates : std::vector<std::pair<Real, Real>>{{0.03, 0.012}, {0.012, 0.03}}) {
         Setup s;
         s.nominalRate->setValue(rates.first);
         s.realRate->setValue(rates.second);
         JarrowYildirim jy = s.model();
-        for (Real T : {1.0, 5.0, 10.0}) {
-            for (Real k : {0.95, 1.0, 1.1, 1.3}) {
+        for (Real T : std::vector<Real>{1.0, 5.0, 10.0}) {
+            for (Real k : std::vector<Real>{0.95, 1.0, 1.1, 1.3}) {
                 Real call = jy.zeroInflationOption(Option::Call, k, T);
                 Real put = jy.zeroInflationOption(Option::Put, k, T);
                 Real expected =
@@ -184,6 +236,7 @@ BOOST_AUTO_TEST_CASE(testDegenerateVarianceIsNotNegative) {
     // the exact variance is (sigma_r - sigma_n)^2 times the integral of
     // B(u,T)^2 over [0,T], positive only at the rounding level; the clamp must
     // not raise it above that scale
+    BOOST_CHECK(jy.zeroInflationVariance(T) >= 0.0);
     QL_CHECK_SMALL(jy.zeroInflationVariance(T), 1.0e-15);
     Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
     Real df = std::exp(-s.nominalRate->value() * T);
@@ -237,8 +290,6 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
     s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
     JarrowYildirim jy = s.model();
     const Real S = 4.0, T = 6.0;
-    // antithetic pairs: 250000 draws double into 500000 paths, which keeps the
-    // convexity-resolution and accuracy guards well above their thresholds
     const Size samples = 250000;
 
     // Exact joint law of the Ornstein-Uhlenbeck states at S under the
@@ -260,29 +311,32 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
     auto nominalDyn = nominal.dynamics(), realDyn = real.dynamics();
     MersenneTwisterUniformRng rng(20261119);
     InverseCumulativeNormal inverse;
-    // antithetic pairs: each draw is evaluated at (z1, z2) and (-z1, -z2)
-    const Size paths = 2 * samples;
+    // antithetic pairs: each draw is evaluated at (z1, z2) and (-z1, -z2) and the pair
+    // average is one sample, so the standard error below is computed from the pair
+    // averages
     Real sumY = 0.0, sumY2 = 0.0, sumInvP = 0.0, sumInvP2 = 0.0;
     for (Size i = 0; i < samples; ++i) {
         Real z1 = inverse(rng.next().value), z2 = inverse(rng.next().value);
         Real w1[2] = {z1, -z1}, w2[2] = {z2, -z2};
+        Real pairY = 0.0, pairInvP = 0.0;
         for (Size j = 0; j < 2; ++j) {
             Real xn = meanN + sdN * w1[j];
             Real xr = meanR + sdR * (rho * w1[j] + std::sqrt(1.0 - rho * rho) * w2[j]);
             Real pn = nominal.discountBond(S, T, nominalDyn->shortRate(S, xn));
             Real pr = real.discountBond(S, T, realDyn->shortRate(S, xr));
-            Real y = pr / pn;
-            sumY += y;
-            sumY2 += y * y;
-            sumInvP += 1.0 / pn;
-            sumInvP2 += 1.0 / (pn * pn);
+            pairY += 0.5 * pr / pn;
+            pairInvP += 0.5 / pn;
         }
+        sumY += pairY;
+        sumY2 += pairY * pairY;
+        sumInvP += pairInvP;
+        sumInvP2 += pairInvP * pairInvP;
     }
     auto standardError = [&](Real sum, Real sum2) -> Real {
-        Real mean = sum / paths;
-        return std::sqrt((sum2 / paths - mean * mean) / paths);
+        Real mean = sum / samples;
+        return std::sqrt((sum2 / samples - mean * mean) / samples);
     };
-    Real meanYoY = sumY / paths, meanInvP = sumInvP / paths;
+    Real meanYoY = sumY / samples, meanInvP = sumInvP / samples;
     Real seYoY = standardError(sumY, sumY2);
     Real seInvP = standardError(sumInvP, sumInvP2);
 
@@ -390,7 +444,7 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
     // just outside the bounds, in each position; the other entries are in range
     for (Real rho : std::vector<Real>{1.05, -1.05}) {
         std::ostringstream expected;
-        expected << "correlation " << rho << " outside [-1, 1]";
+        expected << "correlation (" << rho << ") outside [-1, 1] given";
         BOOST_CHECK_EXCEPTION(correlations(rho, 0.0, 0.0), Error,
                               ExpectedErrorMessage(expected.str()));
         BOOST_CHECK_EXCEPTION(correlations(0.0, rho, 0.0), Error,
@@ -407,6 +461,8 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
     BOOST_CHECK_EXCEPTION(correlations(barely, barely, barely), Error, outside);
     BOOST_CHECK_EXCEPTION(correlations(-barely, -barely, barely), Error, outside);
     BOOST_CHECK_EXCEPTION(correlations(barely, -barely, -barely), Error, outside);
+    // only the lower bound rejects this one: the determinant is -(barely - 1)^2, about -1e-20
+    BOOST_CHECK_EXCEPTION(correlations(-barely, 1.0, -1.0), Error, outside);
 
     // determinant guard; in the (0.9, 0.0, 0.6) case only rhoRI makes the determinant negative
     BOOST_CHECK_EXCEPTION(correlations(0.9, 0.9, 0.0), Error, notPsd);
@@ -498,9 +554,8 @@ BOOST_AUTO_TEST_CASE(testMethodArgumentValidation) {
     BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, -1.0e-8, 1.0), Error,
                           ExpectedErrorMessage("negative strike (-1e-08) given"));
 
-    // boundary values are accepted
-    BOOST_CHECK_NO_THROW(jy.zeroInflationOption(Option::Call, 0.0, 1.0));
-    // at zero strike the call is the discounted forward ratio and the put is worthless
+    // boundary values are accepted: at zero strike the call is the discounted forward ratio and the
+    // put is worthless
     QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, 0.0, 1.0),
                    jy.forwardIndexRatio(1.0) * s.nominalCurve->discount(1.0), 1.0e-12);
     QL_CHECK_SMALL(jy.zeroInflationOption(Option::Put, 0.0, 1.0), 1.0e-15);
