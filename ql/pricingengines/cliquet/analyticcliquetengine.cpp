@@ -35,11 +35,9 @@ namespace QuantLib {
         QL_REQUIRE(arguments_.accruedCoupon == Null<Real>() &&
                    arguments_.lastFixing == Null<Real>(),
                    "this engine cannot price options already started");
-        QL_REQUIRE(arguments_.localCap == Null<Real>() &&
-                   arguments_.localFloor == Null<Real>() &&
-                   arguments_.globalCap == Null<Real>() &&
+        QL_REQUIRE(arguments_.globalCap == Null<Real>() &&
                    arguments_.globalFloor == Null<Real>(),
-                   "this engine cannot price capped/floored options");
+                   "this engine cannot price globally capped/floored options");
 
         QL_REQUIRE(arguments_.exercise->type() == Exercise::European,
                    "not an European option");
@@ -54,8 +52,16 @@ namespace QuantLib {
 
         Real underlying = process_->stateVariable()->value();
         QL_REQUIRE(underlying > 0.0, "negative or null underlying");
-        Real strike = underlying * moneyness->strike();
-        auto payoff = ext::make_shared<PlainVanillaPayoff>(moneyness->optionType(),strike);
+
+        // The period payoff clamped between the local floor and cap is the floor itself plus a
+        // long option struck at the floored level and a short one struck at the capped level.
+        // A put struck at or below zero is worthless and is skipped.
+        const Real floor = arguments_.localFloor == Null<Real>() ? Real(0.0) :
+                                                                   arguments_.localFloor;
+        const Real sgn = moneyness->optionType() == Option::Call ? 1.0 : -1.0;
+        std::vector<std::pair<Real, Real>> legs(1, {moneyness->strike() + sgn * floor, 1.0});
+        if (arguments_.localCap != Null<Real>())
+            legs.emplace_back(moneyness->strike() + sgn * arguments_.localCap, -1.0);
 
         results_.value = 0.0;
         results_.delta = results_.gamma = 0.0;
@@ -83,38 +89,55 @@ namespace QuantLib {
                 process_->dividendYield()->discount(resetDates[i]) /
                 process_->dividendYield()->discount(resetDates[i-1]);
             Real forward = underlying*qDiscount/discount;
-            Real variance =
-                process_->blackVolatility()->blackForwardVariance(
-                                        resetDates[i-1],resetDates[i],strike);
-
-            BlackCalculator black(payoff, forward, std::sqrt(variance), discount);
 
             DayCounter rfdc  = process_->riskFreeRate()->dayCounter();
             DayCounter divdc = process_->dividendYield()->dayCounter();
             DayCounter voldc = process_->blackVolatility()->dayCounter();
 
-            results_.value += weight * black.value();
-            results_.delta += weight * (black.delta(underlying) +
-                                        moneyness->strike() * discount *
-                                        black.beta());
-            results_.gamma += 0.0;
-            // Retain the existing per-period conversion to the risk-free day counter.
-            results_.theta +=
-                q.equivalentRate(rfdc, Continuous, NoFrequency, resetDates[i - 1], resetDates[i]) *
-                weight * black.value();
-
             Time dt = rfdc.yearFraction(resetDates[i-1],resetDates[i]);
-            results_.rho += weight * black.rho(dt);
-
             Time t = divdc.yearFraction(
                                     process_->dividendYield()->referenceDate(),
                                     resetDates[i-1]);
-            dt = divdc.yearFraction(resetDates[i-1],resetDates[i]);
-            results_.dividendRho += weight * (black.dividendRho(dt) -
-                                              t * black.value());
 
-            dt = voldc.yearFraction(resetDates[i-1], resetDates[i]);
-            results_.vega += weight * black.vega(dt);
+            // the amount received whatever the path, in units of the spot at the reset date
+            Real bond = weight * discount * underlying * floor;
+            results_.value += bond;
+            results_.delta += weight * discount * floor;
+            results_.theta += q.equivalentRate(rfdc, Continuous, NoFrequency, resetDates[i - 1],
+                                               resetDates[i]) * bond;
+            results_.rho -= dt * bond;
+            results_.dividendRho -= t * bond;
+
+            for (const auto& leg : legs) {
+                Real legStrike = leg.first;
+                if (legStrike <= 0.0)
+                    continue;
+                Real strike = underlying * legStrike;
+                auto payoff = ext::make_shared<PlainVanillaPayoff>(moneyness->optionType(),strike);
+                Real variance =
+                    process_->blackVolatility()->blackForwardVariance(
+                                        resetDates[i-1],resetDates[i],strike);
+
+                BlackCalculator black(payoff, forward, std::sqrt(variance), discount);
+                Real w = leg.second * weight;
+
+                results_.value += w * black.value();
+                results_.delta += w * (black.delta(underlying) +
+                                       legStrike * discount * black.beta());
+                results_.gamma += 0.0;
+                // Retain the existing per-period conversion to the risk-free day counter.
+                results_.theta += q.equivalentRate(rfdc, Continuous, NoFrequency,
+                                                   resetDates[i - 1], resetDates[i]) *
+                                  w * black.value();
+
+                results_.rho += w * black.rho(dt);
+
+                Time ddt = divdc.yearFraction(resetDates[i-1],resetDates[i]);
+                results_.dividendRho += w * (black.dividendRho(ddt) - t * black.value());
+
+                ddt = voldc.yearFraction(resetDates[i-1], resetDates[i]);
+                results_.vega += w * black.vega(ddt);
+            }
         }
 
     }

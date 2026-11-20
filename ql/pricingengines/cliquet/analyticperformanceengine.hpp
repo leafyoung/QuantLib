@@ -30,7 +30,12 @@
 namespace QuantLib {
 
     //! Pricing engine for performance options using analytical formulae
-    /*! \ingroup cliquetengines
+    /*! The payoff of each period is paid at the end of the period and
+        is that of an option on the ratio of the asset prices at its end
+        and start, with strike equal to the moneyness.  Local floors and
+        caps, when given, are applied to it.
+
+        \ingroup cliquetengines
 
         \test the correctness of the returned greeks is tested by
               reproducing numerical derivatives.

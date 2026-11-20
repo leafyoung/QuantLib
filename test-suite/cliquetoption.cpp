@@ -20,11 +20,14 @@
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
 #include <ql/instruments/cliquetoption.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
+#include <ql/math/integrals/kronrodintegral.hpp>
 #include <ql/pricingengines/cliquet/analyticcliquetengine.hpp>
 #include <ql/pricingengines/cliquet/analyticperformanceengine.hpp>
 #include <ql/pricingengines/cliquet/mcperformanceengine.hpp>
 #include <ql/processes/blackscholesprocess.hpp>
 #include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
+#include <ql/termstructures/volatility/equityfx/blackvoltermstructure.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/termstructures/yield/forwardcurve.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
@@ -32,6 +35,7 @@
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/time/period.hpp>
 #include <ql/utilities/dataformatters.hpp>
+#include <algorithm>
 #include <map>
 
 using namespace QuantLib;
@@ -107,7 +111,7 @@ BOOST_AUTO_TEST_CASE(testValues) {
 
 
 template <class T>
-void testOptionGreeks() {
+void testOptionGreeks(Real localFloor = Null<Real>(), Real localCap = Null<Real>()) {
 
     std::map<std::string,Real> calculated, expected, tolerance;
     tolerance["delta"]  = 1.0e-5;
@@ -160,7 +164,7 @@ void testOptionGreeks() {
 
                     ext::shared_ptr<PricingEngine> engine(new T(process));
 
-                    CliquetOption option(payoff, maturity, reset);
+                    CliquetOption option(payoff, maturity, reset, localFloor, localCap);
                     option.setPricingEngine(engine);
 
                     for (Real u : underlyings) {
@@ -265,6 +269,17 @@ BOOST_AUTO_TEST_CASE(testPerformanceGreeks) {
     testOptionGreeks<AnalyticPerformanceEngine>();
 }
 
+BOOST_AUTO_TEST_CASE(testLocalFloorCapGreeks) {
+    BOOST_TEST_MESSAGE("Testing cliquet and performance option greeks with local floors "
+                       "and caps...");
+    const std::pair<Real, Real> bounds[] = {
+        {0.02, Null<Real>()}, {Null<Real>(), 0.05}, {0.02, 0.08}};
+    for (const auto& bound : bounds) {
+        testOptionGreeks<AnalyticCliquetEngine>(bound.first, bound.second);
+        testOptionGreeks<AnalyticPerformanceEngine>(bound.first, bound.second);
+    }
+}
+
 // A forward curve that follows the given forward rates between the given dates, whatever its
 // reference date: the rates are fixed in calendar time and the first one applies from the
 // reference date to the first node.
@@ -285,7 +300,9 @@ template <class T>
 void testThetaOnForwardCurves(const std::vector<Rate>& qForwards,
                               const std::vector<Rate>& rForwards,
                               const DayCounter& divdc,
-                              const DayCounter& rfdc) {
+                              const DayCounter& rfdc,
+                              Real localFloor = Null<Real>(),
+                              Real localCap = Null<Real>()) {
 
     Date today = Settings::instance().evaluationDate();
     std::vector<Date> nodes = {today + 30, today + 120, today + 240, today + 400};
@@ -307,7 +324,7 @@ void testThetaOnForwardCurves(const std::vector<Rate>& qForwards,
     for (auto& type : types) {
         BOOST_TEST_CONTEXT(type << " option") {
             auto payoff = ext::make_shared<PercentageStrikePayoff>(type, 1.05);
-            CliquetOption option(payoff, exercise, reset);
+            CliquetOption option(payoff, exercise, reset, localFloor, localCap);
 
             option.setPricingEngine(makeEngine(today));
             Real calculated = option.theta();
@@ -349,6 +366,13 @@ BOOST_AUTO_TEST_CASE(testThetaOnNonFlatCurves) {
                 }
                 BOOST_TEST_CONTEXT("AnalyticPerformanceEngine") {
                     testThetaOnForwardCurves<AnalyticPerformanceEngine>(q, r, divdc, rfdc);
+                }
+                BOOST_TEST_CONTEXT("AnalyticCliquetEngine, local floor and cap") {
+                    testThetaOnForwardCurves<AnalyticCliquetEngine>(q, r, divdc, rfdc, 0.02, 0.08);
+                }
+                BOOST_TEST_CONTEXT("AnalyticPerformanceEngine, local floor and cap") {
+                    testThetaOnForwardCurves<AnalyticPerformanceEngine>(q, r, divdc, rfdc, 0.02,
+                                                                        0.08);
                 }
             }
         }
@@ -445,6 +469,297 @@ BOOST_AUTO_TEST_CASE(testMcPerformance) {
                     }
                 }
             }
+        }
+    }
+}
+
+namespace {
+
+    // the period payoff of a percentage-strike option on the ratio x of the prices at the end and
+    // at the start of the period, clamped between the local floor and cap
+    Real clampedCoupon(Option::Type type, Real moneyness, Real x, Real floor, Real cap) {
+        Real coupon = std::max<Real>(int(type) * (x - moneyness), 0.0);
+        if (floor != Null<Real>())
+            coupon = std::max<Real>(coupon, floor);
+        if (cap != Null<Real>())
+            coupon = std::min<Real>(coupon, cap);
+        return coupon;
+    }
+
+    // Expected value of the clamped coupon of one period under the lognormal law of the ratio,
+    // by adaptive integration over the standard normal variable.
+    Real expectedCoupon(Option::Type type, Real moneyness, Real mu, Real stdDev,
+                        Real floor, Real cap) {
+        static const GaussKronrodAdaptive integrator(1.0e-13, 100000);
+        static const NormalDistribution gaussian;
+        auto f = [&](Real z) -> Real {
+            return gaussian(z) *
+                   clampedCoupon(type, moneyness, std::exp(mu + stdDev * z), floor, cap);
+        };
+        // integrate between the kinks of the clamped payoff, which are where the ratio equals
+        // the strikes of the unclamped payoff and of the floored and capped levels
+        const Real sgn = type == Option::Call ? 1.0 : -1.0;
+        std::vector<Real> points = {-12.0, 12.0};
+        for (Real bound : {Real(0.0), floor == Null<Real>() ? Real(0.0) : floor,
+                           cap == Null<Real>() ? Real(0.0) : cap}) {
+            Real strike = moneyness + sgn * bound;
+            Real z = strike > 0.0 ? (std::log(strike) - mu) / stdDev : -100.0;
+            if (z > -12.0 && z < 12.0)
+                points.push_back(z);
+        }
+        std::sort(points.begin(), points.end());
+        Real sum = 0.0;
+        for (Size i = 1; i < points.size(); ++i)
+            sum += integrator(f, points[i - 1], points[i]);
+        return sum;
+    }
+
+    struct Bounds {
+        Real floor, cap;
+    };
+
+    const Real noBound = Null<Real>();
+    const Bounds boundCases[] = {{noBound, 0.06}, {0.01, noBound}, {0.0, 0.06},
+                                 {0.01, 0.06},    {0.03, 0.03},    {0.02, 1.0}};
+
+    // spot, rates and volatility of the tests below, on flat curves
+    struct FlatMarket {
+        Real spot = 100.0;
+        Rate q = 0.03, r = 0.05;
+        Volatility sigma = 0.25;
+        DayCounter dc = Actual365Fixed();
+
+        ext::shared_ptr<GeneralizedBlackScholesProcess> process(const Date& today) const {
+            return ext::make_shared<BlackScholesMertonProcess>(
+                Handle<Quote>(ext::make_shared<SimpleQuote>(spot)),
+                Handle<YieldTermStructure>(ext::make_shared<FlatForward>(today, q, dc)),
+                Handle<YieldTermStructure>(ext::make_shared<FlatForward>(today, r, dc)),
+                Handle<BlackVolTermStructure>(
+                    ext::make_shared<BlackConstantVol>(today, NullCalendar(), sigma, dc)));
+        }
+    };
+
+}
+
+BOOST_AUTO_TEST_CASE(testLocalFloorCapValues) {
+    BOOST_TEST_MESSAGE("Testing cliquet and performance option values with local floors "
+                       "and caps...");
+
+    Date today = Settings::instance().evaluationDate();
+    FlatMarket market;
+    auto process = market.process(today);
+    std::vector<Date> reset = {today + 90, today + 180, today + 270};
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+    std::vector<Date> dates = reset;
+    dates.push_back(exercise->lastDate());
+
+    // the forward of the ratio over the first period is about 1.005
+    const Real moneyness[] = {0.95, 1.0, 1.005, 1.05};
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        for (Real k : moneyness) {
+            // a cap or floor at the moneyness leaves a put with a strike of zero
+            std::vector<Bounds> cases(std::begin(boundCases), std::end(boundCases));
+            cases.push_back({noBound, k});
+            cases.push_back({k, k});
+            for (const Bounds& bounds : cases) {
+                BOOST_TEST_CONTEXT(type << ", moneyness " << k << ", floor " << bounds.floor
+                                        << ", cap " << bounds.cap) {
+                    auto payoff = ext::make_shared<PercentageStrikePayoff>(type, k);
+                    CliquetOption option(payoff, exercise, reset, bounds.floor, bounds.cap);
+
+                    // the reference value, by integrating the clamped payoff directly
+                    Real expectedCliquet = 0.0, expectedPerformance = 0.0;
+                    // the reset dates are the starts of the periods
+                    for (Size i = 1; i < dates.size(); ++i) {
+                        Time t0 = market.dc.yearFraction(today, dates[i - 1]);
+                        Time t1 = market.dc.yearFraction(today, dates[i]);
+                        Time dt = t1 - t0;
+                        Real mu = (market.r - market.q - 0.5 * market.sigma * market.sigma) * dt;
+                        Real e = expectedCoupon(type, k, mu, market.sigma * std::sqrt(dt),
+                                                bounds.floor, bounds.cap);
+                        expectedPerformance += std::exp(-market.r * t1) * e;
+                        expectedCliquet +=
+                            market.spot * std::exp(-market.q * t0 - market.r * dt) * e;
+                    }
+
+                    option.setPricingEngine(ext::make_shared<AnalyticCliquetEngine>(process));
+                    QL_CHECK_CLOSE_FRACTION(option.NPV(), expectedCliquet, 1.0e-9);
+
+                    option.setPricingEngine(ext::make_shared<AnalyticPerformanceEngine>(process));
+                    QL_CHECK_CLOSE_FRACTION(option.NPV(), expectedPerformance, 1.0e-9);
+                }
+            }
+        }
+    }
+}
+
+namespace {
+
+    // A volatility depending on the strike, to tell the strike at which each leg of a clamped
+    // payoff reads it.
+    class SkewedVol : public BlackVolatilityTermStructure {
+      public:
+        SkewedVol(const Date& referenceDate, const DayCounter& dc)
+        : BlackVolatilityTermStructure(referenceDate, NullCalendar(), Following, dc) {}
+        Date maxDate() const override { return Date::maxDate(); }
+        Real minStrike() const override { return 0.0; }
+        Real maxStrike() const override { return QL_MAX_REAL; }
+
+      protected:
+        Volatility blackVolImpl(Time, Real strike) const override {
+            return 0.15 + 0.3 * std::exp(-strike / 100.0);
+        }
+    };
+
+}
+
+BOOST_AUTO_TEST_CASE(testLocalFloorCapOnSmile) {
+    BOOST_TEST_MESSAGE("Testing cliquet and performance option with local floors and caps "
+                       "on a volatility depending on the strike...");
+
+    Date today = Settings::instance().evaluationDate();
+    FlatMarket market;
+    Handle<Quote> spot(ext::make_shared<SimpleQuote>(market.spot));
+    Handle<YieldTermStructure> qTS(ext::make_shared<FlatForward>(today, market.q, market.dc));
+    Handle<YieldTermStructure> rTS(ext::make_shared<FlatForward>(today, market.r, market.dc));
+    Handle<BlackVolTermStructure> volTS(ext::make_shared<SkewedVol>(today, market.dc));
+    auto process = ext::make_shared<BlackScholesMertonProcess>(spot, qTS, rTS, volTS);
+    std::vector<Date> reset = {today + 90, today + 180, today + 270};
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+
+    // the amount received at the end of each period, per unit of floor
+    Real unitPerformance = 0.0, unitCliquet = 0.0;
+    std::vector<Date> dates = reset;
+    dates.push_back(exercise->lastDate());
+    for (Size i = 1; i < dates.size(); ++i) {
+        unitPerformance += rTS->discount(dates[i]);
+        unitCliquet += market.spot * qTS->discount(dates[i - 1]) *
+                       rTS->discount(dates[i]) / rTS->discount(dates[i - 1]);
+    }
+
+    const Real floor = 0.01, cap = 0.05, k = 1.0;
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        // the clamped payoff is the floor plus the options struck at the floored and capped levels
+        const Real sgn = type == Option::Call ? 1.0 : -1.0;
+        auto price = [&](const ext::shared_ptr<PricingEngine>& engine, Real moneyness) {
+            auto payoff = ext::make_shared<PercentageStrikePayoff>(type, moneyness);
+            CliquetOption option(payoff, exercise, reset);
+            option.setPricingEngine(engine);
+            return option.NPV();
+        };
+        BOOST_TEST_CONTEXT(type << " option") {
+            const ext::shared_ptr<PricingEngine> cliquet =
+                ext::make_shared<AnalyticCliquetEngine>(process);
+            const ext::shared_ptr<PricingEngine> performance =
+                ext::make_shared<AnalyticPerformanceEngine>(process);
+            auto payoff = ext::make_shared<PercentageStrikePayoff>(type, k);
+            CliquetOption option(payoff, exercise, reset, floor, cap);
+
+            option.setPricingEngine(cliquet);
+            Real expected = floor * unitCliquet + price(cliquet, k + sgn * floor) -
+                            price(cliquet, k + sgn * cap);
+            QL_CHECK_CLOSE_FRACTION(option.NPV(), expected, 1.0e-12);
+
+            option.setPricingEngine(performance);
+            expected = floor * unitPerformance + price(performance, k + sgn * floor) -
+                       price(performance, k + sgn * cap);
+            QL_CHECK_CLOSE_FRACTION(option.NPV(), expected, 1.0e-12);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testLocalFloorCapDefaults) {
+    BOOST_TEST_MESSAGE("Testing that missing local floors and caps leave cliquet and "
+                       "performance option values unchanged...");
+
+    Date today = Settings::instance().evaluationDate();
+    auto process = FlatMarket().process(today);
+    std::vector<Date> reset = {today + 90, today + 180};
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 270);
+
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        auto payoff = ext::make_shared<PercentageStrikePayoff>(type, 1.02);
+        const ext::shared_ptr<PricingEngine> engines[] = {
+            ext::make_shared<AnalyticCliquetEngine>(process),
+            ext::make_shared<AnalyticPerformanceEngine>(process)};
+        for (const auto& engine : engines) {
+            CliquetOption plain(payoff, exercise, reset);
+            CliquetOption zeroFloor(payoff, exercise, reset, 0.0);
+            CliquetOption wideCap(payoff, exercise, reset, Null<Real>(), 1.0e6);
+            plain.setPricingEngine(engine);
+            zeroFloor.setPricingEngine(engine);
+            wideCap.setPricingEngine(engine);
+            // a zero floor is the implicit floor of the unclamped payoff
+            BOOST_CHECK_EQUAL(value(plain.NPV()), value(zeroFloor.NPV()));
+            QL_CHECK_CLOSE_FRACTION(plain.NPV(), wideCap.NPV(), 1.0e-13);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testLocalFloorCapMonteCarlo) {
+    BOOST_TEST_MESSAGE("Testing Monte Carlo performance engine with local floors "
+                       "and caps against analytic results...");
+
+    Date today = Settings::instance().evaluationDate();
+    FlatMarket market;
+    market.sigma = 0.30;
+    auto process = market.process(today);
+    std::vector<Date> reset = {today + 90, today + 180, today + 270};
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+    auto analytic = ext::make_shared<AnalyticPerformanceEngine>(process);
+    ext::shared_ptr<PricingEngine> mc = MakeMCPerformanceEngine<PseudoRandom>(process)
+                                            .withBrownianBridge()
+                                            .withAbsoluteTolerance(2.0e-4)
+                                            .withSeed(42);
+
+    const Bounds bounds[] = {{noBound, 0.04}, {0.01, noBound}, {0.01, 0.05}};
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        for (Real k : {0.97, 1.0, 1.03}) {
+            for (const Bounds& b : bounds) {
+                BOOST_TEST_CONTEXT(type << ", moneyness " << k << ", floor " << b.floor
+                                        << ", cap " << b.cap) {
+                    auto payoff = ext::make_shared<PercentageStrikePayoff>(type, k);
+                    CliquetOption option(payoff, exercise, reset, b.floor, b.cap);
+                    option.setPricingEngine(analytic);
+                    Real expected = option.NPV();
+                    option.setPricingEngine(mc);
+                    QL_CHECK_SMALL(option.NPV() - expected, 1.0e-3);
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testUnsupportedBounds) {
+    BOOST_TEST_MESSAGE("Testing that the cliquet and performance engines refuse the options "
+                       "they cannot price...");
+
+    Date today = Settings::instance().evaluationDate();
+    auto process = FlatMarket().process(today);
+    std::vector<Date> reset = {today + 90};
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 180);
+    auto payoff = ext::make_shared<PercentageStrikePayoff>(Option::Call, 1.0);
+
+    // a floor above the cap is rejected whichever engine is used
+    CliquetOption inverted(payoff, exercise, reset, 0.05, 0.02);
+    inverted.setPricingEngine(ext::make_shared<AnalyticPerformanceEngine>(process));
+    BOOST_CHECK_THROW(inverted.NPV(), Error);
+
+    const ext::shared_ptr<PricingEngine> engines[] = {
+        ext::make_shared<AnalyticCliquetEngine>(process),
+        ext::make_shared<AnalyticPerformanceEngine>(process),
+        MakeMCPerformanceEngine<PseudoRandom>(process).withSamples(100).withSeed(42)};
+    CliquetOption option(payoff, exercise, reset);
+    for (const auto& engine : engines) {
+        option.setupArguments(engine->getArguments());
+        auto* args = dynamic_cast<CliquetOption::arguments*>(engine->getArguments());
+        BOOST_REQUIRE(args != nullptr);
+        Real* fields[] = {&args->accruedCoupon, &args->lastFixing, &args->globalCap,
+                          &args->globalFloor};
+        for (Real* field : fields) {
+            *field = 0.5;
+            BOOST_CHECK_THROW(engine->calculate(), Error);
+            *field = Null<Real>();
         }
     }
 }

@@ -39,8 +39,14 @@ namespace QuantLib {
         strike for each forward start option is set equal to a fixed
         percentage of the spot price at the beginning of each period.
 
+        Optionally, the payoff of each period can be floored and capped
+        by passing a local floor and/or a local cap: the period payoff
+        is then min(max(payoff, localFloor), localCap), with the payoff
+        as defined by the engine in use.  A null floor means a floor of 0
+        (the payoff is never negative) and a null cap means no cap.
+
         \todo
-        - add local/global caps/floors
+        - add global caps/floors
         - add accrued coupon and last fixing
 
         \ingroup instruments
@@ -51,11 +57,14 @@ namespace QuantLib {
         class engine;
         CliquetOption(const ext::shared_ptr<PercentageStrikePayoff>&,
                       const ext::shared_ptr<EuropeanExercise>& maturity,
-                      std::vector<Date> resetDates);
+                      std::vector<Date> resetDates,
+                      Real localFloor = Null<Real>(),
+                      Real localCap = Null<Real>());
         void setupArguments(PricingEngine::arguments*) const override;
 
       private:
         std::vector<Date> resetDates_;
+        Real localFloor_, localCap_;
     };
 
     //! %Arguments for cliquet option calculation

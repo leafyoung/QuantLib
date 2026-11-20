@@ -30,7 +30,12 @@
 namespace QuantLib {
 
     //! Pricing engine for Cliquet options using analytical formulae
-    /*! \ingroup cliquetengines
+    /*! The payoff of each period is paid at the end of the period and
+        is that of an option on the asset price at the end of the period,
+        with strike equal to the moneyness times the price at its start.
+        Local floors and caps, when given, are applied to it.
+
+        \ingroup cliquetengines
 
         \test
         - the correctness of the returned value is tested by

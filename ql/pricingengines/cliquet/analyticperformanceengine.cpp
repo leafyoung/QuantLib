@@ -35,11 +35,9 @@ namespace QuantLib {
         QL_REQUIRE(arguments_.accruedCoupon == Null<Real>() &&
                    arguments_.lastFixing == Null<Real>(),
                    "this engine cannot price options already started");
-        QL_REQUIRE(arguments_.localCap == Null<Real>() &&
-                   arguments_.localFloor == Null<Real>() &&
-                   arguments_.globalCap == Null<Real>() &&
+        QL_REQUIRE(arguments_.globalCap == Null<Real>() &&
                    arguments_.globalFloor == Null<Real>(),
-                   "this engine cannot price capped/floored options");
+                   "this engine cannot price globally capped/floored options");
 
         QL_REQUIRE(arguments_.exercise->type() == Exercise::European,
                    "not an European option");
@@ -56,6 +54,16 @@ namespace QuantLib {
         QL_REQUIRE(underlying > 0.0, "negative or null underlying");
 
         auto payoff = ext::make_shared<PlainVanillaPayoff>(moneyness->optionType(), 1.0);
+
+        // The period payoff clamped between the local floor and cap is the floor itself plus a
+        // long option struck at the floored level and a short one struck at the capped level.
+        // A put struck at or below zero is worthless and is skipped.
+        const Real floor = arguments_.localFloor == Null<Real>() ? Real(0.0) :
+                                                                   arguments_.localFloor;
+        const Real sgn = moneyness->optionType() == Option::Call ? 1.0 : -1.0;
+        std::vector<std::pair<Real, Real>> legs(1, {moneyness->strike() + sgn * floor, 1.0});
+        if (arguments_.localCap != Null<Real>())
+            legs.emplace_back(moneyness->strike() + sgn * arguments_.localCap, -1.0);
 
         results_.value = 0.0;
         results_.delta = results_.gamma = 0.0;
@@ -82,36 +90,47 @@ namespace QuantLib {
             DiscountFactor qDiscount =
                 process_->dividendYield()->discount(resetDates[i]) /
                 process_->dividendYield()->discount(resetDates[i-1]);
-            Real forward = (1.0/moneyness->strike())*qDiscount/rDiscount;
-            Real variance =
-                process_->blackVolatility()->blackForwardVariance(
-                                        resetDates[i-1],resetDates[i],
-                                        underlying * moneyness->strike());
-
-            BlackCalculator black(payoff, forward, std::sqrt(variance), rDiscount);
-
             DayCounter rfdc  = process_->riskFreeRate()->dayCounter();
             DayCounter divdc = process_->dividendYield()->dayCounter();
             DayCounter voldc = process_->blackVolatility()->dayCounter();
-
-            results_.value += discount * moneyness->strike() * black.value();
-            results_.delta += 0.0;
-            results_.gamma += 0.0;
-            results_.theta += r * discount * moneyness->strike() * black.value();
 
             Time dt = rfdc.yearFraction(resetDates[i-1],resetDates[i]);
             Time t = rfdc.yearFraction(
                                   process_->riskFreeRate()->referenceDate(),
                                   resetDates[i-1]);
-            results_.rho += discount * moneyness->strike() *
-                (black.rho(dt) - t * black.value());
 
-            dt = divdc.yearFraction(resetDates[i-1],resetDates[i]);
-            results_.dividendRho += discount * moneyness->strike() *
-                black.dividendRho(dt);
+            // the amount received whatever the path
+            Real bond = discount * rDiscount * floor;
+            results_.value += bond;
+            results_.theta += r * bond;
+            results_.rho -= (t + dt) * bond;
 
-            dt = voldc.yearFraction(resetDates[i-1], resetDates[i]);
-            results_.vega += discount * moneyness->strike() * black.vega(dt);
+            for (const auto& leg : legs) {
+                Real strike = leg.first;
+                if (strike <= 0.0)
+                    continue;
+                Real forward = (1.0/strike)*qDiscount/rDiscount;
+                Real variance =
+                    process_->blackVolatility()->blackForwardVariance(
+                                        resetDates[i-1],resetDates[i],
+                                        underlying * strike);
+
+                BlackCalculator black(payoff, forward, std::sqrt(variance), rDiscount);
+                Real weight = leg.second * discount * strike;
+
+                results_.value += weight * black.value();
+                results_.delta += 0.0;
+                results_.gamma += 0.0;
+                results_.theta += r * weight * black.value();
+
+                results_.rho += weight * (black.rho(dt) - t * black.value());
+
+                Time ddt = divdc.yearFraction(resetDates[i-1],resetDates[i]);
+                results_.dividendRho += weight * black.dividendRho(ddt);
+
+                ddt = voldc.yearFraction(resetDates[i-1], resetDates[i]);
+                results_.vega += weight * black.vega(ddt);
+            }
         }
 
     }
