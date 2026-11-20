@@ -162,11 +162,12 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     // choice of integration panels and of the branch for each term
     using Pair = std::pair<Real, Real>;
     std::vector<Pair> meanReversions = {
-        {0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},  {0.02, 0.02},  {0.15, 1.0e-7},
-        {1.0e-3, 2.0}, {1.0e-8, 1.0},    {1.0e-8, 0.05}, {2.0e-4, 2.0}, {2.0, 1.0e-8},
-        {1.0, 2.0e-4}, {50.0, 1.0e-3},   {1.0e-3, 50.0}};
-    // the last two pairs, mirror images of each other, have a rate times maturity beyond the
-    // panel cap; the large real mean reversion of the last one makes its log-convexity tiny
+        {0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},  {0.02, 0.02},   {0.15, 1.0e-7},
+        {1.0e-3, 2.0}, {1.0e-8, 1.0},    {1.0e-8, 0.05}, {2.0e-4, 2.0},  {2.0, 1.0e-8},
+        {1.0, 2.0e-4}, {50.0, 1.0e-3},   {1.0e-3, 50.0}, {1.0e-3, 200.0}};
+    // the last three pairs have a rate times maturity beyond the panel cap; the first two of
+    // them are mirror images of each other, and the large real mean reversion of the others
+    // makes their log-convexity tiny
 
     auto checkVariance = [](const Pair& pair) {
         Setup s;
