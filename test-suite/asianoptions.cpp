@@ -740,7 +740,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundZeroVolatil
                                     std::exp((r - 0.03) * 1.0)) / 3.0;
             for (Option::Type type : {Option::Call, Option::Put}) {
                 Real expected = std::exp(-r) *
-                    std::max<Real>(Real(type) * (forward - average), 0.0);
+                    std::max<Real>(Real(int(type)) * (forward - average), 0.0);
                 Real calculated = arithmeticAverageStrikeBound(
                     process, type, fixingDates, today + 360);
                 QL_CHECK_SMALL(calculated - expected, 1e-12);

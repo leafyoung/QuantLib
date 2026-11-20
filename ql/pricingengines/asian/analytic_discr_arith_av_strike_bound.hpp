@@ -50,7 +50,7 @@ namespace QuantLib {
         a sum of cumulative normal values at the root of \f$ g \f$,
         found numerically.  The put value is the corresponding bound for
         the put payoff; the call and put bounds are computed from the same root and satisfy
-        put-call parity exactly.
+        put-call parity to rounding error.
         Only the exact Black-Scholes moments of the underlying are used.
         Term structures of rates and dividends are allowed; the
         volatility is the constant Black volatility at the exercise date,
