@@ -103,7 +103,7 @@ namespace QuantLib {
             \param nominalVolatility  absolute (normal) volatility \f$ \sigma_n \ge 0 \f$
                                         of the nominal short rate
             \param realMeanReversion  \f$ a_r > 0 \f$
-            \param realVolatility  absolute volatility \f$ \sigma_r \ge 0 \f$ of the real
+            \param realVolatility  absolute (normal) volatility \f$ \sigma_r \ge 0 \f$ of the real
                                     short rate
             \param indexVolatility  lognormal volatility \f$ \sigma_I \ge 0 \f$ of the index
             \param rhoNominalReal  correlation \f$ \rho_{nr} \f$
