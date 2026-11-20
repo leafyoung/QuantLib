@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -106,6 +107,25 @@ namespace {
             return o.NPV();
         }
     };
+
+    // names a table row, for the report of a failing check
+    std::string describe(Barrier::Type type,
+                         Real barrier,
+                         Option::Type optionType,
+                         Real strike,
+                         Size steps,
+                         Date::serial_type days) {
+        std::ostringstream out;
+        out << "type " << int(type) << ", barrier " << barrier << ", option " << int(optionType)
+            << ", strike " << strike << ", steps " << steps << ", days " << days;
+        return out.str();
+    }
+
+    void checkPrice(Real calculated, Real expected, Real tolerance, const std::string& row) {
+        BOOST_TEST_CONTEXT(row) {
+            QL_CHECK_SMALL(calculated - expected, tolerance);
+        }
+    }
 
     // Exact lognormal steps at the N monitoring dates: no time-discretization error.
     // Returns the discounted mean payoff and its standard error.
@@ -202,11 +222,8 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     for (const auto& c : cases) {
         vars.expiry = vars.today + c.days;
         Real calculated = vars.discrete(c.type, c.barrier, c.optionType, c.steps, c.strike);
-        BOOST_TEST_CONTEXT("type " << int(c.type) << ", barrier " << c.barrier << ", option "
-                                   << int(c.optionType) << ", strike " << c.strike << ", steps "
-                                   << c.steps << ", days " << c.days) {
-            QL_CHECK_SMALL(calculated - c.expected, 1.0e-8);
-        }
+        checkPrice(calculated, c.expected, 1.0e-8,
+                   describe(c.type, c.barrier, c.optionType, c.strike, c.steps, c.days));
     }
 }
 
@@ -239,11 +256,8 @@ BOOST_AUTO_TEST_CASE(testStrikeBeyondBarrier) {
     for (Size steps : std::vector<Size>{1, 12, 250}) {
         for (const auto& c : cases) {
             Real calculated = vars.discrete(c.type, c.barrier, c.optionType, steps, c.strike);
-            BOOST_TEST_CONTEXT("type " << int(c.type) << ", barrier " << c.barrier << ", option "
-                                       << int(c.optionType) << ", strike " << c.strike << ", steps "
-                                       << steps) {
-                QL_CHECK_SMALL(calculated - c.expected, c.tolerance);
-            }
+            checkPrice(calculated, c.expected, c.tolerance,
+                       describe(c.type, c.barrier, c.optionType, c.strike, steps, 365));
         }
     }
 }
@@ -384,7 +398,8 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
         Handle<Quote>(vars.spot), vars.process->dividendYield(), vars.process->riskFreeRate(),
         Handle<BlackVolTermStructure>(surface));
 
-    // expiries on the one-year node and between the nodes, where the surface interpolates
+    // expiries on the one-year node and between the nodes, where the surface interpolates;
+    // beta is deliberately recomputed here rather than shared with the engine
     constexpr double beta = 0.5825971579390106;
     const Date nodeExpiry = vars.expiry;
     for (Date expiry : {nodeExpiry, vars.today + 9 * Months, vars.today + 18 * Months}) {
@@ -515,12 +530,9 @@ BOOST_AUTO_TEST_CASE(testCoarseAndShortMonitoring) {
     for (const auto& c : cases) {
         vars.expiry = vars.today + c.days;
         vars.vol->setValue(c.vol);
-        BOOST_TEST_CONTEXT("type " << int(c.type) << ", barrier " << c.barrier << ", option "
-                                   << int(c.optionType) << ", steps " << c.steps << ", days "
-                                   << c.days << ", vol " << c.vol) {
-            QL_CHECK_SMALL(vars.discrete(c.type, c.barrier, c.optionType, c.steps) - c.expected,
-                           1.0e-8);
-        }
+        checkPrice(vars.discrete(c.type, c.barrier, c.optionType, c.steps), c.expected, 1.0e-8,
+                   describe(c.type, c.barrier, c.optionType, 100.0, c.steps, c.days) + ", vol " +
+                       std::to_string(c.vol));
     }
 }
 
@@ -586,98 +598,55 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     BOOST_CHECK_EXCEPTION(AnalyticDiscreteBarrierEngine(vars.process, 0), Error,
                           ExpectedErrorMessage("at least one monitoring date"));
 
-    BarrierOption rebated = vars.option(Barrier::DownOut, 90.0, Option::Call, 100.0, 3.0);
-    rebated.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(rebated.NPV(), Error, ExpectedErrorMessage("rebates are not supported"));
+    auto european = [&]() { return ext::make_shared<EuropeanExercise>(vars.expiry); };
+    auto american = [&]() { return ext::make_shared<AmericanExercise>(vars.today, vars.expiry); };
+    auto bermudan = [&]() {
+        return ext::make_shared<BermudanExercise>(
+            std::vector<Date>{vars.today + 6 * Months, vars.expiry});
+    };
+    auto plain = [](Option::Type type, Real strike) {
+        return ext::make_shared<PlainVanillaPayoff>(type, strike);
+    };
+    // pricing the option with the discrete engine must fail with the given message
+    auto check = [&](Barrier::Type type, Real barrier, Real rebate,
+                     const ext::shared_ptr<StrikedTypePayoff>& payoff,
+                     const ext::shared_ptr<Exercise>& exercise, const std::string& message) {
+        BarrierOption o(type, barrier, rebate, payoff, exercise);
+        o.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
+        BOOST_CHECK_EXCEPTION(o.NPV(), Error, ExpectedErrorMessage(message));
+    };
+    const auto digital = ext::make_shared<CashOrNothingPayoff>(Option::Call, 100.0, 1.0);
+    const std::string rebateMessage = "rebates are not supported";
+    const std::string exerciseMessage = "only european style option are supported";
+    const std::string strikeMessage = "strike must be positive";
+    const std::string spotMessage = "negative or null underlying given";
+    const std::string touchedMessage = "barrier touched";
 
-    BarrierOption american(Barrier::DownOut, 90.0, 0.0,
-                           ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
-                           ext::make_shared<AmericanExercise>(vars.today, vars.expiry));
-    american.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(american.NPV(), Error,
-                          ExpectedErrorMessage("only european style option are supported"));
-
-    BarrierOption digital(Barrier::DownOut, 90.0, 0.0,
-                          ext::make_shared<CashOrNothingPayoff>(Option::Call, 100.0, 1.0),
-                          ext::make_shared<EuropeanExercise>(vars.expiry));
-    digital.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(digital.NPV(), Error, ExpectedErrorMessage("non-plain payoff given"));
+    check(Barrier::DownOut, 90.0, 3.0, plain(Option::Call, 100.0), european(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), american(), exerciseMessage);
+    check(Barrier::DownOut, 90.0, 0.0, digital, european(), "non-plain payoff given");
 
     // the same input checks as the continuous engine, also where the price is exact
-    BarrierOption negativeStrike = vars.option(Barrier::DownOut, 90.0, Option::Put, -1.0);
-    negativeStrike.setPricingEngine(
-        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(negativeStrike.NPV(), Error,
-                          ExpectedErrorMessage("strike must be positive"));
-    BarrierOption nullStrike = vars.option(Barrier::DownOut, 90.0, Option::Put, 0.0);
-    nullStrike.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error, ExpectedErrorMessage("strike must be positive"));
-    // strike is checked before the spot
-    vars.spot->setValue(0.0);
-    BOOST_CHECK_EXCEPTION(nullStrike.NPV(), Error, ExpectedErrorMessage("strike must be positive"));
-    BarrierOption nullSpot = vars.option(Barrier::UpOut, 120.0, Option::Call, 121.0);
-    nullSpot.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(nullSpot.NPV(), Error,
-                          ExpectedErrorMessage("negative or null underlying given"));
-    vars.spot->setValue(100.0);
-
-    BarrierOption americanExact(Barrier::UpOut, 120.0, 0.0,
-                                ext::make_shared<PlainVanillaPayoff>(Option::Call, 121.0),
-                                ext::make_shared<AmericanExercise>(vars.today, vars.expiry));
-    americanExact.setPricingEngine(
-        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(americanExact.NPV(), Error,
-                          ExpectedErrorMessage("only european style option are supported"));
-    BarrierOption bermudanExact(Barrier::UpOut, 120.0, 0.0,
-                                ext::make_shared<PlainVanillaPayoff>(Option::Call, 121.0),
-                                ext::make_shared<BermudanExercise>(
-                                    std::vector<Date>{vars.today + 6 * Months, vars.expiry}));
-    bermudanExact.setPricingEngine(
-        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(bermudanExact.NPV(), Error,
-                          ExpectedErrorMessage("only european style option are supported"));
-    BarrierOption touchedExact = vars.option(Barrier::UpOut, 99.0, Option::Call, 100.0);
-    touchedExact.setPricingEngine(
-        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(touchedExact.NPV(), Error, ExpectedErrorMessage("barrier touched"));
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Put, -1.0), european(), strikeMessage);
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Put, 0.0), european(), strikeMessage);
+    check(Barrier::UpOut, 120.0, 0.0, plain(Option::Call, 121.0), american(), exerciseMessage);
+    check(Barrier::UpOut, 120.0, 0.0, plain(Option::Call, 121.0), bermudan(), exerciseMessage);
+    check(Barrier::UpOut, 99.0, 0.0, plain(Option::Call, 100.0), european(), touchedMessage);
+    // the barrier given, not the shifted one, decides whether it has been touched
+    check(Barrier::DownOut, 101.0, 0.0, plain(Option::Call, 100.0), european(), touchedMessage);
 
     // the order of the checks: rebate, payoff, strike, exercise, spot, barrier touched
-    auto americanOption = [&](Real strike, Real rebate) {
-        BarrierOption o(Barrier::DownOut, 90.0, rebate,
-                        ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
-                        ext::make_shared<AmericanExercise>(vars.today, vars.expiry));
-        o.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-        return o;
-    };
-    BarrierOption rebatedAmerican = americanOption(100.0, 3.0);
-    BOOST_CHECK_EXCEPTION(rebatedAmerican.NPV(), Error,
-                          ExpectedErrorMessage("rebates are not supported"));
-    BarrierOption rebatedDigital(Barrier::DownOut, 90.0, 3.0,
-                                 ext::make_shared<CashOrNothingPayoff>(Option::Call, 100.0, 1.0),
-                                 ext::make_shared<EuropeanExercise>(vars.expiry));
-    rebatedDigital.setPricingEngine(
-        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(rebatedDigital.NPV(), Error,
-                          ExpectedErrorMessage("rebates are not supported"));
-    BarrierOption negativeStrikeAmerican = americanOption(-1.0, 0.0);
-    BOOST_CHECK_EXCEPTION(negativeStrikeAmerican.NPV(), Error,
-                          ExpectedErrorMessage("strike must be positive"));
-    vars.spot->setValue(0.0);
-    BarrierOption nullSpotAmerican = americanOption(100.0, 0.0);
-    BOOST_CHECK_EXCEPTION(nullSpotAmerican.NPV(), Error,
-                          ExpectedErrorMessage("only european style option are supported"));
-    // a null spot is also below the barrier: the spot is checked first
-    BarrierOption nullSpotBelowBarrier = vars.option(Barrier::DownOut, 90.0, Option::Call);
-    nullSpotBelowBarrier.setPricingEngine(
-        ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(nullSpotBelowBarrier.NPV(), Error,
-                          ExpectedErrorMessage("negative or null underlying given"));
-    vars.spot->setValue(100.0);
+    check(Barrier::DownOut, 90.0, 3.0, plain(Option::Call, 100.0), american(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 3.0, digital, european(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, -1.0), american(), strikeMessage);
 
-    // the barrier given, not the shifted one, decides whether it has been touched
-    BarrierOption touched = vars.option(Barrier::DownOut, 101.0, Option::Call);
-    touched.setPricingEngine(ext::make_shared<AnalyticDiscreteBarrierEngine>(vars.process, 12));
-    BOOST_CHECK_EXCEPTION(touched.NPV(), Error, ExpectedErrorMessage("barrier touched"));
+    vars.spot->setValue(0.0);
+    check(Barrier::UpOut, 120.0, 0.0, plain(Option::Call, 121.0), european(), spotMessage);
+    // strike is checked before the spot, exercise before the spot, the spot before the barrier
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Put, 0.0), european(), strikeMessage);
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), american(), exerciseMessage);
+    check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), european(), spotMessage);
+    vars.spot->setValue(100.0);
 }
 
 BOOST_AUTO_TEST_CASE(testQuoteChanges) {
