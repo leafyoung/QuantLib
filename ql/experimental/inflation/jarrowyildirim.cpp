@@ -32,12 +32,13 @@ namespace QuantLib {
         // below this threshold the smooth integrands are integrated instead.
         constexpr double closedFormThreshold = 0.1;
 
-        // int_0^T f(s) ds for an integrand varying on the scale 1/rate,
-        // by composite Gauss-Legendre (nodes on [-1,1]) with panels of width at most 1/rate.
-        // The rate enters the panel count capped: when rate*T is extreme the faster
-        // factor is a transient narrower than a panel, whose contribution to the
-        // integral is negligible, so the panels follow the slower scale instead of
-        // an unattainable count.
+        // int_0^T f(s) ds for a smooth integrand varying on the scale 1/rate, by composite
+        // Gauss-Legendre (nodes on [-1,1]) with panels of width at most 1/rate. The panel count
+        // is capped to bound the work; beyond the cap the panels are wider than 1/rate and the
+        // rule is accurate only while rate times the panel width stays moderate. The cap is
+        // safe for integralBB, where the fast factor is a transient that adds little to the
+        // integral, and for integralExpB, where the transient carries the integral but the
+        // caller scales the result down by sigma_r B_r(S,T) = O(sigma_r / a_r).
         template <class F>
         Real smoothIntegral(const F& f, Time T, Real rate) {
             static const GaussLegendreIntegration gl(10);
