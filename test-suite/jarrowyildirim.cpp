@@ -52,19 +52,20 @@ namespace {
         Date today = Settings::instance().evaluationDate();
         ext::shared_ptr<SimpleQuote> nominalRate = ext::make_shared<SimpleQuote>(0.03);
         ext::shared_ptr<SimpleQuote> realRate = ext::make_shared<SimpleQuote>(0.012);
-        Handle<YieldTermStructure> nominalCurve, realCurve;
+        Handle<YieldTermStructure> nominalTermStructure, realTermStructure;
         Real an = 0.08, sn = 0.015, ar = 0.05, sr = 0.012, sI = 0.08;
         Real rhoNR = 0.4, rhoNI = 0.2, rhoRI = -0.3;
 
         Setup() {
-            nominalCurve = Handle<YieldTermStructure>(
+            nominalTermStructure = Handle<YieldTermStructure>(
                 ext::make_shared<FlatForward>(today, Handle<Quote>(nominalRate), Actual365Fixed()));
-            realCurve = Handle<YieldTermStructure>(
+            realTermStructure = Handle<YieldTermStructure>(
                 ext::make_shared<FlatForward>(today, Handle<Quote>(realRate), Actual365Fixed()));
         }
 
         JarrowYildirim model() const {
-            return JarrowYildirim(nominalCurve, realCurve, an, sn, ar, sr, sI, rhoNR, rhoNI, rhoRI);
+            return JarrowYildirim(nominalTermStructure, realTermStructure, an, sn, ar, sr, sI,
+                                  rhoNR, rhoNI, rhoRI);
         }
     };
 
@@ -74,6 +75,18 @@ namespace {
 
     Real integrate(const std::function<Real(Real)>& f, Real a, Real b) {
         return GaussLobattoIntegral(100000, 1.0e-15)(f, a, b);
+    }
+
+    // total variance of ln I_T by direct quadrature of the six-term integrand, independent
+    // of the closed forms in the model
+    Real quadratureVariance(const Setup& s, Real T) {
+        auto integrand = [&](Real u) -> Real {
+            Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
+            return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
+                   2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
+                   2.0 * s.rhoNR * s.sn * s.sr * bn * br;
+        };
+        return integrate(integrand, 0.0, T);
     }
 
 }
@@ -151,10 +164,10 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     std::vector<Pair> meanReversions = {{0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},
                                         {0.02, 0.02},  {0.15, 1.0e-7},   {1.0e-3, 2.0},
                                         {1.0e-8, 1.0}, {1.0e-8, 0.05},   {2.0e-4, 2.0},
-                                        {2.0, 1.0e-8}, {1.0, 2.0e-4}};
-    // rate times maturity beyond the panel cap; for these only the variance is compared,
-    // since the log-convexity is of the order of the rounding error of the logarithm
-    std::vector<Pair> extremeMeanReversions = {{1.0e-3, 50.0}, {50.0, 1.0e-3}};
+                                        {2.0, 1.0e-8}, {1.0, 2.0e-4},    {50.0, 1.0e-3}};
+    // rate times maturity beyond the panel cap; for this pair only the variance is compared,
+    // since its log-convexity is about -1e-7, close to the rounding error of the logarithm
+    std::vector<Pair> extremeMeanReversions = {{1.0e-3, 50.0}};
 
     auto checkVariance = [](const Pair& pair) {
         Setup s;
@@ -162,13 +175,7 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
         s.ar = pair.second;
         JarrowYildirim jy = s.model();
         for (Real T : std::vector<Real>{0.5, 3.0, 10.0, 30.0, 31.0}) {
-            auto integrand = [&](Real u) -> Real {
-                Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
-                return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
-                       2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
-                       2.0 * s.rhoNR * s.sn * s.sr * bn * br;
-            };
-            Real expected = integrate(integrand, 0.0, T);
+            Real expected = quadratureVariance(s, T);
             Real calculated = jy.zeroInflationVariance(T);
             QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
         }
@@ -253,21 +260,13 @@ BOOST_AUTO_TEST_CASE(testZeroInflationOptionAgainstLognormalExpectation) {
         "Testing Jarrow-Yildirim zero-coupon option against lognormal expectation...");
     Setup s;
     JarrowYildirim jy = s.model();
+    NormalDistribution density;
     for (Real T : std::vector<Real>{1.0, 5.0}) {
+        Real variance = quadratureVariance(s, T);
+        Real sd = std::sqrt(variance);
+        Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
+        Real df = std::exp(-s.nominalRate->value() * T);
         for (Real strike : std::vector<Real>{0.7, 1.1, 1.6}) {
-            // total variance from direct quadrature of the integrand, independent of the model
-            Real variance = integrate(
-                [&](Real u) -> Real {
-                    Real bn = bFun(s.an, T - u), br = bFun(s.ar, T - u);
-                    return s.sI * s.sI + s.sr * s.sr * br * br + s.sn * s.sn * bn * bn -
-                           2.0 * s.rhoRI * s.sI * s.sr * br + 2.0 * s.rhoNI * s.sI * s.sn * bn -
-                           2.0 * s.rhoNR * s.sn * s.sr * bn * br;
-                },
-                0.0, T);
-            Real sd = std::sqrt(variance);
-            Real forward = std::exp((s.nominalRate->value() - s.realRate->value()) * T);
-            Real df = std::exp(-s.nominalRate->value() * T);
-            NormalDistribution density;
             // payoff is smooth on each side of the exercise boundary in the normal variate
             Real zStar = (std::log(strike / forward) + 0.5 * variance) / sd;
             auto payoff = [&](Real z) -> Real {
@@ -307,7 +306,7 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
     Real cov = s.rhoNR * s.sn * s.sr * (1.0 - std::exp(-(s.an + s.ar) * S)) / (s.an + s.ar);
     Real rho = cov / (sdN * sdR);
 
-    HullWhite nominal(s.nominalCurve, s.an, s.sn), real(s.realCurve, s.ar, s.sr);
+    HullWhite nominal(s.nominalTermStructure, s.an, s.sn), real(s.realTermStructure, s.ar, s.sr);
     auto nominalDyn = nominal.dynamics(), realDyn = real.dynamics();
     MersenneTwisterUniformRng rng(20261119);
     InverseCumulativeNormal inverse;
@@ -359,7 +358,8 @@ BOOST_AUTO_TEST_CASE(testYoYForwardAgainstMonteCarlo) {
 }
 
 BOOST_AUTO_TEST_CASE(testZeroInflationVarianceAgainstMonteCarlo) {
-    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim ZC variance against Monte Carlo...");
+    BOOST_TEST_MESSAGE(
+        "Testing Jarrow-Yildirim zero-coupon inflation variance against Monte Carlo...");
     Setup s;
     s.an = 0.5; // well separated from a_r so that the simulation tells the two apart
     JarrowYildirim jy = s.model();
@@ -422,10 +422,11 @@ BOOST_AUTO_TEST_CASE(testZeroInflationVarianceAgainstMonteCarlo) {
               3.0 * mean * mean * mean * mean;
     Real se = std::sqrt((m4 - var * var) / samples);
     Real calculated = jy.zeroInflationVariance(T);
-    BOOST_TEST_MESSAGE("ZC variance: closed form " << calculated << ", Monte Carlo " << var
-                                                   << " +- " << se);
+    BOOST_TEST_MESSAGE("zero-coupon inflation variance: closed form "
+                       << calculated << ", Monte Carlo " << var << " +- " << se);
     if (std::fabs(var - calculated) > 4.0 * se)
-        BOOST_ERROR("ZC variance " << calculated << " vs Monte Carlo " << var << " +- " << se);
+        BOOST_ERROR("zero-coupon inflation variance " << calculated << " vs Monte Carlo " << var
+                                                      << " +- " << se);
 }
 
 BOOST_AUTO_TEST_CASE(testConstructorValidation) {
@@ -433,7 +434,8 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
     Setup s;
     auto make = [&](Real an, Real sn, Real ar, Real sr, Real sI, Real rhoNR, Real rhoNI,
                     Real rhoRI) {
-        JarrowYildirim(s.nominalCurve, s.realCurve, an, sn, ar, sr, sI, rhoNR, rhoNI, rhoRI);
+        JarrowYildirim(s.nominalTermStructure, s.realTermStructure, an, sn, ar, sr, sI, rhoNR,
+                       rhoNI, rhoRI);
     };
     // arguments are (rhoNR, rhoNI, rhoRI)
     auto correlations = [&](Real rhoNR, Real rhoNI, Real rhoRI) {
@@ -441,21 +443,22 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
     };
     ExpectedErrorMessage notPsd("correlation matrix is not positive semi-definite (determinant ");
 
-    // just outside the bounds, in each position; the other entries are in range
+    // just outside the bounds, in each position (the other entries are in range) and in all
+    // three at once (the first one is reported)
     for (Real rho : std::vector<Real>{1.05, -1.05}) {
-        std::ostringstream expected;
-        expected << "correlation (" << rho << ") outside [-1, 1] given";
-        BOOST_CHECK_EXCEPTION(correlations(rho, 0.0, 0.0), Error,
-                              ExpectedErrorMessage(expected.str()));
-        BOOST_CHECK_EXCEPTION(correlations(0.0, rho, 0.0), Error,
-                              ExpectedErrorMessage(expected.str()));
-        BOOST_CHECK_EXCEPTION(correlations(0.0, 0.0, rho), Error,
-                              ExpectedErrorMessage(expected.str()));
-        BOOST_CHECK_EXCEPTION(correlations(rho, rho, rho), Error,
-                              ExpectedErrorMessage(expected.str()));
+        auto expected = [&](const std::string& name) {
+            std::ostringstream message;
+            message << name << " correlation (" << rho << ") outside [-1, 1] given";
+            return ExpectedErrorMessage(message.str());
+        };
+        BOOST_CHECK_EXCEPTION(correlations(rho, 0.0, 0.0), Error, expected("nominal-real"));
+        BOOST_CHECK_EXCEPTION(correlations(0.0, rho, 0.0), Error, expected("nominal-index"));
+        BOOST_CHECK_EXCEPTION(correlations(0.0, 0.0, rho), Error, expected("real-index"));
+        BOOST_CHECK_EXCEPTION(correlations(rho, rho, rho), Error, expected("nominal-real"));
     }
-    // barely outside; these matrices are positive semi-definite, so only the range check
-    // rejects them (the printed value rounds to +-1)
+    // barely outside: the determinants of these patterns are positive or about -1e-20, within
+    // the tolerance of the determinant guard, so only the range check rejects them (the
+    // printed value rounds to +-1)
     Real barely = 1.0 + 1.0e-10;
     ExpectedErrorMessage outside("outside [-1, 1]");
     BOOST_CHECK_EXCEPTION(correlations(barely, barely, barely), Error, outside);
@@ -504,21 +507,22 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
 
     Handle<YieldTermStructure> empty;
     BOOST_CHECK_EXCEPTION(
-        JarrowYildirim(empty, s.realCurve, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-        ExpectedErrorMessage("empty nominal curve"));
+        JarrowYildirim(empty, s.realTermStructure, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0),
+        Error, ExpectedErrorMessage("empty nominal curve"));
     BOOST_CHECK_EXCEPTION(
-        JarrowYildirim(s.nominalCurve, empty, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-        ExpectedErrorMessage("empty real curve"));
+        JarrowYildirim(s.nominalTermStructure, empty, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0),
+        Error, ExpectedErrorMessage("empty real curve"));
     Handle<YieldTermStructure> shifted(
         ext::make_shared<FlatForward>(s.today + 1, Handle<Quote>(s.realRate), Actual365Fixed()));
     BOOST_CHECK_EXCEPTION(
-        JarrowYildirim(s.nominalCurve, shifted, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0, 0.0), Error,
-        ExpectedErrorMessage("nominal and real curves must have the same reference date"));
+        JarrowYildirim(s.nominalTermStructure, shifted, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0,
+                       0.0),
+        Error, ExpectedErrorMessage("nominal and real curves must have the same reference date"));
     Handle<YieldTermStructure> otherDayCounter(
         ext::make_shared<FlatForward>(s.today, Handle<Quote>(s.realRate), Actual360()));
     BOOST_CHECK_EXCEPTION(
-        JarrowYildirim(s.nominalCurve, otherDayCounter, s.an, s.sn, s.ar, s.sr, s.sI, 0.0, 0.0,
-                       0.0),
+        JarrowYildirim(s.nominalTermStructure, otherDayCounter, s.an, s.sn, s.ar, s.sr, s.sI, 0.0,
+                       0.0, 0.0),
         Error, ExpectedErrorMessage("nominal and real curves must have the same day counter"));
 }
 
@@ -543,10 +547,12 @@ BOOST_AUTO_TEST_CASE(testMethodArgumentValidation) {
     }
     BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, 1.0, 0.0), Error,
                           ExpectedErrorMessage("non-positive time (0) given"));
-    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(3.0, 3.0), Error,
-                          ExpectedErrorMessage("start time (3) must be smaller than end time (3)"));
-    BOOST_CHECK_EXCEPTION(jy.yoyConvexity(4.0, 3.0), Error,
-                          ExpectedErrorMessage("start time (4) must be smaller than end time (3)"));
+    BOOST_CHECK_EXCEPTION(
+        jy.yoyConvexity(3.0, 3.0), Error,
+        ExpectedErrorMessage("start time (3) not smaller than end time (3) given"));
+    BOOST_CHECK_EXCEPTION(
+        jy.yoyConvexity(4.0, 3.0), Error,
+        ExpectedErrorMessage("start time (4) not smaller than end time (3) given"));
 
     // negative strikes, including barely negative ones
     BOOST_CHECK_EXCEPTION(jy.zeroInflationOption(Option::Call, -0.1, 1.0), Error,
@@ -557,7 +563,7 @@ BOOST_AUTO_TEST_CASE(testMethodArgumentValidation) {
     // boundary values are accepted: at zero strike the call is the discounted forward ratio and the
     // put is worthless
     QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, 0.0, 1.0),
-                   jy.forwardIndexRatio(1.0) * s.nominalCurve->discount(1.0), 1.0e-12);
+                   jy.forwardIndexRatio(1.0) * s.nominalTermStructure->discount(1.0), 1.0e-12);
     QL_CHECK_SMALL(jy.zeroInflationOption(Option::Put, 0.0, 1.0), 1.0e-15);
     BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(0.0));
     BOOST_CHECK_NO_THROW(jy.zeroInflationVariance(0.0));
@@ -567,8 +573,8 @@ BOOST_AUTO_TEST_CASE(testMethodArgumentValidation) {
 BOOST_AUTO_TEST_CASE(testCurveConventionsAfterRelinking) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim curve conventions after relinking...");
     Setup s;
-    RelinkableHandle<YieldTermStructure> real(*s.realCurve);
-    JarrowYildirim jy(s.nominalCurve, real, s.an, s.sn, s.ar, s.sr, s.sI, s.rhoNR, s.rhoNI,
+    RelinkableHandle<YieldTermStructure> real(*s.realTermStructure);
+    JarrowYildirim jy(s.nominalTermStructure, real, s.an, s.sn, s.ar, s.sr, s.sI, s.rhoNR, s.rhoNI,
                       s.rhoRI);
     BOOST_CHECK_NO_THROW(jy.forwardIndexRatio(2.0));
     real.linkTo(
@@ -606,15 +612,15 @@ BOOST_AUTO_TEST_CASE(testInspectors) {
     BOOST_CHECK_EQUAL(jy.rhoNominalReal(), s.rhoNR);
     BOOST_CHECK_EQUAL(jy.rhoNominalIndex(), s.rhoNI);
     BOOST_CHECK_EQUAL(jy.rhoRealIndex(), s.rhoRI);
-    BOOST_CHECK(jy.nominalTermStructure() == s.nominalCurve);
-    BOOST_CHECK(jy.realTermStructure() == s.realCurve);
+    BOOST_CHECK(jy.nominalTermStructure() == s.nominalTermStructure);
+    BOOST_CHECK(jy.realTermStructure() == s.realTermStructure);
 }
 
 BOOST_AUTO_TEST_CASE(testObservability) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim observability...");
     Setup s;
-    auto jy = ext::make_shared<JarrowYildirim>(s.nominalCurve, s.realCurve, s.an, s.sn, s.ar, s.sr,
-                                               s.sI, s.rhoNR, s.rhoNI, s.rhoRI);
+    auto jy = ext::make_shared<JarrowYildirim>(s.nominalTermStructure, s.realTermStructure, s.an,
+                                               s.sn, s.ar, s.sr, s.sI, s.rhoNR, s.rhoNI, s.rhoRI);
     Flag flag;
     flag.registerWith(jy);
     Real before = jy->forwardIndexRatio(5.0);

@@ -23,7 +23,6 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
-#include <vector>
 
 namespace QuantLib {
 
@@ -84,15 +83,20 @@ namespace QuantLib {
             return (expIntegral(ar, S) - expIntegral(ar + an, S)) / an;
         }
 
+        void checkCorrelation(const char* name, Real rho) {
+            QL_REQUIRE(rho >= -1.0 && rho <= 1.0,
+                       name << " correlation (" << rho << ") outside [-1, 1] given");
+        }
+
         void checkCorrelations(Real rhoNR, Real rhoNI, Real rhoRI) {
-            for (Real rho : std::vector<Real>{rhoNR, rhoNI, rhoRI})
-                QL_REQUIRE(rho >= -1.0 && rho <= 1.0,
-                           "correlation (" << rho << ") outside [-1, 1] given");
+            checkCorrelation("nominal-real", rhoNR);
+            checkCorrelation("nominal-index", rhoNI);
+            checkCorrelation("real-index", rhoRI);
             Real det =
                 1.0 - rhoNR * rhoNR - rhoNI * rhoNI - rhoRI * rhoRI + 2.0 * rhoNR * rhoNI * rhoRI;
             QL_REQUIRE(det >= -1.0e-12,
-                       "correlation matrix is not positive semi-definite (determinant " << det
-                                                                                        << ")");
+                       "correlation matrix is not positive semi-definite (determinant "
+                           << det << " given)");
         }
 
     }
@@ -166,7 +170,7 @@ namespace QuantLib {
     Real JarrowYildirim::yoyConvexity(Time S, Time T) const {
         checkCurves();
         QL_REQUIRE(S >= 0.0, "negative time (" << S << ") given");
-        QL_REQUIRE(S < T, "start time (" << S << ") must be smaller than end time (" << T << ")");
+        QL_REQUIRE(S < T, "start time (" << S << ") not smaller than end time (" << T << ") given");
         Real exponent =
             sigmaR_ * expIntegral(aR_, T - S) *
             (rhoRI_ * sigmaI_ * expIntegral(aR_, S) + rhoNR_ * sigmaN_ * integralExpB(aR_, aN_, S) -

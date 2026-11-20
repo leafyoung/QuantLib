@@ -141,7 +141,7 @@ namespace QuantLib {
         Real rhoNominalIndex() const { return rhoNI_; }
         Real rhoRealIndex() const { return rhoRI_; }
 
-        //! forward index over the base index, \f$ F(0,T)/I_0 = P_r(0,T)/P_n(0,T) \f$
+        //! forward index over the current index level, \f$ F(0,T)/I_0 = P_r(0,T)/P_n(0,T) \f$
         /*! Defined for \f$ T \ge 0 \f$. */
         Real forwardIndexRatio(Time T) const;
 
