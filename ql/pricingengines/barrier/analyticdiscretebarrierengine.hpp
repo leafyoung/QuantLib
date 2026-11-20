@@ -49,10 +49,11 @@ namespace QuantLib {
         date decides the payoff and the result is exact: zero for a
         knock-out, the vanilla price for a knock-in.
 
-        \warning The correction is asymptotic.  Reverse barriers (up calls,
-                 down puts) are much less accurate at coarse monitoring; a
-                 knock-in carries the opposite-signed error of the matching
-                 knock-out.  The price is discontinuous in the strike at
+        \warning The correction is asymptotic: regular barriers are also
+                 approximate at one or two monitoring dates.  Reverse
+                 barriers (up calls, down puts) are much less accurate at
+                 coarse monitoring; a knock-in carries the opposite-signed
+                 error of the matching knock-out.  The price is discontinuous in the strike at
                  \f$ K = H \f$.  With zero volatility and the spot on the
                  barrier, the convention of AnalyticBarrierEngine applies.
 

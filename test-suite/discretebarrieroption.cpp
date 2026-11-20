@@ -320,7 +320,8 @@ BOOST_AUTO_TEST_CASE(testAgainstMonteCarlo) {
     // The corrected price must lie within four standard errors of the simulation (fixed seed),
     // while the continuous price must lie more than ten standard errors away.  The cases are
     // down calls and up puts: reverse barriers (up calls, down puts) are markedly less accurate
-    // at coarse monitoring, increasingly so as the strike approaches the barrier.
+    // at coarse monitoring, increasingly so as the strike approaches the barrier, and regular
+    // barriers are approximate too at one or two monitoring dates.
     const Size paths = 200000;
     struct Case {
         Date::serial_type days;
@@ -406,7 +407,7 @@ BOOST_AUTO_TEST_CASE(testVolatilityAtStrike) {
         Handle<BlackVolTermStructure>(surface));
 
     // expiries on the one-year node and between the nodes, where the surface interpolates;
-    // beta is deliberately recomputed here rather than shared with the engine
+    // beta is restated here on purpose (independent of the engine's constant)
     constexpr double beta = 0.5825971579390106;
     const Date nodeExpiry = vars.expiry;
     for (Date expiry : {nodeExpiry, vars.today + 9 * Months, vars.today + 18 * Months}) {
