@@ -37,11 +37,11 @@ namespace QuantLib {
         fixing dates.  It is <b>not</b> the exact price.
 
         The bound is obtained by Jensen conditioning on a Gaussian variable
-        in the manner of Rogers and Shi (1995), as described for the
-        continuous floating-strike case in G. W. Thompson, "Fast narrow
-        bounds on the value of Asian options", Judge Institute of
-        Management working paper wp0209 (the original paper by Rogers and
-        Shi was not consulted).  With \f$ Z = \ln S_T - \frac1N \sum_i \ln
+        following the conditioning approach of Rogers and Shi (1995), as
+        presented for the continuous floating-strike case in G. W.
+        Thompson, "Fast narrow bounds on the value of Asian options",
+        Judge Institute of Management working paper wp0209.
+        With \f$ Z = \ln S_T - \frac1N \sum_i \ln
         S_{t_i} \f$, which is Gaussian under the Black-Scholes model,
         \f$ E[(S_T - A)^+] \ge E[(E[S_T - A \mid Z])^+] \f$.  Given
         \f$ Z \f$ every \f$ S_{t_i} \f$ is lognormal, so
@@ -49,7 +49,8 @@ namespace QuantLib {
         exponentials with exactly one sign change; the bound is then
         a sum of cumulative normal values at the root of \f$ g \f$,
         found numerically.  The put value is the corresponding bound for
-        the put payoff; the two bounds satisfy put-call parity exactly.
+        the put payoff; the call and put bounds are computed from the same root and satisfy
+        put-call parity exactly.
         Only the exact Black-Scholes moments of the underlying are used.
         Term structures of rates and dividends are allowed; the
         volatility is the constant Black volatility at the exercise date,
@@ -66,24 +67,29 @@ namespace QuantLib {
         the risk-free curve are ignored, as in the geometric engine.
 
         The bound is low-biased by construction.  Measured against a
-        two-million-path antithetic Monte Carlo (one seed; S=97, r=5%,
-        q=2%, T=1; 1, 4, 10 and 52 equally spaced fixings; the single
-        fixing is at t=0.5):
-        - at volatility 20% and 40% the bound is within 0.12% of the
-          Monte Carlo value, and within 1.3 standard errors, for calls
-          and puts;
-        - at volatility 80% the deviation reaches -0.26% (3.0 standard
-          errors, put, four fixings) on the same grid.
-        The sign of the deviation is negative apart from Monte Carlo noise
-        (a lower bound cannot exceed the price).  No accuracy is
-        guaranteed beyond this grid.
+        Monte Carlo reference (MCDiscreteArithmeticASEngine, Sobol
+        sequences with Brownian bridge, 2^20-1 samples; S=97, r=5%, q=2%,
+        T=1; 1, 4, 10 and 52 equally spaced fixings; the single fixing is
+        at t=0.5; calls and puts), the shortfall of the bound is
+        - at most 0.012% at volatility 20%,
+        - at most 0.044% at volatility 40%,
+        - at most 0.172% at volatility 80% (put, four fixings).
+        A two-million-path antithetic pseudo-random reference gave the same
+        pattern with a larger Monte Carlo noise: within 0.12% and 1.3
+        standard errors at volatilities up to 40%, and -0.26% (3.0
+        standard errors) in the worst 80% case.  The bound is exact for a
+        single fixing.  The sign of the deviation is negative apart from
+        Monte Carlo noise (a lower bound cannot exceed the price).  No
+        accuracy is guaranteed beyond this grid.
 
         \test
         - the bound is reproduced by closed-form forward-start values for
           a single fixing, by deterministic limits, and by put-call
           parity;
-        - the bound is checked to lie below the corresponding Monte Carlo
-          estimate, within the accuracy listed above.
+        - the bound is checked against stored Monte Carlo reference values
+          for the grid above: it must not exceed them by more than their
+          noise, nor fall short by more than the tolerances 0.02%, 0.06%
+          and 0.25% for volatilities 20%, 40% and 80%.
 
         \ingroup asianengines
     */

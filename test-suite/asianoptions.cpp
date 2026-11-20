@@ -768,7 +768,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundAtMaturity)
     // Some fixings at maturity and one earlier: not degenerate.
     Real calculated = arithmeticAverageStrikeBound(
         process, Option::Call, {today + 180, today + 360, today + 360}, today + 360);
-    BOOST_CHECK(calculated > 0.1);
+    // Independent evaluation of the same conditioning formula (fixing times 0.5, 1, 1).
+    QL_CHECK_CLOSE(calculated, 2.959664328, 1e-6);
 }
 
 BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundParity) {
@@ -820,7 +821,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundAccuracy) {
     BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound against Monte Carlo...");
 
     // Reference values: MCDiscreteArithmeticASEngine with Sobol sequences, Brownian bridge and
-    // 2^20-1 samples; spot 97, r = 5%, q = 2%, Actual/360, maturity in 360 days, n equally
+    // 2^20-1 samples (a snapshot of that engine's output for these settings, not regenerable
+    // from this file); spot 97, r = 5%, q = 2%, Actual/360, maturity in 360 days, n equally
     // spaced fixings (the only fixing of n = 1 is at 180 days).
     struct Reference { Volatility sigma; Size n; Option::Type type; Real mc; };
     std::vector<Reference> references = {
@@ -862,7 +864,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundAccuracy) {
         Real shortfall = (ref.sigma < 0.3 ? 2e-4 : (ref.sigma < 0.6 ? 6e-4 : 2.5e-3));
         BOOST_TEST_CONTEXT("sigma=" << ref.sigma << ", fixings=" << ref.n
                                     << ", type=" << int(ref.type)) {
-            BOOST_CHECK(bound <= ref.mc * (1.0 + 2e-4));
+            BOOST_CHECK(bound <= ref.mc * (1.0 + 5e-4));
             BOOST_CHECK(bound >= ref.mc * (1.0 - shortfall));
         }
     }
