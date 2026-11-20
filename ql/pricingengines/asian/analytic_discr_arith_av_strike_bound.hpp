@@ -36,13 +36,13 @@ namespace QuantLib {
         put, where \f$ A \f$ is the arithmetic mean of the underlying at the
         fixing dates.  It is <b>not</b> the exact price.
 
-        The bound is obtained by Jensen conditioning on a Gaussian variable
-        following the conditioning approach of L. C. G. Rogers and Z. Shi,
-        "The value of an Asian option", J. Appl. Probab. 32 (1995),
-        1077-1088 (as listed in Thompson's reference list; the original was
-        not consulted), as presented for the continuous floating-strike case
-        in G. W. Thompson, "Fast narrow bounds on the value of Asian options",
-        Judge Institute of Management working paper wp0209.
+        The bound is obtained by Jensen conditioning on a Gaussian variable,
+        after the conditioning idea of L. C. G. Rogers and Z. Shi, "The
+        value of an Asian option", J. Appl. Probab. 32 (1995), 1077-1088,
+        as presented for the continuous floating-strike case in G. W.
+        Thompson, "Fast narrow bounds on the value of Asian options",
+        Judge Institute of Management working paper wp0209; the discrete
+        form implemented here is a transcription of that conditioning.
         With \f$ Z = \ln S_T - \frac1N \sum_i \ln
         S_{t_i} \f$, which is Gaussian under the Black-Scholes model,
         \f$ E[(S_T - A)^+] \ge E[(E[S_T - A \mid Z])^+] \f$.  Given
@@ -76,10 +76,7 @@ namespace QuantLib {
         - at most 0.012% at volatility 20%,
         - at most 0.044% at volatility 40%,
         - at most 0.172% at volatility 80% (put, four fixings).
-        A two-million-path antithetic pseudo-random reference gave the same
-        pattern with a larger Monte Carlo noise: within 0.12% and 1.3
-        standard errors at volatilities up to 40%, and -0.26% (3.0
-        standard errors) in the worst 80% case.  The bound is exact for a
+        The bound is exact for a
         single fixing.  The sign of the deviation is negative apart from
         Monte Carlo noise (a lower bound cannot exceed the price).  No
         accuracy is guaranteed beyond this grid.
