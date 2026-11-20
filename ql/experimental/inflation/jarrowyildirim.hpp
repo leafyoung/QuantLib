@@ -107,6 +107,7 @@ namespace QuantLib {
     */
     class JarrowYildirim : public Observer, public Observable {
       public:
+        //! builds the model from the nominal and real curves and the model parameters
         /*! \param nominalTermStructure  curve of nominal discount factors; it must not
                 be empty, checked at construction and at each call
             \param realTermStructure  curve of real discount factors; it must not be empty
@@ -142,18 +143,31 @@ namespace QuantLib {
                        Real rhoNominalIndex,
                        Real rhoRealIndex);
 
+        //! \name Inspectors
+        //@{
+        //! curve of nominal discount factors
         const Handle<YieldTermStructure>& nominalTermStructure() const {
             return nominalTermStructure_;
         }
+        //! curve of real discount factors
         const Handle<YieldTermStructure>& realTermStructure() const { return realTermStructure_; }
+        //! mean reversion of the nominal short rate
         Real nominalMeanReversion() const { return aN_; }
+        //! absolute volatility of the nominal short rate
         Real nominalVolatility() const { return sigmaN_; }
+        //! mean reversion of the real short rate
         Real realMeanReversion() const { return aR_; }
+        //! absolute volatility of the real short rate
         Real realVolatility() const { return sigmaR_; }
+        //! lognormal volatility of the index
         Real indexVolatility() const { return sigmaI_; }
+        //! correlation between the nominal and real short rates
         Real rhoNominalReal() const { return rhoNR_; }
+        //! correlation between the nominal short rate and the index
         Real rhoNominalIndex() const { return rhoNI_; }
+        //! correlation between the real short rate and the index
         Real rhoRealIndex() const { return rhoRI_; }
+        //@}
 
         //! forward index over the current index level, \f$ F(0,T)/I_0 = P_r(0,T)/P_n(0,T) \f$
         /*! Defined for \f$ T \ge 0 \f$. */
@@ -186,6 +200,7 @@ namespace QuantLib {
         */
         Real yoyForwardRatio(Time S, Time T) const;
 
+        //! forwards a change of either curve to the observers of the model
         void update() override { notifyObservers(); }
 
       private:
