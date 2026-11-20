@@ -165,8 +165,9 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
                                         {0.02, 0.02},  {0.15, 1.0e-7},   {1.0e-3, 2.0},
                                         {1.0e-8, 1.0}, {1.0e-8, 0.05},   {2.0e-4, 2.0},
                                         {2.0, 1.0e-8}, {1.0, 2.0e-4},    {50.0, 1.0e-3}};
-    // rate times maturity beyond the panel cap; for this pair only the variance is compared,
-    // since its log-convexity is about -1e-7, close to the rounding error of the logarithm
+    // only the variance is compared for this pair: its large real mean reversion makes the
+    // log-convexity about -1e-7, close to the rounding error of the logarithm. Both this pair
+    // and its mirror image above have a rate times maturity beyond the panel cap.
     std::vector<Pair> extremeMeanReversions = {{1.0e-3, 50.0}};
 
     auto checkVariance = [](const Pair& pair) {
@@ -456,9 +457,9 @@ BOOST_AUTO_TEST_CASE(testConstructorValidation) {
         BOOST_CHECK_EXCEPTION(correlations(0.0, 0.0, rho), Error, expected("real-index"));
         BOOST_CHECK_EXCEPTION(correlations(rho, rho, rho), Error, expected("nominal-real"));
     }
-    // barely outside: the determinants of these patterns are positive or about -1e-20, within
-    // the tolerance of the determinant guard, so only the range check rejects them (the
-    // printed value rounds to +-1)
+    // barely outside: the determinants of these patterns are positive, so the determinant
+    // guard would accept them and only the range check rejects them (the printed value
+    // rounds to +-1)
     Real barely = 1.0 + 1.0e-10;
     ExpectedErrorMessage outside("outside [-1, 1]");
     BOOST_CHECK_EXCEPTION(correlations(barely, barely, barely), Error, outside);
