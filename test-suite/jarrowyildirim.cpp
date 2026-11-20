@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(testZeroVolatilityRecoversNonFlatCurves) {
 BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim closed forms against quadrature...");
     // mean reversions from the small-a branch through the closed-form threshold,
-    // including one tiny and one large mean reversion, which exercise the
+    // including pairs that mix a tiny and a large mean reversion, which exercise the
     // choice of integration panels and of the branch for each term
     using Pair = std::pair<Real, Real>;
     std::vector<Pair> meanReversions = {{0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},
@@ -191,8 +191,8 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
         s.an = pair.first;
         s.ar = pair.second;
         JarrowYildirim jy = s.model();
-        for (auto st :
-             std::vector<Pair>{{1.0, 2.0}, {4.0, 6.0}, {7.0, 7.5}, {10.0, 30.0}, {30.0, 31.0}}) {
+        for (auto st : std::vector<Pair>{
+                 {1.0, 2.0}, {4.0, 6.0}, {0.5, 1.0}, {7.0, 7.5}, {10.0, 30.0}, {30.0, 31.0}}) {
             Real S = st.first, T = st.second;
             auto integrand = [&](Real u) -> Real {
                 Real delta = bFun(s.ar, T - u) - bFun(s.ar, S - u);
@@ -207,6 +207,64 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
         // nothing is integrated for S = 0, so the factor is exactly one
         BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
     }
+}
+
+BOOST_AUTO_TEST_CASE(testSmallArgumentsAreAccepted) {
+    BOOST_TEST_MESSAGE("Testing Jarrow-Yildirim with small but valid arguments...");
+    // tiny positive mean reversions
+    {
+        Setup s;
+        s.an = 1.0e-12;
+        s.ar = 3.0e-12;
+        JarrowYildirim jy = s.model();
+        QL_CHECK_CLOSE(jy.zeroInflationVariance(10.0), quadratureVariance(s, 10.0), 1.0e-9);
+    }
+    // small positive volatilities
+    {
+        Setup s;
+        s.sn = s.sr = s.sI = 1.0e-4;
+        JarrowYildirim jy = s.model();
+        QL_CHECK_CLOSE(jy.zeroInflationVariance(5.0), quadratureVariance(s, 5.0), 1.0e-9);
+    }
+
+    Setup s;
+    JarrowYildirim jy = s.model();
+    Real carry = s.nominalRate->value() - s.realRate->value();
+    // very short maturities
+    const Real tiny = 1.0e-4;
+    QL_CHECK_CLOSE(jy.forwardIndexRatio(tiny), std::exp(carry * tiny), 1.0e-9);
+    BOOST_CHECK_EQUAL(jy.forwardIndexRatio(0.0), 1.0);
+    BOOST_CHECK_EQUAL(jy.zeroInflationVariance(0.0), 0.0);
+    QL_CHECK_CLOSE(jy.zeroInflationVariance(tiny), quadratureVariance(s, tiny), 1.0e-9);
+    Real df = std::exp(-s.nominalRate->value() * tiny);
+    Real sd = std::sqrt(quadratureVariance(s, tiny));
+    QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, 1.0, tiny),
+                   df * blackFormula(Option::Call, 1.0, std::exp(carry * tiny), sd), 1.0e-6);
+
+    // a small positive strike
+    Real longSd = std::sqrt(quadratureVariance(s, 5.0));
+    Real longDf = std::exp(-s.nominalRate->value() * 5.0);
+    QL_CHECK_CLOSE(jy.zeroInflationOption(Option::Call, 1.0e-3, 5.0),
+                   longDf * blackFormula(Option::Call, 1.0e-3, std::exp(carry * 5.0), longSd),
+                   1.0e-6);
+
+    // a start time very close to the end time: the factor is one up to the exponent
+    {
+        Real S = 3.0, T = S + 1.0e-6;
+        auto integrand = [&](Real u) -> Real {
+            Real delta = bFun(s.ar, T - u) - bFun(s.ar, S - u);
+            return s.sr * delta *
+                   (s.rhoRI * s.sI + s.rhoNR * s.sn * bFun(s.an, S - u) - s.sr * bFun(s.ar, S - u));
+        };
+        QL_CHECK_SMALL(jy.yoyConvexity(S, T) - 1.0 - std::expm1(integrate(integrand, 0.0, S)),
+                       1.0e-12);
+    }
+
+    // a short period with zero volatilities
+    s.sn = s.sr = s.sI = 0.0;
+    JarrowYildirim deterministic = s.model();
+    QL_CHECK_CLOSE(deterministic.yoyForwardRatio(3.0, 3.25), std::exp(carry * 0.25), 1.0e-9);
+    QL_CHECK_CLOSE(deterministic.yoyForwardRatio(0.0, 1.0), std::exp(carry), 1.0e-9);
 }
 
 BOOST_AUTO_TEST_CASE(testZeroInflationCapFloorParity) {
