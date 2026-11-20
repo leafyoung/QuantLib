@@ -102,6 +102,7 @@ QL_TEST_SRCS = \
 	interestrates.cpp \
 	interpolatedsmilesection.cpp \
 	interpolations.cpp \
+	jarrowyildirim.cpp \
 	jumpdiffusion.cpp \
 	lazyobject.cpp \
 	libormarketmodel.cpp \
