@@ -212,6 +212,8 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
         {365, Barrier::DownOut, 90.0, Option::Call, 89.0, 12, 13.9148771838},
         {365, Barrier::UpOut, 120.0, Option::Call, 119.0, 12, 0.0185922606},
         {365, Barrier::UpOut, 120.0, Option::Call, 119.99, 12, 0.0109309881},
+        {365, Barrier::UpOut, 120.0, Option::Call, 119.9999, 12, 0.0108676868},
+        {365, Barrier::DownOut, 90.0, Option::Put, 90.005, 12, 0.0066575506},
         {365, Barrier::DownOut, 90.0, Option::Put, 90.5, 12, 0.0096422182},
         {365, Barrier::UpIn, 120.0, Option::Call, 119.0, 12, 4.5813155230},
         {365, Barrier::DownOut, 90.0, Option::Put, 91.0, 12, 0.0134332196},
