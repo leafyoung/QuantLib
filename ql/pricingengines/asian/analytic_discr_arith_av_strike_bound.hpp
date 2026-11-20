@@ -41,8 +41,9 @@ namespace QuantLib {
         value of an Asian option", J. Appl. Probab. 32 (1995), 1077-1088,
         as presented for the continuous floating-strike case in G. W.
         Thompson, "Fast narrow bounds on the value of Asian options",
-        Judge Institute of Management working paper wp0209; the discrete
-        form implemented here is a transcription of that conditioning.
+        Judge Institute of Management working paper wp0209 (section 3);
+        the discrete form implemented here is derived from that
+        conditioning.
         With \f$ Z = \ln S_T - \frac1N \sum_i \ln
         S_{t_i} \f$, which is Gaussian under the Black-Scholes model,
         \f$ E[(S_T - A)^+] \ge E[(E[S_T - A \mid Z])^+] \f$.  Given
@@ -51,8 +52,8 @@ namespace QuantLib {
         exponentials with exactly one sign change; the bound is then
         a sum of cumulative normal values at the root of \f$ g \f$,
         found numerically.  The put value is the corresponding bound for
-        the put payoff; the call and put bounds are computed from the same root and satisfy
-        put-call parity to rounding error.
+        the put payoff; the call and put bounds are computed from the
+        same root and satisfy put-call parity to rounding error.
         Only the exact Black-Scholes moments of the underlying are used.
         Term structures of rates and dividends are allowed; the
         volatility is the constant Black volatility at the exercise date,
@@ -66,7 +67,8 @@ namespace QuantLib {
         average-strike engines only its option type is used, the strike
         is ignored.  Past fixings are not managed and the running
         accumulator is ignored.  Fixing dates before the reference date of
-        the risk-free curve are ignored, as in the geometric engine.
+        the risk-free curve are ignored, as in the geometric engine; a
+        fixing date before the volatility reference date is an error.
 
         The bound is low-biased by construction.  Measured against a
         Monte Carlo reference (MCDiscreteArithmeticASEngine, Sobol
