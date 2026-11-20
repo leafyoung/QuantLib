@@ -914,7 +914,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundAccuracy) {
         auto process = arithmeticAverageStrikeProcess(today, 97.0, 0.05, 0.02, ref.sigma);
         Real bound = arithmeticAverageStrikeBound(process, ref.type, fixingDates, today + 360);
         // The bound lies below the price, so it exceeds the reference by at most its noise, and
-        // falls short of it by at most the measured amount (0.012%, 0.044%, 0.172%).
+        // falls short of it by at most the measured amount (0.013%, 0.044%, 0.173%).
         Real shortfall = (ref.sigma < 0.3 ? 2e-4 : (ref.sigma < 0.6 ? 6e-4 : 2.5e-3));
         BOOST_TEST_CONTEXT("sigma=" << ref.sigma << ", fixings=" << ref.n
                                     << ", type=" << int(ref.type)) {
@@ -1028,8 +1028,10 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundLargeVolati
 BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundReferenceDates) {
     BOOST_TEST_MESSAGE("Testing the time origin of the arithmetic average-strike bound...");
 
-    // The variance times are measured from the volatility reference date, 90 days after the
-    // curves' one, while the forwards come from the curves at the fixing dates.
+    // The volatility reference date is 90 days after the curves' one. The first fixing carries no
+    // variance weight, so the value depends only on time differences between fixings and is
+    // invariant to that date; the forwards come from the curves at the fixing dates. A fixing
+    // before the volatility reference date is refused.
     Date today = Settings::instance().evaluationDate();
     DayCounter dc = Actual360();
     auto process = ext::make_shared<BlackScholesMertonProcess>(
@@ -1044,6 +1046,11 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundReferenceDa
                        process, Option::Call, fixingDates, today + 360) - 6.359126532502602, 1e-10);
     QL_CHECK_SMALL(arithmeticAverageStrikeBound(
                        process, Option::Put, fixingDates, today + 360) - 5.157817725565412, 1e-10);
+    auto sameOrigin = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, 0.30);
+    QL_CHECK_SMALL(arithmeticAverageStrikeBound(
+                       process, Option::Call, fixingDates, today + 360) -
+                       arithmeticAverageStrikeBound(
+                           sameOrigin, Option::Call, fixingDates, today + 360), 1e-12);
     BOOST_CHECK_EXCEPTION(arithmeticAverageStrikeBound(process, Option::Call,
                                                        {today + 30, today + 360}, today + 360),
                           Error, ExpectedErrorMessage("precedes the volatility reference date"));
@@ -1141,6 +1148,22 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundRefusals) {
     late.setPricingEngine(engine);
     BOOST_CHECK_EXCEPTION(late.NPV(), Error,
                           ExpectedErrorMessage("after the exercise date"));
+
+    // Fixings before the curves' reference date are dropped, the others are kept.
+    std::vector<Date> withPast = {today - 5, today + 180};
+    QL_CHECK_SMALL(arithmeticAverageStrikeBound(process, Option::Call, withPast, today + 360) -
+                       arithmeticAverageStrikeBound(process, Option::Call, {today + 180},
+                                                    today + 360), 1e-12);
+
+    auto negativeVol = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, -0.10);
+    BOOST_CHECK_EXCEPTION(arithmeticAverageStrikeBound(negativeVol, Option::Call, fixingDates,
+                                                       today + 360),
+                          Error, ExpectedErrorMessage("non-negative finite volatility required"));
+
+    auto hugeVol = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, 1.0e5);
+    BOOST_CHECK_EXCEPTION(arithmeticAverageStrikeBound(hugeVol, Option::Call, fixingDates,
+                                                       today + 360),
+                          Error, ExpectedErrorMessage("volatility too large"));
 }
 
 BOOST_AUTO_TEST_CASE(testMCDiscreteGeometricAveragePrice) {

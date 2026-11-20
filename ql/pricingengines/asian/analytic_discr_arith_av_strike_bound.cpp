@@ -89,6 +89,11 @@ namespace QuantLib {
                 logSize[k] = std::log(forward) - c[k] * c[k] / 2.0;
             }
 
+            // Beyond this the exponents of g lose the fixing weights to rounding.
+            QL_REQUIRE(c[n] <= 1000.0,
+                       "volatility too large: standard deviation " << c[n]
+                                                                   << " to the exercise");
+
             // g(z) scaled by its largest term: finite and sign-preserving for any z.
             auto scaledG = [&](Real z) -> Real {
                 Real top = logSize[0] + c[0] * z;

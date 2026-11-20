@@ -39,7 +39,7 @@ namespace QuantLib {
         The bound is obtained by Jensen conditioning on a Gaussian variable,
         after the conditioning idea of L. C. G. Rogers and Z. Shi, "The
         value of an Asian option", J. Appl. Probab. 32 (1995), 1077-1088,
-        as presented for the continuous floating-strike case in G. W.
+        as presented for the continuous floating-strike case in G. W. P.
         Thompson, "Fast narrow bounds on the value of Asian options",
         Judge Institute of Management working paper wp0209 (section 3);
         the discrete form implemented here is derived from that
@@ -75,9 +75,9 @@ namespace QuantLib {
         sequences with Brownian bridge, 2^20-1 samples; S=97, r=5%, q=2%,
         T=1; 1, 4, 10 and 52 equally spaced fixings; the single fixing is
         at t=0.5; calls and puts), the shortfall of the bound is
-        - at most 0.012% at volatility 20%,
+        - at most 0.013% at volatility 20%,
         - at most 0.044% at volatility 40%,
-        - at most 0.172% at volatility 80% (put, four fixings).
+        - at most 0.173% at volatility 80% (put, four fixings).
         The bound is exact for a
         single fixing.  The sign of the deviation is negative apart from
         Monte Carlo noise (a lower bound cannot exceed the price).  No
