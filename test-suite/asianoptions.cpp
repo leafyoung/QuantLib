@@ -797,6 +797,60 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundParity) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundDeepMoneyness) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound at deep moneyness...");
+
+    // Parity holds for any root, so the values themselves are checked here against an
+    // independent evaluation of the conditioning formula (fixing times in days / 360).
+    Date today = Settings::instance().evaluationDate();
+    std::vector<Date> fixingDates = {today + 30, today + 120, today + 200, today + 300,
+                                     today + 360};
+    struct Case { Rate r; Rate q; Real call; Real put; };
+    for (Case c : {Case{0.30, 0.0, 11.912210358, 0.006322755},
+                   Case{-0.20, 0.10, 0.006734002, 13.250574013}}) {
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, c.r, c.q, 0.10);
+        Real call = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        Real put = arithmeticAverageStrikeBound(
+            process, Option::Put, fixingDates, today + 360);
+        QL_CHECK_SMALL(call - c.call, 1e-8);
+        QL_CHECK_SMALL(put - c.put, 1e-8);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundSaturatedRoot) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with saturated roots...");
+
+    // The root of the conditional expectation lies beyond the search bracket, so the
+    // normal values are 0 or 1 and the bound is the discounted forward spread (or zero).
+    // Reference values come from an independent 60-digit evaluation of the formula.
+    Date today = Settings::instance().evaluationDate();
+    struct Case {
+        Rate r; Rate q; Volatility sigma; std::vector<Integer> days; Real call; Real put;
+    };
+    // The first two roots saturate at the upper end, the last two at the lower end.
+    for (const Case& c : {Case{-0.5, 0.5, 0.001, {359, 359, 360}, 0.0, 0.1124766377689},
+                          Case{0.5, 1.0, 0.01, {0, 100, 200}, 0.0, 16.33989301194},
+                          Case{0.5, -0.5, 0.001, {0, 1, 2}, 104.0501897074, 0.0},
+                          Case{0.5, -0.5, 0.001, {359, 359, 360}, 0.3048950923785, 0.0}}) {
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, c.r, c.q, c.sigma);
+        std::vector<Date> fixingDates;
+        Real averageForward = 0.0;
+        for (Integer d : c.days) {
+            fixingDates.push_back(today + d);
+            averageForward += 100.0 * std::exp((c.r - c.q) * d / 360.0) / c.days.size();
+        }
+        Real call = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        Real put = arithmeticAverageStrikeBound(
+            process, Option::Put, fixingDates, today + 360);
+        QL_CHECK_SMALL(call - c.call, 1e-10);
+        QL_CHECK_SMALL(put - c.put, 1e-10);
+        Real forward = 100.0 * std::exp(c.r - c.q);
+        QL_CHECK_SMALL(call - put - std::exp(-c.r) * (forward - averageForward), 1e-11);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundVsGeometric) {
     BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound against the geometric one...");
 

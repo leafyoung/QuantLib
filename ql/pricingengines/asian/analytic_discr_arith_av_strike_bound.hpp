@@ -37,9 +37,11 @@ namespace QuantLib {
         fixing dates.  It is <b>not</b> the exact price.
 
         The bound is obtained by Jensen conditioning on a Gaussian variable
-        following the conditioning approach of Rogers and Shi (1995), as
-        presented for the continuous floating-strike case in G. W.
-        Thompson, "Fast narrow bounds on the value of Asian options",
+        following the conditioning approach of L. C. G. Rogers and Z. Shi,
+        "The value of an Asian option", J. Appl. Probab. 32 (1995),
+        1077-1088 (as listed in Thompson's reference list; the original was
+        not consulted), as presented for the continuous floating-strike case
+        in G. W. Thompson, "Fast narrow bounds on the value of Asian options",
         Judge Institute of Management working paper wp0209.
         With \f$ Z = \ln S_T - \frac1N \sum_i \ln
         S_{t_i} \f$, which is Gaussian under the Black-Scholes model,
