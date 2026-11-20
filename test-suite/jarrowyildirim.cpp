@@ -161,14 +161,12 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
     // including pairs that mix a tiny and a large mean reversion, which exercise the
     // choice of integration panels and of the branch for each term
     using Pair = std::pair<Real, Real>;
-    std::vector<Pair> meanReversions = {{0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},
-                                        {0.02, 0.02},  {0.15, 1.0e-7},   {1.0e-3, 2.0},
-                                        {1.0e-8, 1.0}, {1.0e-8, 0.05},   {2.0e-4, 2.0},
-                                        {2.0, 1.0e-8}, {1.0, 2.0e-4},    {50.0, 1.0e-3}};
-    // only the variance is compared for this pair: its large real mean reversion makes the
-    // log-convexity about -1e-7, close to the rounding error of the logarithm. Both this pair
-    // and its mirror image above have a rate times maturity beyond the panel cap.
-    std::vector<Pair> extremeMeanReversions = {{1.0e-3, 50.0}};
+    std::vector<Pair> meanReversions = {
+        {0.08, 0.05},  {1.0e-8, 1.0e-6}, {1.0e-3, 0.5},  {0.02, 0.02},  {0.15, 1.0e-7},
+        {1.0e-3, 2.0}, {1.0e-8, 1.0},    {1.0e-8, 0.05}, {2.0e-4, 2.0}, {2.0, 1.0e-8},
+        {1.0, 2.0e-4}, {50.0, 1.0e-3},   {1.0e-3, 50.0}};
+    // the last two pairs, mirror images of each other, have a rate times maturity beyond the
+    // panel cap; the large real mean reversion of the last one makes its log-convexity tiny
 
     auto checkVariance = [](const Pair& pair) {
         Setup s;
@@ -182,8 +180,6 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
         }
     };
     for (const Pair& pair : meanReversions)
-        checkVariance(pair);
-    for (const Pair& pair : extremeMeanReversions)
         checkVariance(pair);
 
     for (const Pair& pair : meanReversions) {
@@ -202,7 +198,9 @@ BOOST_AUTO_TEST_CASE(testClosedFormsAgainstQuadrature) {
             };
             Real expected = integrate(integrand, 0.0, S);
             Real calculated = std::log(jy.yoyConvexity(S, T));
-            QL_CHECK_CLOSE(calculated, expected, 1.0e-9);
+            // percent tolerance: the logarithm of the exponential of a small exponent is
+            // only accurate to about 1e-16 in absolute terms
+            QL_CHECK_CLOSE(calculated, expected, 1.0e-9 + 1.0e-13 / std::fabs(expected));
         }
         // nothing is integrated for S = 0, so the factor is exactly one
         BOOST_CHECK_EQUAL(jy.yoyConvexity(0.0, 3.0), 1.0);
