@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(testReferenceValues) {
     // outside QuantLib.  S = 100, r = 5%, q = 2%, sigma = 25%; maturities of 365, 181 and 731
     // days.  The strikes other than 100 lie close to the barrier, or on the other side of it
     // for the option type that is not decided at maturity.  The boundary between the exact and
-    // the shifted-barrier branch is pinned to within 1e-5 of the barrier.
+    // the shifted-barrier branch is pinned to within 1e-4 of the barrier (1e-5 on the down side).
     struct Case {
         Date::serial_type days;
         Barrier::Type type;

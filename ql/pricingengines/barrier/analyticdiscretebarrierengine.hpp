@@ -40,8 +40,8 @@ namespace QuantLib {
         The barrier is observed at \f$ N \f$ equally spaced dates
         \f$ i \Delta t \f$, \f$ i = 1, \ldots, N \f$, \f$ \Delta t = T/N \f$,
         the first one step after the reference date of the volatility term
-        structure and the last at maturity.  Only European options without
-        rebate are supported.  \f$ \sigma \f$ is the Black volatility at the
+        structure and the last at maturity.  Only plain-vanilla European
+        payoffs without rebate are supported.  \f$ \sigma \f$ is the Black volatility at the
         expiry and the strike and \f$ T \f$ the time to expiry on the clock
         of the volatility surface; the result is stated for a constant
         volatility.  When the strike lies beyond the barrier (up call with
