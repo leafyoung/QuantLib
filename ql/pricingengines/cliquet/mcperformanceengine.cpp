@@ -24,8 +24,11 @@ namespace QuantLib {
 
     PerformanceOptionPathPricer::PerformanceOptionPathPricer(Option::Type type,
                                                              Real strike,
-                                                             std::vector<DiscountFactor> discounts)
-    : strike_(strike), type_(type), discounts_(std::move(discounts)) {}
+                                                             std::vector<DiscountFactor> discounts,
+                                                             Real localFloor,
+                                                             Real localCap)
+    : strike_(strike), localFloor_(localFloor), localCap_(localCap), type_(type),
+      discounts_(std::move(discounts)) {}
 
     Real PerformanceOptionPathPricer::operator()(const Path& path) const {
 
@@ -35,7 +38,12 @@ namespace QuantLib {
 
         Real sum = 0.0;
         for (Size i = 2 ; i < n; i++) {
-            sum += discounts_[i-1] * payoff(path[i]/path[i-1]);
+            Real coupon = payoff(path[i]/path[i-1]);
+            if (localFloor_ != Null<Real>())
+                coupon = std::max<Real>(coupon, localFloor_);
+            if (localCap_ != Null<Real>())
+                coupon = std::min<Real>(coupon, localCap_);
+            sum += discounts_[i-1] * coupon;
         }
 
         return sum;

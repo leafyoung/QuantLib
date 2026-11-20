@@ -25,15 +25,20 @@ namespace QuantLib {
 
     CliquetOption::CliquetOption(const ext::shared_ptr<PercentageStrikePayoff>& payoff,
                                  const ext::shared_ptr<EuropeanExercise>& maturity,
-                                 std::vector<Date> resetDates)
-    : OneAssetOption(payoff, maturity), resetDates_(std::move(resetDates)) {}
+                                 std::vector<Date> resetDates,
+                                 Real localFloor,
+                                 Real localCap)
+    : OneAssetOption(payoff, maturity), resetDates_(std::move(resetDates)),
+      localFloor_(localFloor), localCap_(localCap) {}
 
     void CliquetOption::setupArguments(PricingEngine::arguments* args) const {
         OneAssetOption::setupArguments(args);
-        // set accrued coupon, last fixing, caps, floors
+        // set the local floor and cap
         auto* moreArgs = dynamic_cast<CliquetOption::arguments*>(args);
         QL_REQUIRE(moreArgs != nullptr, "wrong engine type");
         moreArgs->resetDates = resetDates_;
+        moreArgs->localFloor = localFloor_;
+        moreArgs->localCap = localCap_;
     }
 
     void CliquetOption::arguments::validate() const {
@@ -51,6 +56,9 @@ namespace QuantLib {
                    "negative local cap");
         QL_REQUIRE(localFloor == Null<Real>() || localFloor >= 0.0,
                    "negative local floor");
+        QL_REQUIRE(localFloor == Null<Real>() || localCap == Null<Real>() ||
+                   localFloor <= localCap,
+                   "local floor greater than local cap");
         QL_REQUIRE(globalCap == Null<Real>() || globalCap >= 0.0,
                    "negative global cap");
         QL_REQUIRE(globalFloor == Null<Real>() || globalFloor >= 0.0,
