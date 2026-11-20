@@ -2854,9 +2854,9 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
     // which covers AnalyticHestonEngine). COSHestonEngine,
     // AnalyticPTDHestonEngine and AnalyticPDFHestonEngine (via
     // HestonRNDCalculator) evaluate the characteristic function through
-    // formulas with v0/sigma^2 and kappa*theta/sigma^2 prefactors, which
-    // need the small-sigma expansion to stay accurate for sigma below
-    // roughly 1e-6.
+    // formulas with kappa*theta/sigma^2 prefactors (and v0/sigma^2 ones,
+    // except in HestonRNDCalculator), which need the small-sigma expansion
+    // to stay accurate for sigma below roughly 1e-6.
 
     const Date settlementDate(20, March, 2020);
     Settings::instance().evaluationDate() = settlementDate;
@@ -2888,16 +2888,19 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
     const Real expectedNPV = blackFormula(Option::Call, strike, 100.0, stdDev);
     const Real tolNPV = 50*sigma;
 
-    // --- characteristic function level: COSHestonEngine::chF must agree
-    //     with AnalyticHestonEngine::chF ---
+    // --- characteristic function level: COSHestonEngine::chF and
+    //     AnalyticHestonEngine::chF must agree with the deterministic-limit
+    //     closed form ---
     const ext::shared_ptr<COSHestonEngine> cosEngine =
         ext::make_shared<COSHestonEngine>(hestonModel);
 
     const std::complex<Real> z(0.55, 0.0);
-    const std::complex<Real> expectedChF = analyticEngine->chF(z, t);
+    const std::complex<Real> expectedChF =
+        std::exp(-0.5*stdDev*stdDev*(z*z + std::complex<Real>(0.0, 1.0)*z));
     const std::complex<Real> calculatedCosChF = cosEngine->chF(z.real(), t);
+    const std::complex<Real> calculatedAnalyticChF = analyticEngine->chF(z, t);
 
-    const Real tolChF = 1e-12;
+    const Real tolChF = 50*sigma;
     const Real diffCosChF = std::abs(expectedChF - calculatedCosChF);
     if (diffCosChF > tolChF) {
         BOOST_ERROR("failed to reproduce COS characteristic function "
@@ -2905,6 +2908,15 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansion4COSAndPTDAndPDF) {
                 << "\n  expected  : " << expectedChF
                 << "\n  calculated: " << calculatedCosChF
                 << "\n  diff      : " << diffCosChF
+                << "\n  tolerance : " << tolChF);
+    }
+    const Real diffAnalyticChF = std::abs(expectedChF - calculatedAnalyticChF);
+    if (diffAnalyticChF > tolChF) {
+        BOOST_ERROR("failed to reproduce AnalyticHestonEngine characteristic "
+                "function value for small sigma"
+                << "\n  expected  : " << expectedChF
+                << "\n  calculated: " << calculatedAnalyticChF
+                << "\n  diff      : " << diffAnalyticChF
                 << "\n  tolerance : " << tolChF);
     }
 
@@ -3060,11 +3072,13 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansionOverflowSafety) {
     // exp(+2*kappa*tau) as an intermediate overflows in double precision
     // once kappa*tau exceeds roughly 350, well before the D (bounded) and
     // C (linear in tau) coefficients themselves do.
-    // COSHestonEngine::chF is checked directly against the
-    // deterministic-limit closed form (COSHestonEngine::calculate() is not
-    // used, since its truncation-range helpers form exp(kappa*t) up to
-    // exp(4*kappa*t) directly); AnalyticPTDHestonEngine is checked end to
-    // end via option pricing.
+    // COSHestonEngine::chF and AnalyticHestonEngine::chF are checked
+    // directly against the deterministic-limit closed form
+    // (COSHestonEngine::calculate() is not used, since its truncation-range
+    // helpers form exp(kappa*t) up to exp(4*kappa*t) directly);
+    // AnalyticPTDHestonEngine and AnalyticHestonEngine with the
+    // Andersen-Piterbarg control variates (which evaluate chF) are checked
+    // end to end via option pricing.
 
     const Date settlementDate(20, March, 2020);
     Settings::instance().evaluationDate() = settlementDate;
@@ -3102,12 +3116,45 @@ BOOST_AUTO_TEST_CASE(testSmallSigmaExpansionOverflowSafety) {
                 << "\n  diff      : " << diffChF);
     }
 
+    // --- AnalyticHestonEngine::chF against the same closed form ---
+    const std::complex<Real> calculatedAnalyticChF =
+        AnalyticHestonEngine(hestonModel).chF(z, t);
+    const Real diffAnalyticChF = std::abs(expectedChF - calculatedAnalyticChF);
+    if (!std::isfinite(calculatedAnalyticChF.real())
+            || !std::isfinite(calculatedAnalyticChF.imag())
+            || diffAnalyticChF > 1e-6) {
+        BOOST_ERROR("AnalyticHestonEngine::chF failed for long-dated, fast "
+                "mean-reverting small-sigma inputs (kappa*t=" << kappa*t << ")"
+                << "\n  expected  : " << expectedChF
+                << "\n  calculated: " << calculatedAnalyticChF
+                << "\n  diff      : " << diffAnalyticChF);
+    }
+
     const Real strike = 100.0;
     const Real expectedNPV = blackFormula(Option::Call, strike, 100.0, stdDev);
 
     VanillaOption option(
         ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
         ext::make_shared<EuropeanExercise>(maturityDate));
+
+    // --- AnalyticHestonEngine with the control variates that evaluate chF ---
+    for (const auto formula : {AnalyticHestonEngine::AndersenPiterbarg,
+                               AnalyticHestonEngine::AndersenPiterbargOptCV}) {
+        option.setPricingEngine(ext::make_shared<AnalyticHestonEngine>(
+            hestonModel, formula,
+            AnalyticHestonEngine::Integration::gaussLaguerre(192)));
+        const Real analyticNPV = option.NPV();
+        if (!std::isfinite(analyticNPV)
+                || std::fabs(analyticNPV-expectedNPV) > 1e-2) {
+            BOOST_ERROR("AnalyticHestonEngine ("
+                    << (formula == AnalyticHestonEngine::AndersenPiterbarg ?
+                        "AndersenPiterbarg" : "AndersenPiterbargOptCV")
+                    << ") failed for long-dated, fast mean-reverting "
+                    "small-sigma inputs (kappa*t=" << kappa*t << ")"
+                    << "\n  expected  : " << expectedNPV
+                    << "\n  calculated: " << analyticNPV);
+        }
+    }
 
     ConstantParameter thetaP(theta, PositiveConstraint());
     ConstantParameter kappaP(kappa, PositiveConstraint());
