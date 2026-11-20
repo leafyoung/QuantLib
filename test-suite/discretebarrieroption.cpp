@@ -642,6 +642,11 @@ BOOST_AUTO_TEST_CASE(testErrorMessages) {
     check(Barrier::UpOut, 120.0, 0.01, plain(Option::Put, 100.0), european(), rebateMessage);
     check(Barrier::DownIn, 90.0, 0.01, plain(Option::Call, 100.0), european(), rebateMessage);
     check(Barrier::DownOut, 90.0, 0.01, plain(Option::Put, 100.0), european(), rebateMessage);
+    check(Barrier::UpIn, 120.0, 0.01, plain(Option::Call, 121.0), european(), rebateMessage);
+    check(Barrier::UpIn, 120.0, 0.01, plain(Option::Put, 100.0), european(), rebateMessage);
+    check(Barrier::UpOut, 120.0, 0.01, plain(Option::Call, 100.0), european(), rebateMessage);
+    check(Barrier::DownIn, 90.0, 0.01, plain(Option::Put, 100.0), european(), rebateMessage);
+    check(Barrier::DownOut, 90.0, 0.01, plain(Option::Put, 89.0), european(), rebateMessage);
     check(Barrier::DownOut, 90.0, 0.0, plain(Option::Call, 100.0), american(), exerciseMessage);
     check(Barrier::DownOut, 90.0, 0.0, digital, european(), "non-plain payoff given");
 
