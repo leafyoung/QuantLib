@@ -153,6 +153,7 @@ set(QL_SOURCES
     experimental/fx/mtmcrosscurrencybasisswap.cpp
     experimental/inflation/cpicapfloorengines.cpp
     experimental/inflation/cpicapfloortermpricesurface.cpp
+    experimental/inflation/jarrowyildirim.cpp
     experimental/inflation/yoycapfloortermpricesurface.cpp
     experimental/inflation/yoyoptionlethelpers.cpp
     experimental/lattices/extendedbinomialtree.cpp
@@ -1190,6 +1191,7 @@ set(QL_HEADERS
     experimental/inflation/cpicapfloortermpricesurface.hpp
     experimental/inflation/genericindexes.hpp
     experimental/inflation/interpolatedyoyoptionletstripper.hpp
+    experimental/inflation/jarrowyildirim.hpp
     experimental/inflation/kinterpolatedyoyoptionletvolatilitysurface.hpp
     experimental/inflation/piecewiseyoyoptionletvolatility.hpp
     experimental/inflation/polynomial2Dspline.hpp

@@ -709,6 +709,7 @@
     <ClInclude Include="ql\experimental\inflation\cpicapfloortermpricesurface.hpp" />
     <ClInclude Include="ql\experimental\inflation\genericindexes.hpp" />
     <ClInclude Include="ql\experimental\inflation\interpolatedyoyoptionletstripper.hpp" />
+    <ClInclude Include="ql\experimental\inflation\jarrowyildirim.hpp" />
     <ClInclude Include="ql\experimental\inflation\kinterpolatedyoyoptionletvolatilitysurface.hpp" />
     <ClInclude Include="ql\experimental\inflation\piecewiseyoyoptionletvolatility.hpp" />
     <ClInclude Include="ql\experimental\inflation\polynomial2Dspline.hpp" />
@@ -2122,6 +2123,7 @@
     <ClCompile Include="ql\experimental\fx\mtmcrosscurrencybasisswap.cpp" />
     <ClCompile Include="ql\experimental\inflation\cpicapfloorengines.cpp" />
     <ClCompile Include="ql\experimental\inflation\cpicapfloortermpricesurface.cpp" />
+    <ClCompile Include="ql\experimental\inflation\jarrowyildirim.cpp" />
     <ClCompile Include="ql\experimental\inflation\yoycapfloortermpricesurface.cpp" />
     <ClCompile Include="ql\experimental\inflation\yoyoptionlethelpers.cpp" />
     <ClCompile Include="ql\experimental\lattices\extendedbinomialtree.cpp" />
