@@ -29,6 +29,9 @@
 namespace QuantLib {
 
     //! Pricing engine for performance options using Monte Carlo simulation
+    /*! The payoff of each period is the one of AnalyticPerformanceEngine,
+        clamped between the local floor and cap of the option when given.
+    */
     template<class RNG = PseudoRandom, class S = Statistics>
     class MCPerformanceEngine : public CliquetOption::engine,
                                 public McSimulation<SingleVariate,RNG,S> {
@@ -109,11 +112,14 @@ namespace QuantLib {
       public:
         PerformanceOptionPathPricer(Option::Type type,
                                     Real strike,
-                                    std::vector<DiscountFactor> discounts);
+                                    std::vector<DiscountFactor> discounts,
+                                    Real localFloor = Null<Real>(),
+                                    Real localCap = Null<Real>());
         Real operator()(const Path& path) const override;
 
       private:
         Real strike_;
+        Real localFloor_, localCap_;
         Option::Type type_;
         std::vector<DiscountFactor> discounts_;
     };
@@ -160,6 +166,13 @@ namespace QuantLib {
                 this->arguments_.payoff);
         QL_REQUIRE(payoff, "non-percentage payoff given");
 
+        QL_REQUIRE(arguments_.accruedCoupon == Null<Real>() &&
+                   arguments_.lastFixing == Null<Real>(),
+                   "this engine cannot price options already started");
+        QL_REQUIRE(arguments_.globalCap == Null<Real>() &&
+                   arguments_.globalFloor == Null<Real>(),
+                   "this engine cannot price globally capped/floored options");
+
         ext::shared_ptr<EuropeanExercise> exercise =
             ext::dynamic_pointer_cast<EuropeanExercise>(
                 this->arguments_.exercise);
@@ -177,7 +190,9 @@ namespace QuantLib {
 
         return ext::make_shared<PerformanceOptionPathPricer>(payoff->optionType(),
                                                          payoff->strike(),
-                                                         discounts);
+                                                         discounts,
+                                                         arguments_.localFloor,
+                                                         arguments_.localCap);
     }
 
 
