@@ -174,8 +174,8 @@ namespace QuantLib {
                                 std::vector<Real> coupons,
                                 const G2& model)
         : a_(a), sigma_(sigma), b_(b), eta_(eta), rho_(rho), w_(w), T_(start),
-          t_(std::move(payTimes)), coupons_(std::move(coupons)), size_(t_.size()), A_(size_), Ba_(size_),
-          Bb_(size_) {
+          t_(std::move(payTimes)), coupons_(std::move(coupons)), size_(t_.size()),
+          A_(size_), Ba_(size_), Bb_(size_) {
 
 
             sigmax_ = sigma_*std::sqrt(0.5*(1.0-std::exp(-2.0*a_*T_))/a_);
