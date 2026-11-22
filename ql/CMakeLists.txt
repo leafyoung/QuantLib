@@ -665,6 +665,7 @@ set(QL_SOURCES
     pricingengines/americanpayoffatexpiry.cpp
     pricingengines/americanpayoffathit.cpp
     pricingengines/asian/analytic_cont_geom_av_price.cpp
+    pricingengines/asian/analytic_discr_arith_av_strike_bound.cpp
     pricingengines/asian/analytic_discr_geom_av_price.cpp
     pricingengines/asian/analytic_discr_geom_av_strike.cpp
     pricingengines/asian/choiasianengine.cpp
@@ -1927,6 +1928,7 @@ set(QL_HEADERS
     pricingengines/americanpayoffatexpiry.hpp
     pricingengines/americanpayoffathit.hpp
     pricingengines/asian/analytic_cont_geom_av_price.hpp
+    pricingengines/asian/analytic_discr_arith_av_strike_bound.hpp
     pricingengines/asian/analytic_discr_geom_av_price.hpp
     pricingengines/asian/analytic_discr_geom_av_strike.hpp
     pricingengines/asian/choiasianengine.hpp    
