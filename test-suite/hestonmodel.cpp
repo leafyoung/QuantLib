@@ -3957,7 +3957,8 @@ BOOST_AUTO_TEST_CASE(testAsymptoticCVwithDifferentAlpha) {
 
 BOOST_AUTO_TEST_CASE(testPiecewiseTimeDependentNegativeTerm) {
     BOOST_TEST_MESSAGE("Testing piecewise time dependent Heston engine "
-                       "at zero time to maturity...");
+                       "on an exercise date at or before the reference "
+                       "date...");
 
     const Date settlementDate(5, July, 2017);
     Settings::instance().evaluationDate() = settlementDate;
