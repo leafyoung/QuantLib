@@ -291,11 +291,11 @@ namespace QuantLib {
         //
         // n_d_ is already correct in the stdDev_==0 degenerate case (set at
         // construction to phi(0) at the money, 0 away from it -- see the
-        // constructor), so no extra zero-stdDev special case is needed here;
-        // a prior version of this function short-circuited to 0 regardless,
-        // which is wrong at the money (the Bachelier ATM price is exactly
-        // linear in stdDev, so the correct ATM vega there is the nonzero
-        // discount_*sqrt(maturity)*phi(0), not 0). sqrt(maturity) alone
+        // constructor), so no extra zero-stdDev special case is needed here.
+        // The Bachelier ATM price is exactly linear in stdDev, so the ATM
+        // vega is the nonzero discount_*sqrt(maturity)*phi(0) and any guard
+        // that returns a zero vega at the money would understate it.
+        // sqrt(maturity) alone
         // already sends this to 0 as maturity->0.
 
         return discount_ * std::sqrt(maturity) * n_d_;
