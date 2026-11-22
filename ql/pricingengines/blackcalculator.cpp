@@ -374,6 +374,19 @@ namespace QuantLib {
 
         // Handle zero volatility case
         if (stdDev_ <= QL_EPSILON) {
+            // away from the money the vega right-limit as stdDev->0+ is 0.
+            // At the money (forward==strike), temp below (effectively
+            // log(strike/forward)/variance) is 0/0 in this degenerate
+            // case, but its numerator is exactly zero regardless of how
+            // variance shrinks to 0, so its limit is 0 -- substituting
+            // temp=0 into the general formula gives the ATM vega directly
+            // in terms of DalphaDd1_/DbetaDd2_/x_, which the payoff-type
+            // dispatch in initialize() has already set correctly (from
+            // n_d1_/n_d2_, themselves already phi(0) in this branch) for
+            // every supported payoff, not just PlainVanillaPayoff.
+            if (close(forward_, strike_))
+                return discount_ * std::sqrt(maturity) *
+                    0.5 * (DalphaDd1_*forward_ - DbetaDd2_*x_);
             return 0.0;
         }
 

@@ -4428,6 +4428,9 @@
     <ClInclude Include="ql\methods\finitedifferences\utilities\hestonrndcalculator.hpp">
       <Filter>methods\finitedifferences\utilities</Filter>
     </ClInclude>
+    <ClInclude Include="ql\methods\finitedifferences\utilities\hestonsmallsigmaexpansion.hpp">
+      <Filter>methods\finitedifferences\utilities</Filter>
+    </ClInclude>
     <ClInclude Include="ql\methods\finitedifferences\utilities\localvolrndcalculator.hpp">
       <Filter>methods\finitedifferences\utilities</Filter>
     </ClInclude>
@@ -4610,6 +4613,9 @@
     </ClInclude>
     <ClInclude Include="ql\methods\finitedifferences\operators\fdmwienerop.hpp">
       <Filter>methods\finitedifferences\operators</Filter>
+    </ClInclude>
+    <ClInclude Include="ql\pricingengines\basket\bachelierspreadengine.hpp">
+      <Filter>pricingengines\basket</Filter>
     </ClInclude>
     <ClInclude Include="ql\pricingengines\basket\bjerksundstenslandspreadengine.hpp">
       <Filter>pricingengines\basket</Filter>
@@ -7390,6 +7396,9 @@
     <ClCompile Include="ql\methods\finitedifferences\utilities\hestonrndcalculator.cpp">
       <Filter>methods\finitedifferences\utilities</Filter>
     </ClCompile>
+    <ClCompile Include="ql\methods\finitedifferences\utilities\hestonsmallsigmaexpansion.cpp">
+      <Filter>methods\finitedifferences\utilities</Filter>
+    </ClCompile>
     <ClCompile Include="ql\methods\finitedifferences\utilities\localvolrndcalculator.cpp">
       <Filter>methods\finitedifferences\utilities</Filter>
     </ClCompile>
@@ -7530,6 +7539,9 @@
     </ClCompile>
     <ClCompile Include="ql\methods\finitedifferences\operators\fdmwienerop.cpp">
       <Filter>methods\finitedifferences\operators</Filter>
+    </ClCompile>
+    <ClCompile Include="ql\pricingengines\basket\bachelierspreadengine.cpp">
+      <Filter>pricingengines\basket</Filter>
     </ClCompile>
     <ClCompile Include="ql\pricingengines\basket\bjerksundstenslandspreadengine.cpp">
       <Filter>pricingengines\basket</Filter>

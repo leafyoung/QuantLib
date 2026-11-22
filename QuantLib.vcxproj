@@ -1292,6 +1292,7 @@
     <ClInclude Include="ql\methods\finitedifferences\utilities\fdmtimedepdirichletboundary.hpp" />
     <ClInclude Include="ql\methods\finitedifferences\utilities\gbsmrndcalculator.hpp" />
     <ClInclude Include="ql\methods\finitedifferences\utilities\hestonrndcalculator.hpp" />
+    <ClInclude Include="ql\methods\finitedifferences\utilities\hestonsmallsigmaexpansion.hpp" />
     <ClInclude Include="ql\methods\finitedifferences\utilities\localvolrndcalculator.hpp" />
     <ClInclude Include="ql\methods\finitedifferences\utilities\riskneutraldensitycalculator.hpp" />
     <ClInclude Include="ql\methods\finitedifferences\utilities\smilesectionrndcalculator.hpp" />
@@ -1524,6 +1525,7 @@
     <ClInclude Include="ql\pricingengines\barrier\fdhestonrebateengine.hpp" />
     <ClInclude Include="ql\pricingengines\barrier\mcbarrierengine.hpp" />
     <ClInclude Include="ql\pricingengines\basket\all.hpp" />
+    <ClInclude Include="ql\pricingengines\basket\bachelierspreadengine.hpp" />
     <ClInclude Include="ql\pricingengines\basket\bjerksundstenslandspreadengine.hpp" />
     <ClInclude Include="ql\pricingengines\basket\choibasketengine.hpp" />
     <ClInclude Include="ql\pricingengines\basket\denglizhoubasketengine.hpp" />
@@ -2488,6 +2490,7 @@
     <ClCompile Include="ql\methods\finitedifferences\utilities\fdmtimedepdirichletboundary.cpp" />
     <ClCompile Include="ql\methods\finitedifferences\utilities\gbsmrndcalculator.cpp" />
     <ClCompile Include="ql\methods\finitedifferences\utilities\hestonrndcalculator.cpp" />
+    <ClCompile Include="ql\methods\finitedifferences\utilities\hestonsmallsigmaexpansion.cpp" />
     <ClCompile Include="ql\methods\finitedifferences\utilities\localvolrndcalculator.cpp" />
     <ClCompile Include="ql\methods\finitedifferences\utilities\riskneutraldensitycalculator.cpp" />
     <ClCompile Include="ql\methods\finitedifferences\utilities\smilesectionrndcalculator.cpp" />
@@ -2650,6 +2653,7 @@
     <ClCompile Include="ql\pricingengines\barrier\fdhestondoublebarrierengine.cpp" />
     <ClCompile Include="ql\pricingengines\barrier\fdhestonrebateengine.cpp" />
     <ClCompile Include="ql\pricingengines\barrier\mcbarrierengine.cpp" />
+    <ClCompile Include="ql\pricingengines\basket\bachelierspreadengine.cpp" />
     <ClCompile Include="ql\pricingengines\basket\bjerksundstenslandspreadengine.cpp" />
     <ClCompile Include="ql\pricingengines\basket\choibasketengine.cpp" />
     <ClCompile Include="ql\pricingengines\basket\denglizhoubasketengine.cpp" />

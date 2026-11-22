@@ -21,6 +21,7 @@
 #include <ql/pricingengines/blackcalculator.hpp>
 #include <ql/instruments/payoffs.hpp>
 #include <ql/math/comparison.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
 #include <cmath>
 
 using namespace QuantLib;
@@ -416,9 +417,20 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityGreeks) {
                        << "gammaForward=" << gammaForward << " gamma=" << gamma);
         }
 
-        // Vega should be zero (no vol sensitivity)
-        if (std::fabs(vega) > tolerance) {
-            BOOST_ERROR("BlackCalculator " << testCase.description 
+        // Away from the money, vega should be zero (no vol sensitivity).
+        // At the money the Black price is linear in stdDev near 0, so the
+        // correct zero-vol vega is the nonzero discount*forward*phi(0)*
+        // sqrt(maturity), not zero.
+        if (close_enough(testCase.strike, forward)) {
+            Real expectedAtmVega = discount * forward * std::sqrt(maturity) *
+                CumulativeNormalDistribution().derivative(0.0);
+            if (std::fabs(vega - expectedAtmVega) > tolerance) {
+                BOOST_ERROR("BlackCalculator " << testCase.description
+                           << " ATM vega with zero volatility should be "
+                           << expectedAtmVega << ", got " << vega);
+            }
+        } else if (std::fabs(vega) > tolerance) {
+            BOOST_ERROR("BlackCalculator " << testCase.description
                        << " vega should be zero with zero volatility: " << vega);
         }
 
@@ -477,6 +489,78 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityGreeks) {
     // Delta should be close to 0.5 for ATM
     if (std::fabs(deltaSmallVol - discount * 0.5) > 0.1) {
         BOOST_ERROR("BlackCalculator ATM delta with small vol unreasonable: " << deltaSmallVol);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityVegaNonVanillaPayoffs) {
+    BOOST_TEST_MESSAGE(
+        "Testing BlackCalculator ATM zero-volatility vega for non-vanilla payoffs...");
+
+    // Regression test: the ATM zero-stdDev branch of vega() once hardcoded
+    // the plain-vanilla-only closed form discount*forward*phi(0)*sqrt(T),
+    // which is wrong for other StrikedTypePayoff types that this same
+    // (non-virtual, payoff-polymorphic) calculator supports. Checking
+    // against closed forms derived independently from the general formula
+    // (temp2 = DalphaDsigma*forward + DbetaDsigma*x, with temp=0 at the
+    // degenerate ATM limit), not from the production code itself.
+    Real forward = 100.0;
+    Real discount = 0.97;
+    Real maturity = 2.0;
+    Real stdDev = 0.0;
+    Real phi0 = CumulativeNormalDistribution().derivative(0.0);
+    Real tolerance = 1e-10;
+
+    // CashOrNothingPayoff: DalphaDd1_=0, DbetaDd2_=+-n_d2_, x_=cashPayoff.
+    // vega = discount*sqrt(T)*0.5*(0*forward - DbetaDd2_*cashPayoff).
+    {
+        Real cashPayoff = 15.0;
+        ext::shared_ptr<StrikedTypePayoff> payoff =
+            ext::make_shared<CashOrNothingPayoff>(Option::Call, forward, cashPayoff);
+        BlackCalculator calc(payoff, forward, stdDev, discount);
+        Real expected = -0.5 * discount * std::sqrt(maturity) * phi0 * cashPayoff;
+        Real calculated = calc.vega(maturity);
+        if (std::fabs(calculated - expected) > tolerance) {
+            BOOST_ERROR("BlackCalculator ATM zero-vol vega for CashOrNothingPayoff "
+                        "Call: expected " << expected << ", got " << calculated);
+        }
+    }
+    {
+        Real cashPayoff = 15.0;
+        ext::shared_ptr<StrikedTypePayoff> payoff =
+            ext::make_shared<CashOrNothingPayoff>(Option::Put, forward, cashPayoff);
+        BlackCalculator calc(payoff, forward, stdDev, discount);
+        Real expected = 0.5 * discount * std::sqrt(maturity) * phi0 * cashPayoff;
+        Real calculated = calc.vega(maturity);
+        if (std::fabs(calculated - expected) > tolerance) {
+            BOOST_ERROR("BlackCalculator ATM zero-vol vega for CashOrNothingPayoff "
+                        "Put: expected " << expected << ", got " << calculated);
+        }
+    }
+
+    // AssetOrNothingPayoff: DalphaDd1_=+-n_d1_, DbetaDd2_=0, x_=strike_
+    // (==forward_ at the money).
+    // vega = discount*sqrt(T)*0.5*DalphaDd1_*forward.
+    {
+        ext::shared_ptr<StrikedTypePayoff> payoff =
+            ext::make_shared<AssetOrNothingPayoff>(Option::Call, forward);
+        BlackCalculator calc(payoff, forward, stdDev, discount);
+        Real expected = 0.5 * discount * std::sqrt(maturity) * phi0 * forward;
+        Real calculated = calc.vega(maturity);
+        if (std::fabs(calculated - expected) > tolerance) {
+            BOOST_ERROR("BlackCalculator ATM zero-vol vega for AssetOrNothingPayoff "
+                        "Call: expected " << expected << ", got " << calculated);
+        }
+    }
+    {
+        ext::shared_ptr<StrikedTypePayoff> payoff =
+            ext::make_shared<AssetOrNothingPayoff>(Option::Put, forward);
+        BlackCalculator calc(payoff, forward, stdDev, discount);
+        Real expected = -0.5 * discount * std::sqrt(maturity) * phi0 * forward;
+        Real calculated = calc.vega(maturity);
+        if (std::fabs(calculated - expected) > tolerance) {
+            BOOST_ERROR("BlackCalculator ATM zero-vol vega for AssetOrNothingPayoff "
+                        "Put: expected " << expected << ", got " << calculated);
+        }
     }
 }
 

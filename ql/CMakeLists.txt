@@ -524,6 +524,7 @@ set(QL_SOURCES
     methods/finitedifferences/utilities/fdmtimedepdirichletboundary.cpp
     methods/finitedifferences/utilities/gbsmrndcalculator.cpp
     methods/finitedifferences/utilities/hestonrndcalculator.cpp
+    methods/finitedifferences/utilities/hestonsmallsigmaexpansion.cpp
     methods/finitedifferences/utilities/localvolrndcalculator.cpp
     methods/finitedifferences/utilities/riskneutraldensitycalculator.cpp
     methods/finitedifferences/utilities/smilesectionrndcalculator.cpp
@@ -688,6 +689,7 @@ set(QL_SOURCES
     pricingengines/barrier/fdhestondoublebarrierengine.cpp
     pricingengines/barrier/fdhestonrebateengine.cpp
     pricingengines/barrier/mcbarrierengine.cpp
+    pricingengines/basket/bachelierspreadengine.cpp
     pricingengines/basket/bjerksundstenslandspreadengine.cpp
     pricingengines/basket/choibasketengine.cpp
     pricingengines/basket/vectorbsmprocessextractor.cpp
@@ -1738,6 +1740,7 @@ set(QL_HEADERS
     methods/finitedifferences/utilities/fdmtimedepdirichletboundary.hpp
     methods/finitedifferences/utilities/gbsmrndcalculator.hpp
     methods/finitedifferences/utilities/hestonrndcalculator.hpp
+    methods/finitedifferences/utilities/hestonsmallsigmaexpansion.hpp
     methods/finitedifferences/utilities/localvolrndcalculator.hpp
     methods/finitedifferences/utilities/riskneutraldensitycalculator.hpp
     methods/finitedifferences/utilities/smilesectionrndcalculator.hpp
@@ -1949,6 +1952,7 @@ set(QL_HEADERS
     pricingengines/barrier/fdhestondoublebarrierengine.hpp
     pricingengines/barrier/fdhestonrebateengine.hpp
     pricingengines/barrier/mcbarrierengine.hpp
+    pricingengines/basket/bachelierspreadengine.hpp
     pricingengines/basket/bjerksundstenslandspreadengine.hpp
     pricingengines/basket/choibasketengine.hpp
     pricingengines/basket/vectorbsmprocessextractor.hpp
