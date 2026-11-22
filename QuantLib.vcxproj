@@ -510,6 +510,7 @@
   <ItemGroup>
     <ClInclude Include="ql\cashflows\all.hpp" />
     <ClInclude Include="ql\cashflows\averagebmacoupon.hpp" />
+    <ClInclude Include="ql\cashflows\backwardlookingvariancetime.hpp" />
     <ClInclude Include="ql\cashflows\blackovernightindexedcouponpricer.hpp" />
     <ClInclude Include="ql\cashflows\capflooredcoupon.hpp" />
     <ClInclude Include="ql\cashflows\capflooredinflationcoupon.hpp" />
@@ -1981,6 +1982,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ql\cashflows\averagebmacoupon.cpp" />
+    <ClCompile Include="ql\cashflows\backwardlookingvariancetime.cpp" />
     <ClCompile Include="ql\cashflows\blackovernightindexedcouponpricer.cpp" />
     <ClCompile Include="ql\cashflows\capflooredcoupon.cpp" />
     <ClCompile Include="ql\cashflows\capflooredinflationcoupon.cpp" />

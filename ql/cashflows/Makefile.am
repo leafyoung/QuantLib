@@ -5,6 +5,7 @@ this_includedir=${includedir}/${subdir}
 this_include_HEADERS = \
     all.hpp \
     averagebmacoupon.hpp \
+    backwardlookingvariancetime.hpp \
     blackovernightindexedcouponpricer.hpp \
     capflooredcoupon.hpp \
     capflooredinflationcoupon.hpp \
@@ -43,6 +44,7 @@ this_include_HEADERS = \
 
 cpp_files = \
     averagebmacoupon.cpp \
+    backwardlookingvariancetime.cpp \
     blackovernightindexedcouponpricer.cpp \
     capflooredcoupon.cpp \
     capflooredinflationcoupon.cpp \
