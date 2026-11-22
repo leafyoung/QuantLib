@@ -2853,8 +2853,7 @@ BOOST_AUTO_TEST_CASE(testPearsonSpreadEngineVanillaLimit) {
 BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_TEST_MESSAGE("Testing Bachelier spread engine...");
 
-    const Date today(25, October, 2026);
-    Settings::instance().evaluationDate() = today;
+    const Date today = Settings::instance().evaluationDate();
     const DayCounter dc = Actual365Fixed();
     const Date maturity = today + 180;
     const Time t = dc.yearFraction(today, maturity);
@@ -2862,15 +2861,17 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     const Handle<YieldTermStructure> r(flatRate(today, 0.05, dc));
     const DiscountFactor df = r->discount(maturity);
     const Real s1 = 105.0, s2 = 100.0;
-    // the second process has its own dividend and risk-free curves
-    const Handle<YieldTermStructure> q(flatRate(today, 0.03, dc));
-    const Handle<YieldTermStructure> r2(flatRate(today, 0.04, dc));
-    const Handle<YieldTermStructure> q2(flatRate(today, 0.01, dc));
+    // the second process has its own dividend and risk-free curves; every curve and volatility
+    // surface except the first risk-free curve has a different day counter, which pins that the
+    // time to maturity comes from the first process's risk-free curve
+    const Handle<YieldTermStructure> q(flatRate(today, 0.03, Actual360()));
+    const Handle<YieldTermStructure> r2(flatRate(today, 0.04, Actual360()));
+    const Handle<YieldTermStructure> q2(flatRate(today, 0.01, Actual360()));
     const auto makeProcess = [&](Real spot, const Handle<YieldTermStructure>& dividend,
                                  const Handle<YieldTermStructure>& riskFree) {
         return ext::make_shared<BlackScholesMertonProcess>(
             Handle<Quote>(ext::make_shared<SimpleQuote>(spot)), dividend, riskFree,
-            Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
+            Handle<BlackVolTermStructure>(flatVol(today, 0.2, Actual360())));
     };
     const auto makeFirst = [&](Real spot) { return makeProcess(spot, q, r); };
     const auto makeSecond = [&](Real spot) { return makeProcess(spot, q2, r2); };
@@ -2909,19 +2910,24 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
 
     // rho = 1 with equal volatilities leaves a deterministic spread
     const Real intrinsic = df * std::max<Real>(g1 - g2 - 3.0, 0.0);
-    BOOST_CHECK_MESSAGE(std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
+    BOOST_CHECK_MESSAGE(
+        std::abs(price(Option::Call, 3.0, 10.0, 10.0, 1.0) - intrinsic) <= tolerance,
                         "deterministic spread failed");
 
-    // nearly equal volatilities at rho = 1: the naive combination s1^2 + s2^2 - 2 s1 s2 rounds
-    // to a negative number here, the spread is normal with volatility |vol1 - vol2|
+    // nearly equal volatilities a, b at rho = 1: the naive combination a^2 + b^2 - 2ab rounds to
+    // a negative number here, while the spread is normal with volatility |a - b|. The strike 3.0
+    // is deep in the money, so only the at-the-forward strike separates the correct variance from
+    // a clamped or absolute-valued naive one.
     {
         const Real a = 15.726632108963026, b = 15.72663221349127;
-        const Real expected = bachelierBlackFormula(Option::Call, 3.0, g1 - g2,
-                                                    std::abs(a - b) * std::sqrt(t), df);
-        const Real calculated = price(Option::Call, 3.0, a, b, 1.0);
-        BOOST_CHECK_MESSAGE(std::isfinite(calculated) && std::abs(calculated - expected) <= tolerance,
-                            "nearly equal volatilities failed: " << calculated << " vs "
-                            << expected);
+        for (Real strike : std::vector<Real>{3.0, g1 - g2}) {
+            const Real expected = bachelierBlackFormula(Option::Call, strike, g1 - g2,
+                                                        std::abs(a - b) * std::sqrt(t), df);
+            const Real calculated = price(Option::Call, strike, a, b, 1.0);
+            BOOST_CHECK_MESSAGE(std::abs(calculated - expected) <= tolerance,
+                                "nearly equal volatilities failed for strike " << strike << ": "
+                                << calculated << " vs " << expected);
+        }
     }
 
     // zero volatilities leave the discounted intrinsic value
@@ -2951,7 +2957,7 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                  const Handle<YieldTermStructure>& riskFree) {
             return ext::make_shared<BlackScholesMertonProcess>(
                 Handle<Quote>(spot), dividend, riskFree,
-                Handle<BlackVolTermStructure>(flatVol(today, 0.2, dc)));
+                Handle<BlackVolTermStructure>(flatVol(today, 0.2, Actual360())));
         };
         BasketOption option(ext::make_shared<SpreadBasketPayoff>(
                                 ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
@@ -2996,6 +3002,9 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
     BOOST_CHECK_THROW(BachelierSpreadEngine(nullptr, makeSecond(s2), makeVol(8.0),
                                             makeVol(12.0), 0.0),
                       Error);
+    BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), nullptr, makeVol(8.0),
+                                            makeVol(12.0), 0.0),
+                      Error);
     BOOST_CHECK_THROW(BachelierSpreadEngine(makeFirst(s1), makeSecond(s2), makeVol(8.0),
                                             makeVol(12.0), 1.5),
                       Error);
@@ -3012,13 +3021,15 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
                                    ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                                exercise);
         minBasket.setPricingEngine(engine);
-        BOOST_CHECK_THROW(minBasket.NPV(), Error);
+        BOOST_CHECK_EXCEPTION(minBasket.NPV(), Error,
+                              ExpectedErrorMessage("spread payoff expected"));
         BasketOption cashOrNothing(
             ext::make_shared<SpreadBasketPayoff>(
                 ext::make_shared<CashOrNothingPayoff>(Option::Call, 3.0, 1.0)),
             exercise);
         cashOrNothing.setPricingEngine(engine);
-        BOOST_CHECK_THROW(cashOrNothing.NPV(), Error);
+        BOOST_CHECK_EXCEPTION(cashOrNothing.NPV(), Error,
+                              ExpectedErrorMessage("non-plain payoff given"));
         BasketOption past(ext::make_shared<SpreadBasketPayoff>(
                               ext::make_shared<PlainVanillaPayoff>(Option::Call, 3.0)),
                           ext::make_shared<EuropeanExercise>(today - 30));
@@ -3057,7 +3068,8 @@ BOOST_AUTO_TEST_CASE(testBachelierSpreadEngine) {
         const Real exact = price(Option::Call, strike, vol1, vol2, rho);
         const Real error = 4.0 * stats.errorEstimate();
         BOOST_CHECK_MESSAGE(std::abs(stats.mean() - exact) <= error,
-                            "Monte Carlo mismatch: exact " << exact << ", simulated " << stats.mean()
+                            "Monte Carlo mismatch: exact " << exact << ", simulated "
+                            << stats.mean()
                             << " +/- " << error);
     }
 }

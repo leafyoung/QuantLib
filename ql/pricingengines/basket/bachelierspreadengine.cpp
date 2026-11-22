@@ -57,7 +57,8 @@ namespace QuantLib {
         const Date maturity = exercise->lastDate();
         // Black-Scholes forward of the state variable (spot grown at the
         // risk-free rate net of the dividend yield)
-        auto forward = [&maturity](const ext::shared_ptr<GeneralizedBlackScholesProcess>& p) {
+        auto forward =
+            [&maturity](const ext::shared_ptr<GeneralizedBlackScholesProcess>& p) -> Real {
             return p->stateVariable()->value() / p->riskFreeRate()->discount(maturity) *
                    p->dividendYield()->discount(maturity);
         };

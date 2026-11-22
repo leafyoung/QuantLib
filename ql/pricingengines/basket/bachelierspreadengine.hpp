@@ -45,15 +45,18 @@ namespace QuantLib {
         year, and are passed separately. The time to maturity and the
         discount factor are taken from the first process's risk-free curve
         (reference date and day counter); the second process contributes its
-        forward only, so both processes are expected to share the same
-        reference date and day counter.
+        forward at the maturity date, computed from its own curves. The
+        correlation is fixed at construction.
 
         \ingroup basketengines
 
         \test the correctness of the returned value is tested by
-              put-call parity, the perfectly correlated degenerate cases,
-              the rejection of invalid inputs and Monte Carlo simulations of
-              the two normal forwards.
+              put-call parity, the effective volatility at correlations
+              -1, 0 and 1 (including nearly equal volatilities), zero
+              volatilities, a maturity on the reference date, the
+              rejection of invalid inputs, repricing when each volatility
+              or spot quote changes, the source of the time to maturity
+              and Monte Carlo simulations of the two normal forwards.
     */
     class BachelierSpreadEngine : public BasketOption::engine {
       public:
@@ -66,9 +69,9 @@ namespace QuantLib {
         void calculate() const override;
 
       private:
-        ext::shared_ptr<GeneralizedBlackScholesProcess> process1_, process2_;
-        Handle<Quote> vol1_, vol2_;
-        Real rho_;
+        const ext::shared_ptr<GeneralizedBlackScholesProcess> process1_, process2_;
+        const Handle<Quote> vol1_, vol2_;
+        const Real rho_;
     };
 }
 
