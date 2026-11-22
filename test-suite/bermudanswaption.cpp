@@ -318,16 +318,15 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
         "Testing that G2SwaptionEngine respects the fixed leg's own day "
         "count...");
 
-    // Regression test: G2::swaption built fixed-leg cashflows from
-    // dayCounter.yearFraction() time differences using the TERM
-    // STRUCTURE's day counter, not the swap's own fixed-leg day count --
-    // silently mispricing whenever the two differ. Before this test (and
-    // testG2SwaptionEngineZeroFixedRate below), no test in this suite
-    // exercised G2SwaptionEngine itself (the others only use the FDM and
-    // tree engines), so the bug was never caught here. Parameters
-    // (realistic G2++, Act/360 fixed leg vs an Act/365F curve, the USD
-    // SOFR convention mismatch) reproduce a multi-percent gap before the
-    // fix.
+    // Regression test: G2::swaption must build fixed-leg cashflows from
+    // dayCounter.yearFraction() time differences using the swap's own
+    // fixed-leg day count. Building them on the term structure's day
+    // counter instead silently misprices whenever the two differ, and
+    // missing a fixed-leg day count mismatch is easy because a relative
+    // tolerance that passes on matching day counters says nothing about
+    // the mismatched case. Parameters (realistic G2++, Act/360 fixed leg
+    // vs an Act/365F curve, the USD SOFR convention mismatch) make the
+    // mispricing a multi-percent gap that any sane tolerance rejects.
 
     Date today(15, September, 2016);
     Settings::instance().evaluationDate() = today;
