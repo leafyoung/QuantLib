@@ -54,6 +54,7 @@ set(QL_TEST_SOURCES
     defaultprobabilitycurves.cpp
     digitalcoupon.cpp
     digitaloption.cpp
+    discretebarrieroption.cpp
     distributions.cpp
     dividendoption.cpp
     doublebarrieroption.cpp

@@ -137,6 +137,9 @@
     <ClCompile Include="digitaloption.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="discretebarrieroption.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="distributions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

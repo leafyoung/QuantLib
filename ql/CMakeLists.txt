@@ -679,6 +679,7 @@ set(QL_SOURCES
     pricingengines/asian/turnbullwakemanasianengine.cpp
     pricingengines/barrier/analyticbarrierengine.cpp
     pricingengines/barrier/analyticbinarybarrierengine.cpp
+    pricingengines/barrier/analyticdiscretebarrierengine.cpp
     pricingengines/barrier/analyticdoublebarrierbinaryengine.cpp
     pricingengines/barrier/analyticdoublebarrierengine.cpp
     pricingengines/barrier/analyticpartialtimebarrieroptionengine.cpp
@@ -1943,6 +1944,7 @@ set(QL_HEADERS
     pricingengines/asian/turnbullwakemanasianengine.hpp
     pricingengines/barrier/analyticbarrierengine.hpp
     pricingengines/barrier/analyticbinarybarrierengine.hpp
+    pricingengines/barrier/analyticdiscretebarrierengine.hpp
     pricingengines/barrier/analyticdoublebarrierbinaryengine.hpp
     pricingengines/barrier/analyticdoublebarrierengine.hpp
     pricingengines/barrier/analyticpartialtimebarrieroptionengine.hpp

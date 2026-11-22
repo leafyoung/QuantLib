@@ -55,6 +55,7 @@ QL_TEST_SRCS = \
 	defaultprobabilitycurves.cpp \
 	digitalcoupon.cpp \
 	digitaloption.cpp \
+	discretebarrieroption.cpp \
 	distributions.cpp \
 	dividendoption.cpp \
 	doublebarrieroption.cpp \

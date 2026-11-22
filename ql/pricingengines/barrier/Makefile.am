@@ -6,6 +6,7 @@ this_include_HEADERS = \
     all.hpp \
     analyticbarrierengine.hpp \
     analyticbinarybarrierengine.hpp \
+    analyticdiscretebarrierengine.hpp \
     analyticdoublebarrierbinaryengine.hpp \
     analyticdoublebarrierengine.hpp \
     analyticpartialtimebarrieroptionengine.hpp \
@@ -23,6 +24,7 @@ this_include_HEADERS = \
 cpp_files = \
     analyticbarrierengine.cpp \
     analyticbinarybarrierengine.cpp \
+    analyticdiscretebarrierengine.cpp \
     analyticdoublebarrierbinaryengine.cpp \
     analyticdoublebarrierengine.cpp \
     analyticpartialtimebarrieroptionengine.cpp \
