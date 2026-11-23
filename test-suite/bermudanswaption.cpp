@@ -986,18 +986,15 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
         "Testing G2SwaptionEngine's y-solve bracket on a slow-reverting x "
         "factor...");
 
-    // Regression test: G2::swaption's inner solve for the critical y
-    // state used a bracket scaled to sigmay_ alone (+-max(10*sigmay_,1)),
-    // while x is integrated over a wider, sigmax_-scaled range. The x and
-    // y factors are interchangeable labels for the same G2++ model --
-    // nothing requires x to be the faster-reverting factor -- but when the
-    // slower-reverting factor (smaller reversion speed, larger
-    // accumulated variance) happens to be labeled x (a < b here, so a's
-    // factor reverts more slowly than b's), the required root for y*
-    // falls outside this narrower bracket and the engine threw "root not
-    // bracketed" on a perfectly valid, priceable state. Swapping only the
+    // Regression test: G2::swaption's inner solve for the critical y state
+    // must bracket the root whichever factor carries which label. The x and
+    // y factors are interchangeable labels for the same G2++ model, so a
+    // y-bracket scaled to sigmay_ alone (+-max(10*sigmay_,1)) misses the
+    // root when the slower-reverting factor (smaller reversion speed,
+    // larger accumulated variance) is labeled x, as with a < b here, while
+    // x is integrated over a wider, sigmax_-scaled range. Swapping only the
     // labels (a<->b, sigma<->eta) on the identical model prices the same
-    // state without error, and (being the same model) must give the same
+    // state without error, and being the same model must give the same
     // price.
 
     Date today(15, September, 2016);
@@ -1036,8 +1033,8 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
         swap, ext::make_shared<EuropeanExercise>(start));
 
-    // the slow-reversion factor (a=0.05 < b=0.3) is labeled x: the
-    // documented failing state
+    // the slow-reversion factor (a=0.05 < b=0.3) is labeled x: the labeling
+    // whose y-bracket must widen
     const Real a=0.05, sigma=0.02, b=0.3, eta=0.01, rho=-0.5;
     const ext::shared_ptr<G2> g2Model =
         ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
