@@ -5,6 +5,7 @@ this_includedir=${includedir}/${subdir}
 this_include_HEADERS = \
 	all.hpp \
 	analytic_cont_geom_av_price.hpp \
+	analytic_discr_arith_av_strike_bound.hpp \
 	analytic_discr_geom_av_price.hpp \
 	analytic_discr_geom_av_strike.hpp \
 	choiasianengine.hpp \
@@ -20,6 +21,7 @@ this_include_HEADERS = \
 
 cpp_files = \
 	analytic_cont_geom_av_price.cpp \
+	analytic_discr_arith_av_strike_bound.cpp \
 	analytic_discr_geom_av_price.cpp \
 	analytic_discr_geom_av_strike.cpp \
 	choiasianengine.cpp \

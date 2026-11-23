@@ -31,6 +31,7 @@
 #include <ql/math/integrals/gaussianquadratures.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/asian/analytic_cont_geom_av_price.hpp>
+#include <ql/pricingengines/asian/analytic_discr_arith_av_strike_bound.hpp>
 #include <ql/pricingengines/asian/analytic_discr_geom_av_price.hpp>
 #include <ql/pricingengines/asian/analytic_discr_geom_av_strike.hpp>
 #include <ql/pricingengines/asian/choiasianengine.hpp>
@@ -49,6 +50,7 @@
 #include <ql/time/daycounters/actual360.hpp>
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/utilities/dataformatters.hpp>
+#include <ql/time/calendars/nullcalendar.hpp>
 #include <ql/time/calendars/target.hpp>
 #include <cmath>
 #include <map>
@@ -677,6 +679,491 @@ BOOST_AUTO_TEST_CASE(testAnalyticDiscreteGeometricAverageStrikeNonFlatRates) {
                         std::max(Real(type)*(forward2-average), Real(0.0));
         QL_CHECK_SMALL(option.NPV()-expected, 1e-12);
     }
+}
+
+ext::shared_ptr<GeneralizedBlackScholesProcess> arithmeticAverageStrikeProcess(
+    const Date& today, Real spot, Rate r, Rate q, Volatility vol,
+    const DayCounter& dc = Actual360()) {
+    return ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(ext::make_shared<SimpleQuote>(spot)),
+        Handle<YieldTermStructure>(flatRate(today, q, dc)),
+        Handle<YieldTermStructure>(flatRate(today, r, dc)),
+        Handle<BlackVolTermStructure>(flatVol(today, vol, dc)));
+}
+
+Real arithmeticAverageStrikeBound(const ext::shared_ptr<GeneralizedBlackScholesProcess>& process,
+                                  Option::Type type, const std::vector<Date>& fixingDates,
+                                  Date exerciseDate) {
+    auto payoff = ext::make_shared<PlainVanillaPayoff>(type, 100.0);
+    auto exercise = ext::make_shared<EuropeanExercise>(exerciseDate);
+    DiscreteAveragingAsianOption option(Average::Arithmetic, 0.0, 0, fixingDates, payoff, exercise);
+    option.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteArithmeticAverageStrikeBoundEngine>(process));
+    return option.NPV();
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundForwardStart) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with a single fixing...");
+
+    // With one fixing S_T - A = S_T - S_t1, and the conditioning is exact: the value is
+    // the forward-start Black-Scholes price.
+    Date today = Settings::instance().evaluationDate();
+    Real spot = 100.0, T = 1.0;
+    struct Case { Rate r; Rate q; Volatility sigma; };
+    for (Case c : {Case{0.06, 0.03, 0.20}, Case{0.15, 0.0, 0.35}, Case{-0.05, 0.08, 0.50}}) {
+        auto process = arithmeticAverageStrikeProcess(today, spot, c.r, c.q, c.sigma);
+        for (Integer days : {0, 90, 180, 330, 360}) {
+            Real t1 = days / 360.0;
+            for (Option::Type type : {Option::Call, Option::Put}) {
+                Real expected = spot * std::exp(-c.q * t1) *
+                    blackFormula(type, 1.0, std::exp((c.r - c.q) * (T - t1)),
+                                 c.sigma * std::sqrt(T - t1), std::exp(-c.r * (T - t1)));
+                Real calculated = arithmeticAverageStrikeBound(
+                    process, type, {today + days}, today + 360);
+                QL_CHECK_SMALL(calculated - expected, 1e-11);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundZeroVolatility) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with zero volatility...");
+
+    Date today = Settings::instance().evaluationDate();
+    std::vector<Date> fixingDates = {today + 90, today + 180, today + 360};
+    // r = q makes the deterministic payoff vanish at the money, r != q puts it in or out.
+    for (Rate r : {0.06, 0.03, -0.02}) {
+        for (Volatility vol : {0.0, 1e-14}) {
+            auto process = arithmeticAverageStrikeProcess(today, 100.0, r, 0.03, vol);
+            Real forward = 100.0 * std::exp((r - 0.03) * 1.0);
+            Real average = 100.0 * (std::exp((r - 0.03) * 0.25) + std::exp((r - 0.03) * 0.5) +
+                                    std::exp((r - 0.03) * 1.0)) / 3.0;
+            for (Option::Type type : {Option::Call, Option::Put}) {
+                Real expected = std::exp(-r) *
+                    std::max<Real>(Real(int(type)) * (forward - average), 0.0);
+                Real calculated = arithmeticAverageStrikeBound(
+                    process, type, fixingDates, today + 360);
+                QL_CHECK_SMALL(calculated - expected, 1e-12);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundAtMaturity) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with fixings at maturity...");
+
+    Date today = Settings::instance().evaluationDate();
+    auto process = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, 0.30);
+    // 157 days gives year fractions whose rounding must not leave a spurious variance.
+    for (Integer days : {157, 360}) {
+        for (Size n : {1, 3, 7}) {
+            for (Option::Type type : {Option::Call, Option::Put}) {
+                Real calculated = arithmeticAverageStrikeBound(
+                    process, type, std::vector<Date>(n, today + days), today + days);
+                BOOST_CHECK(std::isfinite(calculated));
+                QL_CHECK_SMALL(calculated, 1e-12);
+            }
+        }
+    }
+    // Some fixings at maturity and one earlier: not degenerate.
+    Real calculated = arithmeticAverageStrikeBound(
+        process, Option::Call, {today + 180, today + 360, today + 360}, today + 360);
+    // Independent evaluation of the same conditioning formula (fixing times 0.5, 1, 1).
+    QL_CHECK_CLOSE(calculated, 2.959664328, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundParity) {
+    BOOST_TEST_MESSAGE("Testing put-call parity of the arithmetic average-strike bound...");
+
+    Date today = Settings::instance().evaluationDate();
+    std::vector<Date> fixingDates = {today + 30, today + 120, today + 200, today + 300,
+                                     today + 360};
+    struct Case { Rate r; Rate q; Volatility sigma; };
+    // The middle cases put the call deep in and out of the money.
+    for (Case c : {Case{0.06, 0.03, 0.20}, Case{0.05, 0.05, 0.40}, Case{0.30, 0.0, 0.10},
+                   Case{-0.20, 0.10, 0.10}, Case{0.02, 0.01, 1.50}}) {
+        Real spot = 100.0;
+        auto process = arithmeticAverageStrikeProcess(today, spot, c.r, c.q, c.sigma);
+        Real average = 0.0;
+        for (Date date : fixingDates)
+            average += spot * std::exp((c.r - c.q) * (date - today) / 360.0) / 5.0;
+        Real expected = std::exp(-c.r) * (spot * std::exp(c.r - c.q) - average);
+        Real call = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        Real put = arithmeticAverageStrikeBound(
+            process, Option::Put, fixingDates, today + 360);
+        BOOST_CHECK(call >= 0.0 && put >= 0.0);
+        QL_CHECK_SMALL(call - put - expected, 1e-11);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundDeepMoneyness) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound at deep moneyness...");
+
+    // Parity holds for any root, so the values themselves are checked here against an
+    // independent evaluation of the conditioning formula (fixing times in days / 360).
+    Date today = Settings::instance().evaluationDate();
+    std::vector<Date> fixingDates = {today + 30, today + 120, today + 200, today + 300,
+                                     today + 360};
+    struct Case { Rate r; Rate q; Real call; Real put; };
+    for (Case c : {Case{0.30, 0.0, 11.912210358, 0.006322755},
+                   Case{-0.20, 0.10, 0.006734002, 13.250574013}}) {
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, c.r, c.q, 0.10);
+        Real call = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        Real put = arithmeticAverageStrikeBound(
+            process, Option::Put, fixingDates, today + 360);
+        QL_CHECK_SMALL(call - c.call, 1e-8);
+        QL_CHECK_SMALL(put - c.put, 1e-8);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundSaturatedRoot) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with saturated roots...");
+
+    // The root of the conditional expectation lies beyond the search bracket, so the
+    // normal values are 0 or 1 and the bound is the discounted forward spread (or zero).
+    // Reference values come from an independent 60-digit evaluation of the formula.
+    Date today = Settings::instance().evaluationDate();
+    struct Case {
+        Rate r; Rate q; Volatility sigma; std::vector<Integer> days; Real call; Real put;
+    };
+    // The first two roots saturate at the upper end, the last two at the lower end.
+    for (const Case& c : {Case{-0.5, 0.5, 0.001, {359, 359, 360}, 0.0, 0.1124766377689},
+                          Case{0.5, 1.0, 0.01, {0, 100, 200}, 0.0, 16.33989301194},
+                          Case{0.5, -0.5, 0.001, {0, 1, 2}, 104.0501897074, 0.0},
+                          Case{0.5, -0.5, 0.001, {359, 359, 360}, 0.3048950923785, 0.0}}) {
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, c.r, c.q, c.sigma);
+        std::vector<Date> fixingDates;
+        Real averageForward = 0.0;
+        for (Integer d : c.days) {
+            fixingDates.push_back(today + d);
+            averageForward += 100.0 * std::exp((c.r - c.q) * d / 360.0) / c.days.size();
+        }
+        Real call = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        Real put = arithmeticAverageStrikeBound(
+            process, Option::Put, fixingDates, today + 360);
+        QL_CHECK_SMALL(call - c.call, 1e-10);
+        QL_CHECK_SMALL(put - c.put, 1e-10);
+        Real forward = 100.0 * std::exp(c.r - c.q);
+        QL_CHECK_SMALL(call - put - std::exp(-c.r) * (forward - averageForward), 1e-11);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundVsGeometric) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound against the geometric one...");
+
+    // A >= G pathwise, so the arithmetic call is below the geometric call, and the bound
+    // lies below the arithmetic call.
+    Date today = Settings::instance().evaluationDate();
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+    std::vector<Date> fixingDates = {today + 90, today + 180, today + 270, today + 360};
+    for (Volatility sigma : {0.10, 0.30, 0.60}) {
+        auto payoff = ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+        DiscreteAveragingAsianOption geometric(Average::Geometric, 1.0, 0, fixingDates, payoff,
+                                               exercise);
+        geometric.setPricingEngine(geometricAverageStrikeEngine(today, 0.06, 0.03, sigma));
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, sigma);
+        Real bound = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        BOOST_CHECK(bound < geometric.NPV());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundAccuracy) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound against Monte Carlo...");
+
+    // Reference values: MCDiscreteArithmeticASEngine with Sobol sequences, Brownian bridge and
+    // 2^20-1 samples (a snapshot of that engine's output for these settings, not regenerable
+    // from this file); spot 97, r = 5%, q = 2%, Actual/360, maturity in 360 days, n equally
+    // spaced fixings (the only fixing of n = 1 is at 180 days).
+    struct Reference { Volatility sigma; Size n; Option::Type type; Real mc; };
+    std::vector<Reference> references = {
+        {0.2, 1, Option::Call, 6.0574733},
+        {0.2, 1, Option::Put, 4.6419401},
+        {0.2, 4, Option::Call, 4.0707215},
+        {0.2, 4, Option::Put, 3.0103858},
+        {0.2, 10, Option::Call, 4.6768336},
+        {0.2, 10, Option::Put, 3.4053749},
+        {0.2, 52, Option::Call, 4.9998598},
+        {0.2, 52, Option::Put, 3.6147668},
+        {0.4, 1, Option::Call, 11.335664},
+        {0.4, 1, Option::Put, 9.9202248},
+        {0.4, 4, Option::Call, 7.5563845},
+        {0.4, 4, Option::Put, 6.4961098},
+        {0.4, 10, Option::Call, 8.6489448},
+        {0.4, 10, Option::Put, 7.3775482},
+        {0.4, 52, Option::Call, 9.2302789},
+        {0.4, 52, Option::Put, 7.8453515},
+        {0.8, 1, Option::Call, 21.729781},
+        {0.8, 1, Option::Put, 20.315715},
+        {0.8, 4, Option::Call, 14.431542},
+        {0.8, 4, Option::Put, 13.372169},
+        {0.8, 10, Option::Call, 16.469556},
+        {0.8, 10, Option::Put, 15.199148},
+        {0.8, 52, Option::Call, 17.552828},
+        {0.8, 52, Option::Put, 16.168913}
+    };
+    Date today = Settings::instance().evaluationDate();
+    for (const Reference& ref : references) {
+        std::vector<Date> fixingDates;
+        for (Size i = 1; i <= ref.n; ++i)
+            fixingDates.push_back(
+                today + (ref.n == 1 ? 180 : Integer(std::lround(360.0 * i / ref.n))));
+        auto process = arithmeticAverageStrikeProcess(today, 97.0, 0.05, 0.02, ref.sigma);
+        Real bound = arithmeticAverageStrikeBound(process, ref.type, fixingDates, today + 360);
+        // The bound lies below the price, so it exceeds the reference by at most its noise, and
+        // falls short of it by at most the measured amount (0.013%, 0.044%, 0.173%).
+        Real shortfall = (ref.sigma < 0.3 ? 2e-4 : (ref.sigma < 0.6 ? 6e-4 : 2.5e-3));
+        BOOST_TEST_CONTEXT("sigma=" << ref.sigma << ", fixings=" << ref.n
+                                    << ", type=" << int(ref.type)) {
+            BOOST_CHECK(bound <= ref.mc * (1.0 + 5e-4));
+            BOOST_CHECK(bound >= ref.mc * (1.0 - shortfall));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundVsLiveMonteCarlo) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound against a fresh simulation...");
+
+    Date today = Settings::instance().evaluationDate();
+    auto process = arithmeticAverageStrikeProcess(today, 97.0, 0.05, 0.02, 0.40);
+    std::vector<Date> fixingDates;
+    for (Integer i = 1; i <= 10; ++i)
+        fixingDates.push_back(today + 36 * i);
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        auto payoff = ext::make_shared<PlainVanillaPayoff>(type, 100.0);
+        DiscreteAveragingAsianOption option(Average::Arithmetic, 0.0, 0, fixingDates, payoff,
+                                            exercise);
+        option.setPricingEngine(MakeMCDiscreteArithmeticASEngine<LowDiscrepancy>(process)
+                                    .withSamples(65535).withBrownianBridge(true));
+        Real simulated = option.NPV();
+        Real bound = arithmeticAverageStrikeBound(process, type, fixingDates, today + 360);
+        BOOST_CHECK(bound <= simulated * (1.0 + 1e-3));
+        BOOST_CHECK(bound >= simulated * (1.0 - 2e-3));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundNonFlatCurves) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound on non-flat curves...");
+
+    Date today = Settings::instance().evaluationDate();
+    DayCounter dc = Actual360();
+    // The zero rate to maturity is 6%, but the rate to 180 days is 1%.
+    auto riskFree = ext::make_shared<ZeroCurve>(
+        std::vector<Date>({today, today + 180, today + 360}),
+        std::vector<Rate>({0.01, 0.01, 0.06}), dc);
+    auto process = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(ext::make_shared<SimpleQuote>(100.0)),
+        Handle<YieldTermStructure>(flatRate(today, 0.03, dc)),
+        Handle<YieldTermStructure>(riskFree),
+        Handle<BlackVolTermStructure>(ext::make_shared<BlackVarianceCurve>(
+            today, std::vector<Date>({today + 180, today + 360}),
+            std::vector<Volatility>({0.15, 0.25}), dc)));
+    // Independent evaluation of the formula (covariance-matrix form, scipy root finder) with
+    // forwards 100*exp(-0.03*t)/D(t), D(t) = exp(-z(t)*t) and z linear in t, and volatility 25%:
+    // the volatility to the exercise date, not the one to the fixings, is used.
+    struct Reference { std::vector<Integer> days; Real call; Real put; };
+    for (const Reference& ref : {
+             Reference{{90, 180, 270, 360}, 5.75640014983199, 3.3420867320791476},
+             Reference{{0, 120, 300}, 7.673433853992328, 4.94749556899317},
+             Reference{{180}, 8.773968221295595, 4.968796857039586}}) {
+        std::vector<Date> fixingDates;
+        for (Integer days : ref.days)
+            fixingDates.push_back(today + days);
+        QL_CHECK_SMALL(arithmeticAverageStrikeBound(
+                           process, Option::Call, fixingDates, today + 360) - ref.call, 1e-10);
+        QL_CHECK_SMALL(arithmeticAverageStrikeBound(
+                           process, Option::Put, fixingDates, today + 360) - ref.put, 1e-10);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundSmallVolatility) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with a tiny volatility...");
+
+    // With r = q and the only fixing today the option is an at-the-money forward-start call
+    // worth about 0.4*sigma*S: the value must follow it down to the smallest volatilities.
+    Date today = Settings::instance().evaluationDate();
+    for (Volatility vol : {1e-4, 1e-6, 1e-9}) {
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, 0.03, 0.03, vol);
+        for (Option::Type type : {Option::Call, Option::Put}) {
+            Real expected = blackFormula(type, 100.0, 100.0, vol, std::exp(-0.03));
+            Real calculated = arithmeticAverageStrikeBound(
+                process, type, {today}, today + 360);
+            QL_CHECK_SMALL(calculated - expected, 1e-12);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundLargeVolatility) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound with a huge volatility...");
+
+    Date today = Settings::instance().evaluationDate();
+    std::vector<Date> fixingDates = {today + 90, today + 180, today + 270, today + 360};
+    Real average = 0.0;
+    for (Date date : fixingDates)
+        average += 100.0 * std::exp(0.03 * (date - today) / 360.0) / 4.0;
+    Real parity = std::exp(-0.06) * (100.0 * std::exp(0.03) - average);
+    for (Volatility vol : {10.0, 40.0}) {
+        auto process = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, vol);
+        Real call = arithmeticAverageStrikeBound(
+            process, Option::Call, fixingDates, today + 360);
+        Real put = arithmeticAverageStrikeBound(
+            process, Option::Put, fixingDates, today + 360);
+        BOOST_CHECK(std::isfinite(call) && std::isfinite(put));
+        // (S_T - A)+ <= S_T and (A - S_T)+ <= A.
+        BOOST_CHECK(call >= 0.0 && call <= 100.0 * std::exp(-0.03));
+        BOOST_CHECK(put >= 0.0 && put <= std::exp(-0.06) * average);
+        QL_CHECK_SMALL(call - put - parity, 1e-9);
+        if (vol == 10.0) {
+            // Independent evaluation (covariance-matrix form, scipy root finder).
+            QL_CHECK_SMALL(call - 70.95132345327404, 1e-7);
+            QL_CHECK_SMALL(put - 69.86906395237901, 1e-7);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundReferenceDates) {
+    BOOST_TEST_MESSAGE("Testing the time origin of the arithmetic average-strike bound...");
+
+    // The volatility reference date is 90 days after the curves' one. The first fixing carries no
+    // variance weight, so the value depends only on time differences between fixings and is
+    // invariant to that date; the forwards come from the curves at the fixing dates. A fixing
+    // before the volatility reference date is refused.
+    Date today = Settings::instance().evaluationDate();
+    DayCounter dc = Actual360();
+    auto process = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(ext::make_shared<SimpleQuote>(100.0)),
+        Handle<YieldTermStructure>(flatRate(today, 0.03, dc)),
+        Handle<YieldTermStructure>(flatRate(today, 0.06, dc)),
+        Handle<BlackVolTermStructure>(ext::make_shared<BlackConstantVol>(
+            today + 90, NullCalendar(), 0.30, dc)));
+    std::vector<Date> fixingDates = {today + 90, today + 180, today + 360};
+    // Independent evaluation with fixing times 0, 0.25, 0.75 and maturity time 0.75.
+    QL_CHECK_SMALL(arithmeticAverageStrikeBound(
+                       process, Option::Call, fixingDates, today + 360) - 6.359126532502602, 1e-10);
+    QL_CHECK_SMALL(arithmeticAverageStrikeBound(
+                       process, Option::Put, fixingDates, today + 360) - 5.157817725565412, 1e-10);
+    auto sameOrigin = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, 0.30);
+    QL_CHECK_SMALL(arithmeticAverageStrikeBound(
+                       process, Option::Call, fixingDates, today + 360) -
+                       arithmeticAverageStrikeBound(
+                           sameOrigin, Option::Call, fixingDates, today + 360), 1e-12);
+    BOOST_CHECK_EXCEPTION(arithmeticAverageStrikeBound(process, Option::Call,
+                                                       {today + 30, today + 360}, today + 360),
+                          Error, ExpectedErrorMessage("precedes the volatility reference date"));
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundObservables) {
+    BOOST_TEST_MESSAGE("Testing that the arithmetic average-strike bound reacts to its inputs...");
+
+    Date today = Settings::instance().evaluationDate();
+    DayCounter dc = Actual360();
+    auto spot = ext::make_shared<SimpleQuote>(100.0);
+    auto rRate = ext::make_shared<SimpleQuote>(0.06);
+    auto qRate = ext::make_shared<SimpleQuote>(0.03);
+    auto vol = ext::make_shared<SimpleQuote>(0.25);
+    auto process = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(spot), Handle<YieldTermStructure>(flatRate(today, qRate, dc)),
+        Handle<YieldTermStructure>(flatRate(today, rRate, dc)),
+        Handle<BlackVolTermStructure>(flatVol(today, vol, dc)));
+    std::vector<Date> fixingDates = {today + 90, today + 180, today + 270, today + 360};
+    auto payoff = ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+    DiscreteAveragingAsianOption option(Average::Arithmetic, 0.0, 0, fixingDates, payoff,
+                                        exercise);
+    option.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteArithmeticAverageStrikeBoundEngine>(process));
+
+    struct Input { ext::shared_ptr<SimpleQuote> quote; Real value; };
+    for (const Input& input : {Input{spot, 110.0}, Input{rRate, 0.02}, Input{qRate, 0.07},
+                               Input{vol, 0.45}}) {
+        Real oldValue = input.quote->value();
+        Real before = option.NPV();
+        input.quote->setValue(input.value);
+        Real after = option.NPV();
+        BOOST_CHECK(std::fabs(after - before) > 1e-3);
+        // The recalculated value is the one a fresh engine returns.
+        auto fresh = arithmeticAverageStrikeProcess(today, spot->value(), rRate->value(),
+                                                    qRate->value(), vol->value());
+        QL_CHECK_SMALL(after - arithmeticAverageStrikeBound(
+                                   fresh, Option::Call, fixingDates, today + 360), 1e-12);
+        input.quote->setValue(oldValue);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticDiscreteArithmeticAverageStrikeBoundRefusals) {
+    BOOST_TEST_MESSAGE("Testing the arithmetic average-strike bound on unsupported options...");
+
+    Date today = Settings::instance().evaluationDate();
+    auto process = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, 0.20);
+    auto engine = ext::make_shared<AnalyticDiscreteArithmeticAverageStrikeBoundEngine>(process);
+    auto payoff = ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+    auto exercise = ext::make_shared<EuropeanExercise>(today + 360);
+    std::vector<Date> fixingDates = {today + 180, today + 360};
+
+    DiscreteAveragingAsianOption pastFixings(Average::Arithmetic, 100.0, 1, fixingDates, payoff,
+                                             exercise);
+    pastFixings.setPricingEngine(engine);
+    BOOST_CHECK_EXCEPTION(pastFixings.NPV(), Error,
+                          ExpectedErrorMessage("past fixings currently not managed"));
+
+    DiscreteAveragingAsianOption geometric(Average::Geometric, 1.0, 0, fixingDates, payoff,
+                                           exercise);
+    geometric.setPricingEngine(engine);
+    BOOST_CHECK_EXCEPTION(geometric.NPV(), Error,
+                          ExpectedErrorMessage("not an arithmetic average option"));
+
+    auto american = ext::make_shared<AmericanExercise>(today, today + 360);
+    DiscreteAveragingAsianOption americanOption(Average::Arithmetic, 0.0, 0, fixingDates, payoff,
+                                                american);
+    americanOption.setPricingEngine(engine);
+    BOOST_CHECK_EXCEPTION(americanOption.NPV(), Error,
+                          ExpectedErrorMessage("not an European option"));
+
+    auto assetOrNothing = ext::make_shared<AssetOrNothingPayoff>(Option::Call, 100.0);
+    DiscreteAveragingAsianOption nonPlain(Average::Arithmetic, 0.0, 0, fixingDates,
+                                          assetOrNothing, exercise);
+    nonPlain.setPricingEngine(engine);
+    BOOST_CHECK_EXCEPTION(nonPlain.NPV(), Error,
+                          ExpectedErrorMessage("non-plain payoff given"));
+
+    auto negativeSpot = arithmeticAverageStrikeProcess(today, -1.0, 0.06, 0.03, 0.20);
+    DiscreteAveragingAsianOption negative(Average::Arithmetic, 0.0, 0, fixingDates, payoff,
+                                          exercise);
+    negative.setPricingEngine(
+        ext::make_shared<AnalyticDiscreteArithmeticAverageStrikeBoundEngine>(negativeSpot));
+    BOOST_CHECK_EXCEPTION(negative.NPV(), Error,
+                          ExpectedErrorMessage("positive underlying value required"));
+
+    DiscreteAveragingAsianOption noFixings(Average::Arithmetic, 0.0, 0, {today - 5}, payoff,
+                                           exercise);
+    noFixings.setPricingEngine(engine);
+    BOOST_CHECK_EXCEPTION(noFixings.NPV(), Error, ExpectedErrorMessage("no future fixings"));
+
+    DiscreteAveragingAsianOption late(Average::Arithmetic, 0.0, 0, {today + 180, today + 400},
+                                      payoff, exercise);
+    late.setPricingEngine(engine);
+    BOOST_CHECK_EXCEPTION(late.NPV(), Error,
+                          ExpectedErrorMessage("after the exercise date"));
+
+    // Fixings before the curves' reference date are dropped, the others are kept.
+    std::vector<Date> withPast = {today - 5, today + 180};
+    QL_CHECK_SMALL(arithmeticAverageStrikeBound(process, Option::Call, withPast, today + 360) -
+                       arithmeticAverageStrikeBound(process, Option::Call, {today + 180},
+                                                    today + 360), 1e-12);
+
+    auto negativeVol = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, -0.10);
+    BOOST_CHECK_EXCEPTION(arithmeticAverageStrikeBound(negativeVol, Option::Call, fixingDates,
+                                                       today + 360),
+                          Error, ExpectedErrorMessage("non-negative finite volatility required"));
+
+    auto hugeVol = arithmeticAverageStrikeProcess(today, 100.0, 0.06, 0.03, 1.0e5);
+    BOOST_CHECK_EXCEPTION(arithmeticAverageStrikeBound(hugeVol, Option::Call, fixingDates,
+                                                       today + 360),
+                          Error, ExpectedErrorMessage("volatility too large"));
 }
 
 BOOST_AUTO_TEST_CASE(testMCDiscreteGeometricAveragePrice) {
