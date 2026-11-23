@@ -60,18 +60,19 @@ namespace QuantLib {
     }
 
     Real CoxIngersollRoss::A(Time t, Time T) const {
-        // With delta = h-k = 2*sigma^2/(h+k), numerator and denominator are
-        // (k+h)*exp(h*tau) times 1+O(delta), so the log of their ratio is a
-        // sum of log1p terms. The direct log of the ratio is O(sigma^2) and
-        // would lose its digits before the 1/sigma^2 scaling amplifies them.
+        // With delta = h-k = 2*sigma^2/(h+k), numerator/denominator equals
+        // exp(-0.5*delta*tau)*(k+h+delta)/(k+h+delta*exp(-h*tau)), whose log
+        // is evaluated with log1p/expm1. The direct log of the ratio is
+        // O(sigma^2) and would lose its digits before the 1/sigma^2 scaling
+        // amplifies them.
         Real sigma2 = sigma()*sigma();
         Real kk = k();
         Real hh = std::sqrt(kk*kk + 2.0*sigma2);
         Real tau = T-t;
         Real delta = 2.0*sigma2/(hh+kk);
-        Real kh = kk+hh;
-        Real logRatio = std::log1p(delta/kh) - 0.5*delta*tau
-            - std::log1p(delta*std::exp(-hh*tau)/kh);
+        Real decay = std::exp(-hh*tau);
+        Real logRatio = std::log1p(-delta*std::expm1(-hh*tau)/(hh+kk+delta*decay))
+            - 0.5*delta*tau;
         Real value = logRatio*2.0*kk*theta()/sigma2;
         return std::exp(value);
     }
