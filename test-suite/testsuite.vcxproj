@@ -746,6 +746,7 @@
     <ClCompile Include="interestrates.cpp" />
     <ClCompile Include="interpolatedsmilesection.cpp" />
     <ClCompile Include="interpolations.cpp" />
+    <ClCompile Include="jarrowyildirim.cpp" />
     <ClCompile Include="jumpdiffusion.cpp" />
     <ClCompile Include="lazyobject.cpp" />
     <ClCompile Include="libormarketmodel.cpp" />

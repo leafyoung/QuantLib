@@ -242,6 +242,9 @@
     <ClCompile Include="interpolations.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="jarrowyildirim.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="jumpdiffusion.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
