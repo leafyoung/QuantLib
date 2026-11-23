@@ -630,18 +630,10 @@ BOOST_AUTO_TEST_CASE(testVasicekDiscountFactorForSmallMeanReversion) {
 BOOST_AUTO_TEST_CASE(testCoxIngersollRossDiscountFactorForSmallSigma) {
     BOOST_TEST_MESSAGE("Testing zero-bond pricing for CIR model with small sigma...");
 
-    // CoxIngersollRoss::A(t,T) computes exp(2*k*theta/sigma^2 * log(num/den)),
-    // where log(num/den) is itself O(sigma^2): for small sigma, num and den
-    // agree to many digits, so naively computing their ratio and taking its
-    // log rounds to (or very near) 1.0/0.0 in double precision, and the
-    // 1/sigma^2 scaling would amplify that lost precision into a large
-    // relative error in the final bond price. A(t,T) is rewritten
-    // algebraically (delta=h-k computed as 2*sigma^2/(h+k), log(num/den) as
-    // a sum of log1p terms) to avoid the cancellation outright, so this
-    // stays accurate down to sigma=1e-12 -- not merely "better than before"
-    // at one sigma value. As sigma->0, the CIR short-rate process
-    // degenerates to the deterministic ODE dr=k(theta-r)dt, whose
-    // zero-coupon bond price is the plain discount factor
+    // A(t,T) is exp(2*k*theta/sigma^2 * log(num/den)) with log(num/den) of
+    // order sigma^2, so a direct evaluation loses all its digits at small
+    // sigma. As sigma->0 the short rate follows dr=k(theta-r)dt, whose
+    // zero-coupon bond price is
     // exp(-theta*tau - (r0-theta)*(1-exp(-k*tau))/k).
     const Rate r0 = 0.03;
     const Real theta = 0.05;
@@ -655,16 +647,12 @@ BOOST_AUTO_TEST_CASE(testCoxIngersollRossDiscountFactorForSmallSigma) {
         std::exp(-theta*maturity - (r0-theta)*(1.0-std::exp(-k*maturity))/k);
     const Real calculated = model.discountBond(0.0, maturity, r0);
 
-    const Real tolerance = 1.0e-10;
-    const Real error = std::fabs(expected-calculated);
-    if (error > tolerance) {
-        BOOST_ERROR("Failed to reproduce small-sigma zero-bond price:"
-                    << "\n  calculated: " << calculated
-                    << "\n  expected  : " << expected
-                    << std::scientific
-                    << "\n  error     : " << error
-                    << "\n  tolerance : " << tolerance);
-    }
+    QL_CHECK_CLOSE_FRACTION(calculated, expected, 1.0e-10);
+
+    // at an ordinary sigma, against the closed form evaluated at 60 digits
+    const CoxIngersollRoss ordinary(r0, theta, k, 0.1, false);
+    QL_CHECK_CLOSE_FRACTION(ordinary.discountBond(0.0, maturity, r0),
+                            0.33951619180583830077, 1.0e-12);
 }
 
 BOOST_AUTO_TEST_CASE(testHullWhiteForwardStartBondOptionForSmallMeanReversion) {
