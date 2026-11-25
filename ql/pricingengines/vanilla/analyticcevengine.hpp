@@ -53,7 +53,8 @@ namespace QuantLib {
             \f$ df_t = \alpha f_t^\beta dW_t \f$ at time \p t.
             To price under a rate curve, use this value with a unit
             volatility calculator at the effective time returned by
-            cevEffectiveTime and the strike discounted to today.
+            cevEffectiveTime and the strike discounted from the maturity
+            to the valuation time.
         */
         Real value(Option::Type optionType, Real strike, Time t) const;
 

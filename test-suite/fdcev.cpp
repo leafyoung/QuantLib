@@ -19,14 +19,14 @@
 
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
-#include <ql/math/randomnumbers/rngtraits.hpp>
-#include <ql/math/integrals/gausslobattointegral.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
+#include <ql/math/integrals/gausslobattointegral.hpp>
+#include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
+#include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
-#include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
 #include <ql/shared_ptr.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 
@@ -241,11 +241,12 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
                 put.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
-                // call - put = E[f_T] - K*disc. For beta <= 1 the driftless
-                // CEV process is a true martingale and E[f_T] = f0; for
-                // beta > 1 it is a strict local martingale with
-                // E[f_T] = f0*gamma_p(delta/2-1, x0/(2*tau)) < f0, evaluated
-                // at the effective time tau of the drifted process.
+                // call - put = disc*(E[f_T] - strike), where the
+                // discounted expectation E[f_T*disc] equals f0 for
+                // beta <= 1 (true martingale) and
+                // f0*gamma_p(delta/2-1, x0/(2*tau)) < f0*disc for beta > 1
+                // (strict local martingale), evaluated at the effective
+                // time tau of the drifted process.
                 const DiscountFactor discount = rTS->discount(maturityDate);
                 Real expectedForward = f0 - strike*discount;
                 if (beta > 1.0) {
