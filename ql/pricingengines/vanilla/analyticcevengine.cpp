@@ -134,11 +134,12 @@ namespace QuantLib {
         QL_REQUIRE(payoff, "non-striked payoff given");
 
         const Date exerciseDate = arguments_.exercise->lastDate();
-        const DiscountFactor discount = discountCurve_->discount(exerciseDate);
         const Time maturity = discountCurve_->timeFromReference(exerciseDate);
-        const Real beta = calculator_->beta();
 
         QL_REQUIRE(maturity > 0.0, "the option has already expired");
+
+        const DiscountFactor discount = discountCurve_->discount(exerciseDate);
+        const Real beta = calculator_->beta();
 
         if (std::fabs(beta - 1.0) < cevBlackLimitBandWidth) {
             // the CEV price converges to its Black-Scholes limit as beta
