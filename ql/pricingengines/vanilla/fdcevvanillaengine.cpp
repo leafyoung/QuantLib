@@ -53,14 +53,11 @@ namespace QuantLib {
               upperBound_(upperBound), alpha_(alpha), beta_(beta) {}
 
             Real operator()(Real t) const {
-                const Time time2Expiry = std::max(1/365., maturityTime_ - t);
-                // the 1/365 floor can reach past the maturity on the last
-                // rollback steps; curves evaluated at their maximum time
-                // must not be queried beyond it
-                const Time expiryTime = std::min(t + time2Expiry,
-                                                 maturityTime_);
+                // t is a rollback step destination and strictly below the
+                // maturity, so the evaluation window always has positive
+                // length and stays within the curve's range
                 const DiscountFactor df =
-                    rTS_->discount(expiryTime) / rTS_->discount(t);
+                    rTS_->discount(maturityTime_) / rTS_->discount(t);
 
                 if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
                     // the CEV price converges to its Black-Scholes limit as
@@ -68,14 +65,14 @@ namespace QuantLib {
                     return blackFormula(
                         payoff_->optionType(), payoff_->strike(),
                         upperBound_/df,
-                        alpha_*std::sqrt(expiryTime - t), df);
+                        alpha_*std::sqrt(maturityTime_ - t), df);
                 }
 
                 // drift-removed unit volatility process, see cevEffectiveTime
                 return calculator_.value(
                     payoff_->optionType(),
                     payoff_->strike()*df,
-                    cevEffectiveTime(alpha_, beta_, rTS_, t, expiryTime));
+                    cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_));
             }
 
           private:

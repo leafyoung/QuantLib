@@ -23,12 +23,12 @@
 #include <ql/math/integrals/gausslobattointegral.hpp>
 #include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
-#include <ql/termstructures/yield/discountcurve.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/shared_ptr.hpp>
+#include <ql/termstructures/yield/discountcurve.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 
 using namespace QuantLib;
