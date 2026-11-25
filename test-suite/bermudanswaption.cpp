@@ -318,15 +318,14 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
         "Testing that G2SwaptionEngine respects the fixed leg's own day "
         "count...");
 
-    // Regression test: G2::swaption must build fixed-leg cashflows from
-    // dayCounter.yearFraction() time differences using the swap's own
-    // fixed-leg day count. Building them on the term structure's day
-    // counter instead silently misprices whenever the two differ, and
-    // missing a fixed-leg day count mismatch is easy because a relative
-    // tolerance that passes on matching day counters says nothing about
-    // the mismatched case. Parameters (realistic G2++, an Act/360 annual
-    // fixed leg on a Euribor6M swap vs an Act/365F curve) make the
-    // mispricing a multi-percent gap that any sane tolerance rejects.
+    // Regression test: G2SwaptionEngine must build the fixed-leg cashflows
+    // from each coupon's accrualPeriod() on the swap's own fixed-leg day
+    // count; a curve-day-count construction prices a different swap than
+    // the one given. A day-count mismatch is easy to miss because a
+    // relative tolerance that passes on matching day counters says nothing
+    // about the mismatched case. Parameters (realistic G2++, an Act/360
+    // annual fixed leg on a Euribor6M swap vs an Act/365F curve) make the
+    // discrepancy a multi-percent gap that any sane tolerance rejects.
 
     Date today(15, September, 2016);
     Settings::instance().evaluationDate() = today;
@@ -395,12 +394,11 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
     // rate it actually prices, so that a swap whose own fixed rate is
     // exactly 0 -- a legitimate, constructible instrument when the floating
     // leg carries a nonzero spread -- still prices its coupons off the
-    // nonzero spread-adjusted rate. Rescaling the swap's fixedCoupons by
-    // fixedRate/originalRate (swap rate over priced rate) cannot handle
-    // that case: the ratio is 0/0 there, and any special case mapping it to
-    // 0 prices every coupon as if the spread-adjusted rate were 0 as
-    // well. testG2SwaptionEngineDayCount covers the day-count form of the
-    // same requirement; this one covers the rate form.
+    // nonzero spread-adjusted rate. A coupon amount that divides by the
+    // swap's own fixed rate is undefined here (0/0), and mapping that
+    // ratio to 0 would price every coupon as if the spread-adjusted rate
+    // were 0 as well. testG2SwaptionEngineDayCount covers the day-count
+    // form of the same requirement; this one covers the rate form.
 
     Date today(15, September, 2016);
     Settings::instance().evaluationDate() = today;

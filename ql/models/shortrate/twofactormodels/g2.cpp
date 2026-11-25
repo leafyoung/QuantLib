@@ -267,6 +267,25 @@ namespace QuantLib {
         Real mux_, muy_, sigmax_, sigmay_, rhoxy_;
     };
 
+    namespace {
+        // Fixed-leg coupon amounts per unit nominal at the given (possibly
+        // spread-adjusted) rate: each amount is the rate times the coupon's
+        // own accrual period, taken off the swap's fixed leg. Such amounts
+        // are independent of the curve's day counter, and they stay defined
+        // when the swap's own fixed rate is zero.
+        std::vector<Real> fixedLegCoupons(const Leg& fixedLeg,
+                                          Rate fixedRate,
+                                          Size size) {
+            std::vector<Real> amounts(size);
+            for (Size i=0; i<amounts.size(); ++i) {
+                auto coupon = ext::dynamic_pointer_cast<Coupon>(fixedLeg[i]);
+                QL_REQUIRE(coupon, "fixed leg cashflow is not a coupon");
+                amounts[i] = fixedRate * coupon->accrualPeriod();
+            }
+            return amounts;
+        }
+    }
+
     Real G2::swaption(const Swaption::arguments& arguments,
                       Rate fixedRate, Real range, Size intervals) const {
 
@@ -285,24 +304,11 @@ namespace QuantLib {
                 dayCounter.yearFraction(settlement,
                                         arguments.fixedPayDates[i]);
 
-        // Build the actual fixed-leg coupon amounts (normalized per unit
-        // nominal) at the given (possibly spread-adjusted) fixedRate,
-        // using each coupon's own accrual period (from the swap's own
-        // fixed-leg day count) rather than re-deriving accrual fractions
-        // from curve-day-count time differences, which is exact only when
-        // the curve and the swap's fixed leg happen to share the same day
-        // counter. Reading the accrual period directly off each coupon --
-        // rather than scaling the swap's own fixedCoupons by
-        // fixedRate/originalRate -- also prices correctly when the swap's
-        // own fixed rate is zero (originalRate == 0), where that ratio
-        // would be 0/0.
-        const Leg& fixedLeg = arguments.swap->fixedLeg();
-        std::vector<Real> coupons(arguments.fixedCoupons.size());
-        for (Size i=0; i<coupons.size(); ++i) {
-            auto coupon = ext::dynamic_pointer_cast<Coupon>(fixedLeg[i]);
-            QL_REQUIRE(coupon, "fixed leg cashflow is not a coupon");
-            coupons[i] = fixedRate * coupon->accrualPeriod();
-        }
+        // the fixed leg priced off its own coupons, independent of the
+        // curve's day counter
+        std::vector<Real> coupons =
+            fixedLegCoupons(arguments.swap->fixedLeg(),
+                            fixedRate, arguments.fixedCoupons.size());
 
         SwaptionPricingFunction function(a(), sigma(), b(), eta(), rho(),
                                          w, start,
