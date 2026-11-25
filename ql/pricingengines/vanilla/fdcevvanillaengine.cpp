@@ -116,6 +116,10 @@ namespace QuantLib {
         const Date maturityDate = arguments_.exercise->lastDate();
         const Time maturityTime = dc.yearFraction(referenceDate, maturityDate);
 
+        QL_REQUIRE(maturityTime > 0.0,
+                   "the option matures at or before the discount curve's "
+                   "reference date");
+
         const ext::shared_ptr<Fdm1dMesher> cevMesher =
             ext::make_shared<FdmCEV1dMesher>(
                 xGrid_,
