@@ -351,8 +351,9 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
     // instead of one coupon's error averaged away over the leg, and the
     // stub exercises accrualPeriod()'s reference-period handling.
     for (Date firstDate : { Date(), start + Period(3, Months) }) {
-        BOOST_TEST_CONTEXT(firstDate == Date() ?
-                           "regular schedule" : "front-stub schedule") {
+        const std::string variant =
+            (firstDate == Date() ? "regular schedule" : "front-stub schedule");
+        BOOST_TEST_CONTEXT(variant) {
             Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
                                    Unadjusted, Unadjusted,
                                    DateGeneration::Forward, false, firstDate);
@@ -389,8 +390,14 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
             // coupon amounts -- e.g. a first-coupon-only regression, whose
             // sub-percent NPV effect is invisible in the loose
             // engine-consistency check above -- fail here
+            // the cached values depend on the floating-leg coupon mode
+            // (at-par vs indexed), as in testCachedG2Values
+            const bool atParCoupons =
+                IborCoupon::Settings::instance().usingAtParCoupons();
             const Real expectedAnalytic =
-                (firstDate == Date() ? 37.5464482392 : 37.5262419307);
+                firstDate == Date() ?
+                    (atParCoupons ? 37.5464482392 : 37.5450655728) :
+                    (atParCoupons ? 37.5262419307 : 37.5248589991);
             QL_CHECK_CLOSE(analyticNPV, expectedAnalytic, 1e-6);
 
             // a loose tolerance: this only needs to catch a multi-percent
