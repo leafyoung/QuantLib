@@ -23,6 +23,7 @@
 #include <ql/math/integrals/gausslobattointegral.hpp>
 #include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
+#include <ql/termstructures/yield/discountcurve.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
@@ -525,6 +526,56 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
                     << "\n    tolerance       : 1e-9");
             }
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testFdmCevPiecewiseRateCurve) {
+    BOOST_TEST_MESSAGE(
+        "Testing the FDM CEV engine on a rate curve ending at maturity...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Date maturityDate = today + Period(12, Months);
+    const Date stepDate = today + Period(6, Months);
+
+    // the curve's maximum time is the option maturity: the boundary
+    // condition's discount queries must stay within the curve's range
+    const std::vector<Date> curveDates = { today, stepDate, maturityDate };
+    const std::vector<DiscountFactor> curveDiscounts = {
+        1.0, std::exp(-0.02*0.5), std::exp(-0.02*0.5 - 0.08*0.5)
+    };
+    const Handle<YieldTermStructure> rTS(
+        ext::make_shared<DiscountCurve>(curveDates, curveDiscounts, dc));
+
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(maturityDate);
+
+    const Real f0 = 100.0, alpha = 0.30, strike = 100.0;
+
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, strike), exercise);
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        f0, alpha, 0.9, rTS));
+    const Real analyticNPV = option.NPV();
+
+    // a time grid finer than 1/365 days per step drives the rollback's
+    // boundary evaluation up against the curve's maximum time
+    option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+        f0, alpha, 0.9, rTS, 400, 400, 1, 1.0, 1e-6));
+
+    const Real calculatedNPV = option.NPV();
+    const Real tol = 0.01;
+    if (std::fabs(calculatedNPV - analyticNPV) > tol) {
+        BOOST_ERROR(
+            "failed to calculate the vanilla option price on a curve "
+            "ending at maturity"
+            << "\n    analytic npv    : " << analyticNPV
+            << "\n    pde npv         : " << calculatedNPV
+            << "\n    npv difference  : "
+            << std::fabs(calculatedNPV - analyticNPV)
+            << "\n    tolerance       : " << tol);
     }
 }
 

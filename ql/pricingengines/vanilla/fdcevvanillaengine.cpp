@@ -54,22 +54,28 @@ namespace QuantLib {
 
             Real operator()(Real t) const {
                 const Time time2Expiry = std::max(1/365., maturityTime_ - t);
+                // the 1/365 floor can reach past the maturity on the last
+                // rollback steps; curves evaluated at their maximum time
+                // must not be queried beyond it
+                const Time expiryTime = std::min(t + time2Expiry,
+                                                 maturityTime_);
                 const DiscountFactor df =
-                    rTS_->discount(t + time2Expiry) / rTS_->discount(t);
+                    rTS_->discount(expiryTime) / rTS_->discount(t);
 
                 if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
                     // the CEV price converges to its Black-Scholes limit as
                     // beta approaches one; see AnalyticCEVEngine
                     return blackFormula(
                         payoff_->optionType(), payoff_->strike(),
-                        upperBound_/df, alpha_*std::sqrt(time2Expiry), df);
+                        upperBound_/df,
+                        alpha_*std::sqrt(expiryTime - t), df);
                 }
 
                 // drift-removed unit volatility process, see cevEffectiveTime
                 return calculator_.value(
                     payoff_->optionType(),
                     payoff_->strike()*df,
-                    cevEffectiveTime(alpha_, beta_, rTS_, t, t + time2Expiry));
+                    cevEffectiveTime(alpha_, beta_, rTS_, t, expiryTime));
             }
 
           private:
