@@ -335,6 +335,32 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                         << "\n    difference      : "
                         << std::fabs(calculated - black)
                         << "\n    tolerance       : " << tol);
+
+                // the FDM boundary applies the same limit inside the band;
+                // the PDE solution must reproduce it there as well
+                if (beta == 1.0) {
+                    option.setPricingEngine(
+                        ext::make_shared<FdCEVVanillaEngine>(
+                            f0, alpha, beta, Handle<YieldTermStructure>(rTS),
+                            100, 200, 1, 1.0, 1e-6));
+
+                    const Real fdCalculated = option.NPV();
+                    const Real fdTol = 0.01;
+
+                    if (std::fabs(fdCalculated - black) > fdTol) {
+                        BOOST_ERROR(
+                            "failed to reproduce the Black limit with the "
+                            "FDM engine"
+                            << "\n    option type     : "
+                            << ((optionType == Option::Call) ? "Call" : "Put")
+                            << "\n    strike          : " << strike
+                            << "\n    black price     : " << black
+                            << "\n    calculated      : " << fdCalculated
+                            << "\n    difference      : "
+                            << std::fabs(fdCalculated - black)
+                            << "\n    tolerance       : " << fdTol);
+                    }
+                }
                 }
             }
         }

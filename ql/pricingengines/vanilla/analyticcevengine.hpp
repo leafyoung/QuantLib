@@ -94,8 +94,9 @@ namespace QuantLib {
         \f]
 
         An option on \f$ f \f$ maturing at \f$ end \f$ is then the undiscounted
-        value of that unit volatility driftless process at the discounted
-        strike \f$ K\,disc(0,end)/disc(0,start) \f$. For
+        value of that unit volatility driftless process started at the
+        current value of \f$ f \f$, at the discounted strike
+        \f$ K\,disc(0,end)/disc(0,start) \f$. For
         \f$ \beta = 1 \f$ the process is geometric Brownian motion and the
         effective time \f$ \alpha^2(end-start) \f$ reproduces the
         Black-Scholes limit exactly.
