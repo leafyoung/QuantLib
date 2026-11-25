@@ -418,11 +418,10 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
     // rate it actually prices, so that a swap whose own fixed rate is
     // exactly 0 -- a legitimate instrument (e.g. with a nonzero
     // floating-leg spread) -- still prices its coupons off the
-    // nonzero spread-adjusted rate: the coupon amounts must come from the
-    // rate actually priced times each coupon's own accrual period, and a
-    // zero swap fixed rate must not collapse them to zero.
-    // testG2SwaptionEngineDayCount covers the day-count form of the same
-    // requirement; this one covers the rate form.
+    // nonzero spread-adjusted rate: a zero swap fixed rate must not
+    // collapse them to zero. testG2SwaptionEngineDayCount covers the
+    // day-count form of the same requirement; this one covers the rate
+    // form.
 
     Date today(15, September, 2016);
     Settings::instance().evaluationDate() = today;
