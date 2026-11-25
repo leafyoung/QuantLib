@@ -137,7 +137,8 @@ namespace QuantLib {
         const Date exerciseDate = arguments_.exercise->lastDate();
         const Time maturity = discountCurve_->timeFromReference(exerciseDate);
 
-        QL_REQUIRE(maturity > 0.0, "the option has already expired");
+        QL_REQUIRE(maturity > 0.0,
+                   "the option matures at or before the discount curve's reference date");
 
         const DiscountFactor discount = discountCurve_->discount(exerciseDate);
         const Real beta = calculator_->beta();

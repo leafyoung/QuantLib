@@ -583,6 +583,28 @@ BOOST_AUTO_TEST_CASE(testFdmCevPiecewiseRateCurve) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testAnalyticCevExpiredOption) {
+    BOOST_TEST_MESSAGE("Testing the analytic CEV engine on an expired "
+        "option...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+    Settings::instance().includeReferenceDateEvents() = true;
+
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, dc));
+
+    // the exercise date at the curve's reference date gives a zero
+    // maturity: the engine rejects it before any term structure access
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+        ext::make_shared<EuropeanExercise>(today));
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        100.0, 0.30, 0.9, rTS));
+
+    BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()
