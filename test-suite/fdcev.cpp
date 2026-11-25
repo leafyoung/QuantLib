@@ -243,11 +243,12 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
                 // call - put = disc*(E[f_T] - strike), where the
-                // discounted expectation E[f_T*disc] equals f0*disc for
-                // beta <= 1 (true martingale) and f0*gamma_p(delta/2-1,
-                // x0/(2*tau)) for beta > 1 (strict local martingale,
-                // bounded by f0 but not by f0*disc), evaluated at the
-                // effective time tau of the drifted process.
+                // discounted expectation E[f_T*disc] equals f0 for
+                // beta <= 1 (true martingale starting from f0) and
+                // f0*gamma_p(delta/2-1, x0/(2*tau)) for beta > 1 (strict
+                // local martingale, bounded by f0 but not by f0*disc),
+                // evaluated at the effective time tau of the drifted
+                // process.
                 const DiscountFactor discount = rTS->discount(maturityDate);
                 Real expectedForward = f0 - strike*discount;
                 if (beta > 1.0) {
@@ -362,7 +363,9 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
     // 1. Scholes (1976) closed form for the absolute diffusion
     //    dS = rS dt + alpha dW, i.e. beta = 0
     {
-        const Real strike = 100.0;
+        // a strike near the forward keeps d moderate, so the volatility
+        // dependent term of the closed form stays material at the tolerance
+        const Real strike = 103.0;
         const Real forward = f0/discount;
         const Real sqrtV = alpha*std::sqrt(
             (std::exp(2*rate*maturity)-1.0)/(2*rate));
