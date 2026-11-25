@@ -160,6 +160,29 @@ namespace QuantLib {
         return -std::expm1(-x*t)/x;
     }
 
+    namespace {
+        // A sigmay_-scaled bracket can miss the root when the
+        // slower-reverting factor is labeled x, since x is integrated over
+        // a wider, sigmax_-scaled range; the bracket must contain the root
+        // for either factor labeling, so it grows until the endpoint values
+        // have opposite signs (or the growth cap is reached and Brent
+        // reports the root as not bracketed). Uniqueness of the root is
+        // guaranteed while the coupon amounts rate*accrualPeriod share one
+        // sign, which makes the solved function strictly decreasing; for a
+        // negative rate the decomposition does not provide that guarantee.
+        template <class F>
+        Real widenedYBracket(const F& function, Real bound) {
+            Real fLower = function(-bound), fUpper = function(bound);
+            for (Size attempt = 0;
+                 fLower*fUpper >= 0.0 && attempt < 20; ++attempt) {
+                bound *= 2.0;
+                fLower = function(-bound);
+                fUpper = function(bound);
+            }
+            return bound;
+        }
+    }
+
     class G2::SwaptionPricingFunction {
       public:
         SwaptionPricingFunction(Real a,
@@ -219,7 +242,10 @@ namespace QuantLib {
             SolvingFunction function(lambda, Bb_) ;
             Brent s1d;
             s1d.setMaxEvaluations(1000);
-            Real searchBound = std::max(10.0*sigmay_, 1.0);
+            // widen until the bracket contains the root, whichever way the
+            // two factor labels are assigned
+            Real searchBound = widenedYBracket(function,
+                                               std::max<Real>(10.0*sigmay_, 1.0));
             Real yb = s1d.solve(function, 1e-6, 0.00, -searchBound, searchBound);
 
             Real h1 = (yb - muy_)/(sigmay_*txy) -
