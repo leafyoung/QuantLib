@@ -389,9 +389,10 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
             // deterministic, and a tight tolerance makes any change to the
             // coupon amounts -- e.g. a first-coupon-only regression, whose
             // sub-percent NPV effect is invisible in the loose
-            // engine-consistency check above -- fail here
-            // the cached values depend on the floating-leg coupon mode
-            // (at-par vs indexed), as in testCachedG2Values
+            // engine-consistency check above -- fail here.
+            //
+            // The cached values depend on the floating-leg coupon mode
+            // (at-par vs indexed), as in testCachedG2Values.
             const bool atParCoupons =
                 IborCoupon::Settings::instance().usingAtParCoupons();
             const Real expectedAnalytic =
