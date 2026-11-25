@@ -274,9 +274,8 @@ namespace QuantLib {
         // are independent of the curve's day counter, and they stay defined
         // when the swap's own fixed rate is zero.
         std::vector<Real> fixedLegCoupons(const Leg& fixedLeg,
-                                          Rate fixedRate,
-                                          Size size) {
-            std::vector<Real> amounts(size);
+                                          Rate fixedRate) {
+            std::vector<Real> amounts(fixedLeg.size());
             for (Size i=0; i<amounts.size(); ++i) {
                 auto coupon = ext::dynamic_pointer_cast<Coupon>(fixedLeg[i]);
                 QL_REQUIRE(coupon,
@@ -306,8 +305,7 @@ namespace QuantLib {
                                         arguments.fixedPayDates[i]);
 
         std::vector<Real> coupons =
-            fixedLegCoupons(arguments.swap->fixedLeg(),
-                            fixedRate, arguments.fixedCoupons.size());
+            fixedLegCoupons(arguments.swap->fixedLeg(), fixedRate);
 
         SwaptionPricingFunction function(a(), sigma(), b(), eta(), rho(),
                                          w, start,
