@@ -242,7 +242,7 @@ namespace QuantLib {
             // widen until the bracket contains the root, whichever way the
             // two factor labels are assigned
             Real searchBound = widenedYBracket(function,
-                                               std::max(10.0*sigmay_, 1.0));
+                                               std::max<Real>(10.0*sigmay_, 1.0));
             Real yb = s1d.solve(function, 1e-6, 0.00, -searchBound, searchBound);
 
             Real h1 = (yb - muy_)/(sigmay_*txy) -
