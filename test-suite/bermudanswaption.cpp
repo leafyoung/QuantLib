@@ -338,46 +338,63 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
 
     Date start = calendar.advance(settlement, 5, Years);
     Date maturity = calendar.advance(start, 10, Years);
-    Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
-                           Unadjusted, Unadjusted,
-                           DateGeneration::Forward, false);
     Schedule floatSchedule(start, maturity, Period(Semiannual), calendar,
                            ModifiedFollowing, ModifiedFollowing,
                            DateGeneration::Forward, false);
 
-    auto probeSwap = ext::make_shared<VanillaSwap>(
-        Swap::Payer, 1000.0,
-        fixedSchedule, 0.0, Actual360(),
-        floatSchedule, index, 0.0, index->dayCounter());
-    probeSwap->setPricingEngine(
-        ext::make_shared<DiscountingSwapEngine>(termStructure));
-    const Rate atmRate = probeSwap->fairRate();
+    // The second variant adds an irregular first period (a 3-month front
+    // stub): a first-coupon-only regression is then a multi-percent gap
+    // instead of one coupon's error averaged away over the leg, and the
+    // stub exercises accrualPeriod()'s reference-period handling.
+    for (Date firstDate : { Date(), start + Period(3, Months) }) {
+        Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
+                               Unadjusted, Unadjusted,
+                               DateGeneration::Forward, false, firstDate);
 
-    auto swap = ext::make_shared<VanillaSwap>(
-        Swap::Payer, 1000.0,
-        fixedSchedule, atmRate, Actual360(),
-        floatSchedule, index, 0.0, index->dayCounter());
-    swap->setPricingEngine(
-        ext::make_shared<DiscountingSwapEngine>(termStructure));
+        auto probeSwap = ext::make_shared<VanillaSwap>(
+            Swap::Payer, 1000.0,
+            fixedSchedule, 0.0, Actual360(),
+            floatSchedule, index, 0.0, index->dayCounter());
+        probeSwap->setPricingEngine(
+            ext::make_shared<DiscountingSwapEngine>(termStructure));
+        const Rate atmRate = probeSwap->fairRate();
 
-    const auto swaption = ext::make_shared<Swaption>(
-        swap, ext::make_shared<EuropeanExercise>(start));
+        auto swap = ext::make_shared<VanillaSwap>(
+            Swap::Payer, 1000.0,
+            fixedSchedule, atmRate, Actual360(),
+            floatSchedule, index, 0.0, index->dayCounter());
+        swap->setPricingEngine(
+            ext::make_shared<DiscountingSwapEngine>(termStructure));
 
-    const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
-    const auto g2Model =
-        ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
+        const auto swaption = ext::make_shared<Swaption>(
+            swap, ext::make_shared<EuropeanExercise>(start));
 
-    swaption->setPricingEngine(
-        ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
-    const Real analyticNPV = swaption->NPV();
+        const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
+        const auto g2Model =
+            ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
 
-    swaption->setPricingEngine(
-        ext::make_shared<FdG2SwaptionEngine>(g2Model, 50, 200, 200, 0, 1e-4));
-    const Real fdmNPV = swaption->NPV();
+        swaption->setPricingEngine(
+            ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
+        const Real analyticNPV = swaption->NPV();
 
-    // a loose tolerance: this only needs to catch a multi-percent day-count
-    // mismatch, not to certify the analytic/FDM agreement to high precision
-    QL_CHECK_CLOSE(analyticNPV, fdmNPV, 2.0);
+        swaption->setPricingEngine(
+            ext::make_shared<FdG2SwaptionEngine>(g2Model, 50, 200, 200, 0, 1e-4));
+        const Real fdmNPV = swaption->NPV();
+
+        // cached regression values: the analytic engine is deterministic,
+        // and a tight tolerance makes any change to the coupon amounts --
+        // e.g. a first-coupon-only regression, whose sub-percent NPV
+        // effect is invisible in the loose engine-consistency check above
+        // -- fail here
+        const Real expectedAnalytic =
+            (firstDate == Date() ? 37.5464482392 : 37.5262419307);
+        QL_CHECK_CLOSE(analyticNPV, expectedAnalytic, 1e-6);
+
+        // a loose tolerance: this only needs to catch a multi-percent
+        // day-count mismatch, not to certify the analytic/FDM agreement to
+        // high precision
+        QL_CHECK_CLOSE(analyticNPV, fdmNPV, 2.0);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
