@@ -335,10 +335,13 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                         << "\n    difference      : "
                         << std::fabs(calculated - black)
                         << "\n    tolerance       : " << tol);
+                }
 
                 // the FDM boundary applies the same limit inside the band;
-                // the PDE solution must reproduce it there as well
-                if (beta == 1.0) {
+                // the PDE solution must reproduce it there as well. beta is
+                // kept off one because the mesher's transition calculator
+                // requires beta != 1
+                if (beta == 1.0-5e-5) {
                     option.setPricingEngine(
                         ext::make_shared<FdCEVVanillaEngine>(
                             f0, alpha, beta, Handle<YieldTermStructure>(rTS),
@@ -360,7 +363,6 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                             << std::fabs(fdCalculated - black)
                             << "\n    tolerance       : " << fdTol);
                     }
-                }
                 }
             }
         }
