@@ -691,8 +691,8 @@ BOOST_AUTO_TEST_CASE(testBermudanOISSwaptionPreservesFeatures) {
 
 BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     BOOST_TEST_MESSAGE(
-        "Testing G2SwaptionEngine's y-solve bracket on a slow-reverting x "
-        "factor...");
+        "Testing G2 swaption label-swap invariance (payer and receiver) of "
+        "the y-solve bracket...");
 
     // Regression test: G2::swaption's inner solve for the critical y state
     // must bracket the root whichever factor carries which label. The x and
@@ -723,7 +723,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
                            ModifiedFollowing, ModifiedFollowing,
                            DateGeneration::Forward, false);
 
-    ext::shared_ptr<VanillaSwap> probeSwap = ext::make_shared<VanillaSwap>(
+    const auto probeSwap = ext::make_shared<VanillaSwap>(
         Swap::Payer, 1000.0,
         fixedSchedule, 0.0, index->dayCounter(),
         floatSchedule, index, 0.0, index->dayCounter());
@@ -731,20 +731,20 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
         ext::make_shared<DiscountingSwapEngine>(termStructure));
     const Rate atmRate = probeSwap->fairRate();
 
-    ext::shared_ptr<VanillaSwap> swap = ext::make_shared<VanillaSwap>(
+    const auto swap = ext::make_shared<VanillaSwap>(
         Swap::Payer, 1000.0,
         fixedSchedule, atmRate, index->dayCounter(),
         floatSchedule, index, 0.0, index->dayCounter());
     swap->setPricingEngine(
         ext::make_shared<DiscountingSwapEngine>(termStructure));
 
-    const ext::shared_ptr<Swaption> swaption = ext::make_shared<Swaption>(
+    const auto swaption = ext::make_shared<Swaption>(
         swap, ext::make_shared<EuropeanExercise>(start));
 
     // the slow-reversion factor (a=0.05 < b=0.3) is labeled x: the labeling
     // whose y-bracket must widen
     const Real a=0.05, sigma=0.02, b=0.3, eta=0.01, rho=-0.5;
-    const ext::shared_ptr<G2> g2Model =
+    const auto g2Model =
         ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
     swaption->setPricingEngine(
         ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
@@ -759,7 +759,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     }
 
     // same model, labels swapped: must price identically
-    const ext::shared_ptr<G2> g2ModelRelabeled =
+    const auto g2ModelRelabeled =
         ext::make_shared<G2>(termStructure, b, eta, a, sigma, rho);
     swaption->setPricingEngine(
         ext::make_shared<G2SwaptionEngine>(g2ModelRelabeled, 10.0, 400));
@@ -780,7 +780,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
         floatSchedule, index, 0.0, index->dayCounter());
     receiverSwap->setPricingEngine(
         ext::make_shared<DiscountingSwapEngine>(termStructure));
-    const ext::shared_ptr<Swaption> receiverSwaption =
+    const auto receiverSwaption =
         ext::make_shared<Swaption>(receiverSwap,
                                    ext::make_shared<EuropeanExercise>(start));
     receiverSwaption->setPricingEngine(
