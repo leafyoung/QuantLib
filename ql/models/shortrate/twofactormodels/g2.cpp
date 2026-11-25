@@ -279,7 +279,8 @@ namespace QuantLib {
             std::vector<Real> amounts(size);
             for (Size i=0; i<amounts.size(); ++i) {
                 auto coupon = ext::dynamic_pointer_cast<Coupon>(fixedLeg[i]);
-                QL_REQUIRE(coupon, "fixed leg cashflow is not a coupon");
+                QL_REQUIRE(coupon,
+                           "fixed leg cashflow " << i << " is not a coupon");
                 amounts[i] = fixedRate * coupon->accrualPeriod();
             }
             return amounts;
