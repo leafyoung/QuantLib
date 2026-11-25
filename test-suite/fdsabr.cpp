@@ -250,8 +250,11 @@ BOOST_AUTO_TEST_CASE(testFdmSabrCevPricing) {
     const Real nu    = 1e-3;
     const Real rho   = 0.25;
 
+    // zero rates: the SABR process models a forward and is driftless, while
+    // the analytic CEV engine carries the deterministic rate curve inside
+    // its transform. Both conventions coincide at zero rates.
     const Handle<YieldTermStructure> rTS = Handle<YieldTermStructure>(
-        flatRate(today, 0.05, dc));
+        flatRate(today, 0.0, dc));
 
     const ext::shared_ptr<Exercise> exercise =
         ext::make_shared<EuropeanExercise>(maturityDate);

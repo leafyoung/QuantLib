@@ -21,7 +21,10 @@
 #include "utilities.hpp"
 #include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/math/integrals/gausslobattointegral.hpp>
+#include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
+#include <ql/termstructures/yield/discountcurve.hpp>
+#include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
@@ -198,6 +201,288 @@ BOOST_AUTO_TEST_CASE(testFdmCevOp) {
                     << "\n    delta difference: "
                     << std::fabs(calculatedDelta - analyticDelta)
                     << "\n    tolerance       : " << tol);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
+    BOOST_TEST_MESSAGE(
+        "Testing put-call parity of the analytic CEV engine...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    SavedSettings backup;
+    Settings::instance().evaluationDate() = today;
+
+    const Date maturityDate = today + Period(12, Months);
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(maturityDate);
+
+    const Real f0 = 100.0, alpha = 0.30;
+    const Real betas[] = {-0.5, 0.0, 0.45, 0.9, 0.99, 1.1, 1.5};
+    const Real strikes[] = {80.0, 100.0, 120.0};
+    const Real rates[] = {0.03, 0.15};
+
+    for (Real rate : rates) {
+        const ext::shared_ptr<YieldTermStructure> rTS =
+            flatRate(today, rate, dc);
+
+        for (Real beta : betas) {
+            for (Real strike : strikes) {
+                VanillaOption call(
+                    ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
+                    exercise);
+                VanillaOption put(
+                    ext::make_shared<PlainVanillaPayoff>(Option::Put, strike),
+                    exercise);
+
+                call.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                    f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
+                put.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                    f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
+
+                const Real forward = f0 - strike*rTS->discount(maturityDate);
+                const Real residual =
+                    call.NPV() - put.NPV() - forward;
+                const Real tol = 1e-8*(f0+strike);
+
+                if (std::fabs(residual) > tol) {
+                    BOOST_ERROR(
+                        "put-call parity violated"
+                        << "\n    rate            : " << rate
+                        << "\n    beta            : " << beta
+                        << "\n    strike          : " << strike
+                        << "\n    call npv        : " << call.NPV()
+                        << "\n    put npv         : " << put.NPV()
+                        << "\n    residual        : " << residual
+                        << "\n    tolerance       : " << tol);
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
+    BOOST_TEST_MESSAGE(
+        "Testing the Black limit of the analytic CEV engine at beta=1...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    SavedSettings backup;
+    Settings::instance().evaluationDate() = today;
+
+    const Date maturityDate = today + Period(12, Months);
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(maturityDate);
+
+    const Real f0 = 100.0, alpha = 0.30;
+    const ext::shared_ptr<YieldTermStructure> rTS =
+        flatRate(today, 0.03, dc);
+    const DiscountFactor discount = rTS->discount(maturityDate);
+    const Real stdDev = alpha * std::sqrt(
+        rTS->timeFromReference(maturityDate));
+
+    const Option::Type optionTypes[] = { Option::Call, Option::Put };
+    const Real strikes[] = {80.0, 100.0, 120.0};
+
+    for (auto optionType : optionTypes) {
+        for (Real strike : strikes) {
+            const ext::shared_ptr<PlainVanillaPayoff> payoff =
+                ext::make_shared<PlainVanillaPayoff>(optionType, strike);
+            const Real black = blackFormula(
+                payoff, f0/discount, stdDev, discount);
+
+            for (Real beta : {1.0-1e-6, 1.0-1e-4, 1.0, 1.0+1e-4, 1.0+1e-6}) {
+                VanillaOption option(payoff, exercise);
+                option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                    f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
+
+                const Real calculated = option.NPV();
+
+                // exact at beta=1; within model curvature of the limit
+                // for the neighbouring beta values
+                const Real tol = (beta == 1.0) ? 1e-10*black : 0.05;
+
+                if (std::fabs(calculated - black) > tol) {
+                    BOOST_ERROR(
+                        "failed to reproduce the Black limit"
+                        << "\n    beta            : " << beta
+                        << "\n    option type     : "
+                        << ((optionType == Option::Call) ? "Call" : "Put")
+                        << "\n    strike          : " << strike
+                        << "\n    black price     : " << black
+                        << "\n    calculated      : " << calculated
+                        << "\n    difference      : "
+                        << std::fabs(calculated - black)
+                        << "\n    tolerance       : " << tol);
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
+    BOOST_TEST_MESSAGE(
+        "Testing analytic CEV engine values against closed forms and "
+        "Monte Carlo anchors...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    SavedSettings backup;
+    Settings::instance().evaluationDate() = today;
+
+    const Date maturityDate = today + Period(12, Months);
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(maturityDate);
+
+    const Real f0 = 100.0, alpha = 0.30;
+    const Real rate = 0.03;
+    const ext::shared_ptr<YieldTermStructure> rTS = flatRate(today, rate, dc);
+    const DiscountFactor discount = rTS->discount(maturityDate);
+    const Time maturity = rTS->timeFromReference(maturityDate);
+
+    // 1. Scholes (1976) closed form for the absolute diffusion
+    //    dS = rS dt + alpha dW, i.e. beta = 0
+    {
+        const Real strike = 100.0;
+        const Real forward = f0/discount;
+        const Real sqrtV = alpha*std::sqrt(
+            (std::exp(2*rate*maturity)-1.0)/(2*rate));
+        const Real d = (forward - strike)/sqrtV;
+        const Real expected = discount*((forward - strike)
+            * CumulativeNormalDistribution()(d)
+            + sqrtV*NormalDistribution()(d));
+
+        VanillaOption option(
+            ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
+            exercise);
+        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            f0, alpha, 0.0, Handle<YieldTermStructure>(rTS)));
+
+        const Real calculated = option.NPV();
+        if (std::fabs(calculated - expected) > 1e-5) {
+            BOOST_ERROR(
+                "failed to reproduce the Scholes closed form at beta=0"
+                << "\n    expected        : " << expected
+                << "\n    calculated      : " << calculated
+                << "\n    difference      : "
+                << std::fabs(calculated - expected));
+        }
+    }
+
+    // 2. Monte Carlo anchors. Euler discretization with antithetic paths
+    //    and an exact GBM control variate, 2x200000 paths, seed 20261125;
+    //    the standard error of each value is below 0.0005.
+    {
+        const Real mcValues[][2] = {
+            { 0.999, 13.2300 },
+            { 0.99,  12.7611 },
+            { 0.95,  10.8955 },
+            { 0.9,    8.9994 },
+            { 0.5,    3.2017 },
+            { 1.1,   20.0291 }
+        };
+
+        for (const auto& mcValue : mcValues) {
+            const Real beta = mcValue[0];
+
+            VanillaOption option(
+                ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+                exercise);
+            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
+
+            const Real calculated = option.NPV();
+            if (std::fabs(calculated - mcValue[1]) > 0.005) {
+                BOOST_ERROR(
+                    "failed to reproduce the Monte Carlo anchor value"
+                    << "\n    beta            : " << beta
+                    << "\n    expected        : " << mcValue[1]
+                    << "\n    calculated      : " << calculated
+                    << "\n    difference      : "
+                    << std::fabs(calculated - mcValue[1])
+                    << "\n    tolerance       : 0.005");
+            }
+        }
+    }
+
+    // 3. zero rate invariance: the drift transform reproduces the
+    //    driftless values of the former implementation exactly
+    {
+        const ext::shared_ptr<YieldTermStructure> rTS0 =
+            flatRate(today, 0.0, dc);
+        const Real r0Values[][3] = {
+            { 0.999,  90.0, 16.9649458981 },
+            { 0.999, 110.0,  8.08624096975 },
+            { 0.95,   90.0, 14.8930447001 },
+            { 0.95,  100.0,  9.48434259877 },
+            { 0.95,  110.0,  5.71842357822 },
+            { 0.9,   100.0,  7.54031962747 },
+            { 0.8,   100.0,  4.76193587653 },
+            { 0.5,   100.0,  1.19679317903 },
+            { 0.2,   100.0,  0.300629054252 },
+            { 0.0,   100.0,  0.11968268412 },
+            { -0.5,  100.0,  0.0119682684681 },
+            { 1.1,   100.0, 18.7928971285 },
+            { 1.5,   100.0,  1.85310127805 }
+        };
+
+        for (const auto& r0Value : r0Values) {
+            const Real beta = r0Value[0];
+            const Real strike = r0Value[1];
+
+            VanillaOption option(
+                ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
+                exercise);
+            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                f0, alpha, beta, Handle<YieldTermStructure>(rTS0)));
+
+            const Real calculated = option.NPV();
+            if (std::fabs(calculated - r0Value[2]) > 1e-9) {
+                BOOST_ERROR(
+                    "zero rate values changed relative to the former "
+                    "driftless implementation"
+                    << "\n    beta            : " << beta
+                    << "\n    strike          : " << strike
+                    << "\n    expected        : " << r0Value[2]
+                    << "\n    calculated      : " << calculated
+                    << "\n    difference      : "
+                    << std::fabs(calculated - r0Value[2]));
+            }
+        }
+    }
+
+    // 4. the engine's quadrature of the effective time under a non-zero
+    //    flat rate is checked against the closed form of the integral
+    {
+        const Real strike = 100.0;
+
+        for (Real beta : {0.5, 1.1}) {
+            const Time effectiveTime = alpha*alpha
+                *(1.0 - std::exp(-2.0*(1.0-beta)*rate*maturity))
+                /(2.0*(1.0-beta)*rate);
+
+            const CEVCalculator unitVolCalculator(f0, 1.0, beta);
+            const Real expected = unitVolCalculator.value(
+                Option::Call, strike*discount, effectiveTime);
+
+            VanillaOption option(
+                ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
+                exercise);
+            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
+
+            const Real calculated = option.NPV();
+            if (std::fabs(calculated - expected) > 1e-9) {
+                BOOST_ERROR(
+                    "failed to integrate the effective time over a flat rate"
+                    << "\n    beta            : " << beta
+                    << "\n    expected        : " << expected
+                    << "\n    calculated      : " << calculated
+                    << "\n    difference      : "
+                    << std::fabs(calculated - expected)
+                    << "\n    tolerance       : 1e-9");
             }
         }
     }

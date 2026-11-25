@@ -32,7 +32,7 @@ namespace QuantLib {
 
     //! constant elasticity of variance process (absorbing boundary at f=0)
     /*! \f[
-         df_t = \alpha f_t^\beta \mathrm{d}W_t
+         df_t = r_t f_t \mathrm{d}t + \alpha f_t^\beta \mathrm{d}W_t
         \f]
     */
 
@@ -62,6 +62,7 @@ namespace QuantLib {
       private:
         const ext::shared_ptr<YieldTermStructure> rTS_;
         const Size direction_;
+        const TripleBandLinearOp dxMap_;
         const TripleBandLinearOp dxxMap_;
         TripleBandLinearOp mapT_;
     };
