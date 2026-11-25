@@ -174,7 +174,10 @@ namespace QuantLib {
         // amounts rate*accrualPeriod are all positive, which makes the
         // solved function strictly decreasing; negative amounts leave it
         // non-monotone and the decomposition does not then provide the
-        // guarantee.
+        // guarantee. The engine's own spread correction can produce
+        // negative amounts on ordinary positive-spread swaps, so the solve
+        // relies on the redemption term keeping the endpoint signs
+        // opposite there, as it did before.
         template <class F>
         Real widenedYBracket(const F& function, Real bound) {
             Real fLower = function(-bound), fUpper = function(bound);
