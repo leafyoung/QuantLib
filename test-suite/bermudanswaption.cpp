@@ -1086,8 +1086,8 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
             // the label-swap identity holds to the outer x-integration's
             // discretization noise: the segment rule samples the two
             // labelings on different grids, leaving ~1e-5 relative
-            // disagreement at off-ATM states (measured on the combined
-            // fixed-leg-accrual engine at 400 intervals, gone at 4000)
+            // disagreement at off-ATM states on this engine at 400
+            // intervals (gone at 4000)
             const Real tol =
                 1.0e-4 * std::max<Real>(std::fabs(npvRelabeled), 1.0);
             if (std::fabs(npv - npvRelabeled) > tol) {
