@@ -44,8 +44,9 @@ namespace QuantLib {
         const DiscountFactor dStart = discountCurve->discount(start);
         const Real exponent = 2.0*(1.0-beta);
 
-        // the integrand is smooth and positive; a fixed 64 point
-        // Gauss-Legendre rule resolves it to machine precision
+        // the integrand is smooth and positive for flat rate curves and
+        // piecewise smooth otherwise; a fixed 64 point Gauss-Legendre rule
+        // resolves it well beyond pricing tolerances
         const GaussLegendreIntegration quadrature(64);
         const Time halfLength = 0.5*(end-start);
         const Time mid = 0.5*(end+start);

@@ -321,7 +321,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
 
                 // exact at beta=1; within model curvature of the limit
                 // for the neighbouring beta values
-                const Real tol = (beta == 1.0) ? 1e-10*black : 0.05;
+                const Real tol = (beta == 1.0) ? Real(1e-10*black) : Real(0.05);
 
                 if (std::fabs(calculated - black) > tol) {
                     BOOST_ERROR(
