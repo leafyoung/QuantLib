@@ -603,6 +603,12 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevExpiredOption) {
         100.0, 0.30, 0.9, rTS));
 
     BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
+
+    // the FDM engine rejects the same input through its own maturity path
+    option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+        100.0, 0.30, 0.9, rTS, 100, 100, 1, 1.0, 1e-6));
+
+    BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
