@@ -771,6 +771,30 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
                     "two equivalent factor labelings: "
                     << npv << " vs " << npvRelabeled);
     }
+
+    // the receiver side (w = -1) runs the other branch of the payoff
+    // sign; the same label-swap identity must hold there
+    const auto receiverSwap = ext::make_shared<VanillaSwap>(
+        Swap::Receiver, 1000.0,
+        fixedSchedule, atmRate, index->dayCounter(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    receiverSwap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+    const ext::shared_ptr<Swaption> receiverSwaption =
+        ext::make_shared<Swaption>(receiverSwap,
+                                   ext::make_shared<EuropeanExercise>(start));
+    receiverSwaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
+    const Real receiverNpv = receiverSwaption->NPV();
+    receiverSwaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2ModelRelabeled, 10.0, 400));
+    const Real receiverNpvRelabeled = receiverSwaption->NPV();
+
+    if (std::fabs(receiverNpv - receiverNpvRelabeled) > tol) {
+        BOOST_ERROR("G2SwaptionEngine should price the receiver side "
+                    "identically under the two equivalent factor labelings: "
+                    << receiverNpv << " vs " << receiverNpvRelabeled);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

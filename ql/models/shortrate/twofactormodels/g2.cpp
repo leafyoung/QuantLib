@@ -166,7 +166,10 @@ namespace QuantLib {
         // a wider, sigmax_-scaled range; the bracket must contain the root
         // for either factor labeling, so it grows until the endpoint values
         // have opposite signs (or the growth cap is reached and Brent
-        // reports the root as not bracketed).
+        // reports the root as not bracketed). Uniqueness of the root is
+        // guaranteed while the coupon amounts rate*accrualPeriod share one
+        // sign, which makes the solved function strictly decreasing; for a
+        // negative rate the decomposition does not provide that guarantee.
         template <class F>
         Real widenedYBracket(const F& function, Real bound) {
             Real fLower = function(-bound), fUpper = function(bound);
