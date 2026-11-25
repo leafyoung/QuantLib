@@ -176,8 +176,7 @@ namespace QuantLib {
         template <class F>
         Real widenedYBracket(const F& function, Real bound) {
             Real fLower = function(-bound), fUpper = function(bound);
-            for (Size attempt = 0;
-                 fLower*fUpper >= 0.0 && attempt < 20; ++attempt) {
+            for (Size attempt = 0; fLower * fUpper >= 0.0 && attempt < 20; ++attempt) {
                 bound *= 2.0;
                 fLower = function(-bound);
                 fUpper = function(bound);
