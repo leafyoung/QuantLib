@@ -377,12 +377,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
 
     // a loose tolerance: this only needs to catch a multi-percent day-count
     // mismatch, not to certify the analytic/FDM agreement to high precision
-    const Real tol = 0.02 * fdmNPV;
-    if (std::fabs(analyticNPV - fdmNPV) > tol) {
-        BOOST_ERROR("G2SwaptionEngine disagrees with FdG2SwaptionEngine by "
-                    "more than " << tol << ": analytic=" << analyticNPV
-                    << ", fdm=" << fdmNPV);
-    }
+    QL_CHECK_CLOSE(analyticNPV, fdmNPV, 2.0);
 }
 
 BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
@@ -444,12 +439,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
     // a loose tolerance: this only needs to catch the zero-fixed-rate
     // coupon being wrongly collapsed to 0, not to certify analytic/FDM
     // agreement to high precision
-    const Real tol = 0.02 * fdmNPV;
-    if (std::fabs(analyticNPV - fdmNPV) > tol) {
-        BOOST_ERROR("G2SwaptionEngine disagrees with FdG2SwaptionEngine by "
-                    "more than " << tol << " on a zero-fixed-rate swap: "
-                    "analytic=" << analyticNPV << ", fdm=" << fdmNPV);
-    }
+    QL_CHECK_CLOSE(analyticNPV, fdmNPV, 2.0);
 }
 
 BOOST_AUTO_TEST_CASE(testG2SwaptionEngineCashSettlement) {

@@ -304,8 +304,6 @@ namespace QuantLib {
                 dayCounter.yearFraction(settlement,
                                         arguments.fixedPayDates[i]);
 
-        // the fixed leg priced off its own coupons, independent of the
-        // curve's day counter
         std::vector<Real> coupons =
             fixedLegCoupons(arguments.swap->fixedLeg(),
                             fixedRate, arguments.fixedCoupons.size());
