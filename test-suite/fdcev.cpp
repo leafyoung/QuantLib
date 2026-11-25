@@ -244,11 +244,10 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
 
                 // call - put = disc*(E[f_T] - strike), where the
                 // discounted expectation E[f_T*disc] equals f0*disc for
-                // beta <= 1 (true martingale) and
-                // f0*gamma_p(delta/2-1, x0/(2*tau)) < f0*disc can exceed
-                // or fall below f0*disc for beta > 1 (strict local
-                // martingale, bounded by f0*disc but not by f0), evaluated
-                // at the effective time tau of the drifted process.
+                // beta <= 1 (true martingale) and f0*gamma_p(delta/2-1,
+                // x0/(2*tau)) for beta > 1 (strict local martingale,
+                // bounded by f0 but not by f0*disc), evaluated at the
+                // effective time tau of the drifted process.
                 const DiscountFactor discount = rTS->discount(maturityDate);
                 Real expectedForward = f0 - strike*discount;
                 if (beta > 1.0) {
