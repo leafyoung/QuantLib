@@ -93,8 +93,8 @@ namespace QuantLib {
         value of that unit volatility driftless process at the discounted
         strike \f$ K\,disc(0,end)/disc(0,start) \f$. For
         \f$ \beta = 1 \f$ the process is geometric Brownian motion and the
-        effective time \f$ \alpha^2(end-start) \f$ reproduces the Black
-        economy exactly.
+        effective time \f$ \alpha^2(end-start) \f$ reproduces the
+        Black-Scholes limit exactly.
     */
     Time cevEffectiveTime(
         Real alpha, Real beta,
