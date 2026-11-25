@@ -98,14 +98,8 @@ namespace QuantLib {
                            nc_chi2(2.0-delta_, kTilde/t), x0_/t));
             }
             else {
-                // put = call - f0 + strike*disc by put-call parity
-                const Real g =
-                    boost::math::gamma_p(0.5*delta_-1.0, x0_/(2.0*t));
-
-                return f0_ * (g - 1.0 - boost::math::cdf(
-                           nc_chi2(delta_-2.0, kTilde/t), x0_/t))
-                       + strike * (1.0 - boost::math::cdf(
-                           nc_chi2(delta_, x0_/t), kTilde/t));
+                // put = call - f0 + strike by put-call parity
+                return value(Option::Call, strike, t) - f0_ + strike;
             }
         }
         else
@@ -136,9 +130,9 @@ namespace QuantLib {
         const Time maturity = discountCurve_->timeFromReference(exerciseDate);
         const Real beta = calculator_->beta();
 
-        if (std::fabs(beta - 1.0) < 1e-4) {
+        if (std::fabs(beta - 1.0) < cevBlackLimitBandWidth) {
             // the CEV price converges to its Black-Scholes limit as beta
-            // approaches one. Within 1e-4 of one the closed form degenerates
+            // approaches one. Within the band the closed form degenerates
             // towards infinite degrees of freedom and boost's noncentral
             // chi-squared evaluation can raise, while the deviation from the
             // limit stays within the model curvature of the neighbourhood
@@ -151,9 +145,8 @@ namespace QuantLib {
 
         // Remove the deterministic drift: the option value is the
         // undiscounted value of the drift-removed unit volatility CEV
-        // process at the effective time, with the strike carried at the
-        // forward. Exact for deterministic rate curves, see
-        // cevEffectiveTime.
+        // process at the effective time, at the discounted strike.
+        // Exact for deterministic rate curves, see cevEffectiveTime.
         const CEVCalculator unitVolCalculator(calculator_->f0(), 1.0, beta);
 
         results_.value = unitVolCalculator.value(

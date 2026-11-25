@@ -67,10 +67,17 @@ namespace QuantLib {
         const Real f0_, alpha_, beta_, delta_, x0_;
     };
 
+    /*! Width of the neighbourhood of \f$ \beta = 1 \f$ inside which the CEV
+        price is replaced by its exact Black-Scholes limit. Outside the band
+        the closed form is valid; inside it, the noncentral chi-squared
+        degrees of freedom grow beyond what boost's evaluation supports.
+    */
+    constexpr Real cevBlackLimitBandWidth = 1e-4;
+
     /*! Effective time of the drift-removed CEV process.
 
         Under a deterministically varying rate curve the CEV process is, after
-        the change of variable \f$ \tilde f = f / disc(0,t) \f$, a driftless
+        the change of variable \f$ \tilde f = f \cdot disc(0,t) \f$, a driftless
         diffusion with time dependent volatility
         \f$ \alpha(t) = \alpha\, disc(0,t)^{1-\beta} \f$. A deterministic time
         change maps this to a driftless CEV process with unit volatility at
@@ -82,8 +89,8 @@ namespace QuantLib {
         \f]
 
         An option on \f$ f \f$ maturing at \f$ end \f$ is then the undiscounted
-        value of that unit volatility driftless process with the strike
-        carried at the forward \f$ K\,disc(0,end)/disc(0,start) \f$. For
+        value of that unit volatility driftless process at the discounted
+        strike \f$ K\,disc(0,end)/disc(0,start) \f$. For
         \f$ \beta = 1 \f$ the process is geometric Brownian motion and the
         effective time \f$ \alpha^2(end-start) \f$ reproduces the Black
         economy exactly.

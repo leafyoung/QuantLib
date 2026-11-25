@@ -23,7 +23,6 @@
 #include <ql/math/integrals/gausslobattointegral.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
-#include <ql/termstructures/yield/discountcurve.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
@@ -212,7 +211,6 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
 
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
-    SavedSettings backup;
     Settings::instance().evaluationDate() = today;
 
     const Date maturityDate = today + Period(12, Months);
@@ -269,7 +267,6 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
 
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
-    SavedSettings backup;
     Settings::instance().evaluationDate() = today;
 
     const Date maturityDate = today + Period(12, Months);
@@ -329,7 +326,6 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
 
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
-    SavedSettings backup;
     Settings::instance().evaluationDate() = today;
 
     const Date maturityDate = today + Period(12, Months);
@@ -407,8 +403,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
         }
     }
 
-    // 3. zero rate invariance: the drift transform reproduces the
-    //    driftless values of the former implementation exactly
+    // 3. zero rate invariance: at zero rates the drifted transform
+    //    reduces to the plain Schroder noncentral chi-squared formula
     {
         const ext::shared_ptr<YieldTermStructure> rTS0 =
             flatRate(today, 0.0, dc);
@@ -441,8 +437,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
             const Real calculated = option.NPV();
             if (std::fabs(calculated - r0Value[2]) > 1e-9) {
                 BOOST_ERROR(
-                    "zero rate values changed relative to the former "
-                    "driftless implementation"
+                    "zero-rate value differs from the driftless "
+                    "Schroder value"
                     << "\n    beta            : " << beta
                     << "\n    strike          : " << strike
                     << "\n    expected        : " << r0Value[2]

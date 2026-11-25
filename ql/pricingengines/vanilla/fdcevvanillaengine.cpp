@@ -57,7 +57,7 @@ namespace QuantLib {
                 const DiscountFactor df =
                     rTS_->discount(t + time2Expiry) / rTS_->discount(t);
 
-                if (std::fabs(beta_ - 1.0) < 1e-4) {
+                if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
                     // the CEV price converges to its Black-Scholes limit as
                     // beta approaches one; see AnalyticCEVEngine
                     return blackFormula(
