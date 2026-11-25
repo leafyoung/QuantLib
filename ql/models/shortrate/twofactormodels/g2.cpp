@@ -160,6 +160,26 @@ namespace QuantLib {
         return -std::expm1(-x*t)/x;
     }
 
+    namespace {
+        // A sigmay_-scaled bracket can miss the root when the
+        // slower-reverting factor is labeled x, since x is integrated over
+        // a wider, sigmax_-scaled range; the bracket must contain the root
+        // for either factor labeling, so it grows until the endpoint values
+        // have opposite signs (or the growth cap is reached and Brent
+        // reports the root as not bracketed).
+        template <class F>
+        Real widenedYBracket(const F& function, Real bound) {
+            Real fLower = function(-bound), fUpper = function(bound);
+            for (Size attempt = 0;
+                 fLower*fUpper >= 0.0 && attempt < 20; ++attempt) {
+                bound *= 2.0;
+                fLower = function(-bound);
+                fUpper = function(bound);
+            }
+            return bound;
+        }
+    }
+
     class G2::SwaptionPricingFunction {
       public:
         SwaptionPricingFunction(Real a,
@@ -219,21 +239,10 @@ namespace QuantLib {
             SolvingFunction function(lambda, Bb_) ;
             Brent s1d;
             s1d.setMaxEvaluations(1000);
-            Real searchBound = std::max(10.0*sigmay_, 1.0);
-            // The y and x factors are interchangeable labels for the same
-            // G2++ model; this bound (scaled to sigmay_ alone) can fail to
-            // bracket the root when the slower-reverting factor happens to
-            // be labeled x (a < b), although the identical model with the
-            // factor labels swapped prices the same state cleanly. Widen
-            // adaptively rather than throwing on a perfectly valid,
-            // priceable state.
-            Real fLower = function(-searchBound), fUpper = function(searchBound);
-            for (Size attempt = 0;
-                 fLower*fUpper >= 0.0 && attempt < 20; ++attempt) {
-                searchBound *= 2.0;
-                fLower = function(-searchBound);
-                fUpper = function(searchBound);
-            }
+            // widen until the bracket contains the root, whichever way the
+            // two factor labels are assigned
+            Real searchBound = widenedYBracket(function,
+                                               std::max(10.0*sigmay_, 1.0));
             Real yb = s1d.solve(function, 1e-6, 0.00, -searchBound, searchBound);
 
             Real h1 = (yb - muy_)/(sigmay_*txy) -

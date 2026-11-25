@@ -749,7 +749,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     swaption->setPricingEngine(
         ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
 
-    Real npv;
+    Real npv = Null<Real>();
     try {
         npv = swaption->NPV();
     } catch (const Error& e) {
@@ -765,7 +765,7 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
         ext::make_shared<G2SwaptionEngine>(g2ModelRelabeled, 10.0, 400));
     const Real npvRelabeled = swaption->NPV();
 
-    const Real tol = 1.0e-6 * std::max(std::fabs(npvRelabeled), 1.0);
+    const Real tol = 1.0e-6 * std::max<Real>(std::fabs(npvRelabeled), 1.0);
     if (std::fabs(npv - npvRelabeled) > tol) {
         BOOST_ERROR("G2SwaptionEngine should price identically under the "
                     "two equivalent factor labelings: "
