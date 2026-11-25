@@ -138,6 +138,8 @@ namespace QuantLib {
         const Time maturity = discountCurve_->timeFromReference(exerciseDate);
         const Real beta = calculator_->beta();
 
+        QL_REQUIRE(maturity > 0.0, "the option has already expired");
+
         if (std::fabs(beta - 1.0) < cevBlackLimitBandWidth) {
             // the CEV price converges to its Black-Scholes limit as beta
             // approaches one. Within the band the closed form degenerates

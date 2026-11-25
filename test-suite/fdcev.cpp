@@ -563,8 +563,9 @@ BOOST_AUTO_TEST_CASE(testFdmCevPiecewiseRateCurve) {
         f0, alpha, 0.9, rTS));
     const Real analyticNPV = option.NPV();
 
-    // a time grid finer than 1/365 days per step drives the rollback's
-    // boundary evaluation up against the curve's maximum time
+    // a time grid finer than one day (1/365 of a year) per step drives
+    // the rollback's boundary evaluation up against the curve's
+    // maximum time
     option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
         f0, alpha, 0.9, rTS, 400, 400, 1, 1.0, 1e-6));
 
