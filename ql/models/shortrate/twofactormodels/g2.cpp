@@ -170,9 +170,10 @@ namespace QuantLib {
         // to +-inf at extreme x; an infinite endpoint still leaves the
         // product signed correctly, and Brent then bisects off the finite
         // side. Uniqueness of the root is guaranteed while the coupon
-        // amounts rate*accrualPeriod share one sign, which makes the
-        // solved function strictly decreasing; for a negative rate the
-        // decomposition does not provide that guarantee.
+        // amounts rate*accrualPeriod are all positive, which makes the
+        // solved function strictly decreasing; negative amounts leave it
+        // non-monotone and the decomposition does not then provide the
+        // guarantee.
         template <class F>
         Real widenedYBracket(const F& function, Real bound) {
             Real fLower = function(-bound), fUpper = function(bound);
