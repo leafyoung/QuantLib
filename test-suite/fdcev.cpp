@@ -28,6 +28,7 @@
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
 #include <ql/shared_ptr.hpp>
+#include <boost/math/special_functions/gamma.hpp>
 
 using namespace QuantLib;
 using boost::unit_test_framework::test_suite;
@@ -240,9 +241,27 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
                 put.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
-                const Real forward = f0 - strike*rTS->discount(maturityDate);
+                // call - put = E[f_T] - K*disc. For beta <= 1 the driftless
+                // CEV process is a true martingale and E[f_T] = f0; for
+                // beta > 1 it is a strict local martingale with
+                // E[f_T] = f0*gamma_p(delta/2-1, x0/(2*tau)) < f0, evaluated
+                // at the effective time tau of the drifted process.
+                const DiscountFactor discount = rTS->discount(maturityDate);
+                Real expectedForward = f0 - strike*discount;
+                if (beta > 1.0) {
+                    const Time tau = cevEffectiveTime(
+                        alpha, beta, rTS, 0.0,
+                        rTS->timeFromReference(maturityDate));
+                    const Real delta = (1.0-2.0*beta)/(1.0-beta);
+                    const Real x0 = std::pow(f0, 2.0*(1.0-beta))
+                        /((1.0-beta)*(1.0-beta));
+
+                    expectedForward = f0*boost::math::gamma_p(
+                        0.5*delta-1.0, x0/(2.0*tau)) - strike*discount;
+                }
+
                 const Real residual =
-                    call.NPV() - put.NPV() - forward;
+                    call.NPV() - put.NPV() - expectedForward;
                 const Real tol = 1e-8*(f0+strike);
 
                 if (std::fabs(residual) > tol) {
@@ -445,6 +464,30 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
                     << "\n    calculated      : " << calculated
                     << "\n    difference      : "
                     << std::fabs(calculated - r0Value[2]));
+            }
+        }
+
+        // a direct beta > 1 put value, independently verified by pdf
+        // quadrature: for beta > 1 the process is a strict local martingale
+        // with E[f_T] = f0*gamma_p(delta/2-1, x0/(2t)) < f0, so the put
+        // is large even at the money
+        {
+            VanillaOption option(
+                ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
+                exercise);
+            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                f0, alpha, 1.5, Handle<YieldTermStructure>(rTS0)));
+
+            const Real calculated = option.NPV();
+            if (std::fabs(calculated - 81.9268415697) > 1e-6) {
+                BOOST_ERROR(
+                    "beta > 1 put value differs from the independently "
+                    "verified value"
+                    << "\n    expected        : " << 81.9268415697
+                    << "\n    calculated      : " << calculated
+                    << "\n    difference      : "
+                    << std::fabs(calculated - 81.9268415697)
+                    << "\n    tolerance       : 1e-6");
             }
         }
     }

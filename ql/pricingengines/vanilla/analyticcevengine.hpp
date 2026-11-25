@@ -53,7 +53,7 @@ namespace QuantLib {
             \f$ df_t = \alpha f_t^\beta dW_t \f$ at time \p t.
             To price under a rate curve, use this value with a unit
             volatility calculator at the effective time returned by
-            cevEffectiveTime and the strike carried at the forward.
+            cevEffectiveTime and the strike discounted to today.
         */
         Real value(Option::Type optionType, Real strike, Time t) const;
 
@@ -72,7 +72,7 @@ namespace QuantLib {
         the closed form is valid; inside it, the noncentral chi-squared
         degrees of freedom grow beyond what boost's evaluation supports.
     */
-    constexpr Real cevBlackLimitBandWidth = 1e-4;
+    constexpr double cevBlackLimitBandWidth = 1e-4;
 
     /*! Effective time of the drift-removed CEV process.
 

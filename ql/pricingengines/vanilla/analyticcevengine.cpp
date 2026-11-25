@@ -98,8 +98,13 @@ namespace QuantLib {
                            nc_chi2(2.0-delta_, kTilde/t), x0_/t));
             }
             else {
-                // put = call - f0 + strike by put-call parity
-                return value(Option::Call, strike, t) - f0_ + strike;
+                // for beta > 1 the driftless CEV process is a strict local
+                // martingale with E[f_t] = f0*gamma_p(delta_/2-1, x0_/(2t)),
+                // so put = call - E[f_t] + strike
+                return value(Option::Call, strike, t)
+                     - f0_ * boost::math::gamma_p(0.5*delta_-1.0,
+                                                  x0_/(2.0*t))
+                     + strike;
             }
         }
         else
