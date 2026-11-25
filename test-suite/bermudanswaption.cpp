@@ -387,8 +387,8 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
     // Regression test: G2SwaptionEngine must price the fixed leg from each
     // coupon's own accrual period times the (possibly spread-corrected)
     // rate it actually prices, so that a swap whose own fixed rate is
-    // exactly 0 -- a legitimate, constructible instrument when the floating
-    // leg carries a nonzero spread -- still prices its coupons off the
+    // exactly 0 -- a legitimate instrument (e.g. with a nonzero
+    // floating-leg spread) -- still prices its coupons off the
     // nonzero spread-adjusted rate. A coupon amount that divides by the
     // swap's own fixed rate is undefined here (0/0), and mapping that
     // ratio to 0 would price every coupon as if the spread-adjusted rate
