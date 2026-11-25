@@ -35,6 +35,9 @@ namespace QuantLib {
         const ext::shared_ptr<YieldTermStructure>& discountCurve,
         Time start, Time end) {
 
+        QL_REQUIRE(start < end,
+                   "cevEffectiveTime requires a positive time interval");
+
         if (beta == 1.0)
             return squared(alpha)*(end-start);
 
