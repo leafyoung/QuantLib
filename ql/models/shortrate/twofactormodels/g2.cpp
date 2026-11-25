@@ -19,6 +19,7 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 */
 
+#include <ql/cashflows/coupon.hpp>
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/integrals/segmentintegral.hpp>
 #include <ql/math/solvers1d/brent.hpp>
@@ -170,11 +171,11 @@ namespace QuantLib {
                                 Real w,
                                 Real start,
                                 std::vector<Time> payTimes,
-                                Rate fixedRate,
+                                std::vector<Real> coupons,
                                 const G2& model)
         : a_(a), sigma_(sigma), b_(b), eta_(eta), rho_(rho), w_(w), T_(start),
-          t_(std::move(payTimes)), rate_(fixedRate), size_(t_.size()), A_(size_), Ba_(size_),
-          Bb_(size_) {
+          t_(std::move(payTimes)), coupons_(std::move(coupons)), size_(t_.size()),
+          A_(size_), Ba_(size_), Bb_(size_) {
 
 
             sigmax_ = sigma_*std::sqrt(0.5*(1.0-std::exp(-2.0*a_*T_))/a_);
@@ -211,8 +212,7 @@ namespace QuantLib {
             Array lambda(size_);
             Size i;
             for (i=0; i<size_; i++) {
-                Real tau = (i==0 ? t_[0] - T_ : t_[i] - t_[i-1]);
-                Real c = (i==size_-1 ? Real(1.0+rate_*tau) : rate_*tau);
+                Real c = (i==size_-1 ? Real(1.0+coupons_[i]) : coupons_[i]);
                 lambda[i] = c*A_[i]*std::exp(-Ba_[i]*x);
             }
 
@@ -261,11 +261,30 @@ namespace QuantLib {
         Real a_, sigma_, b_, eta_, rho_, w_;
         Time T_;
         std::vector<Time> t_;
-        Rate rate_;
+        std::vector<Real> coupons_;
         Size size_;
         Array A_, Ba_, Bb_;
         Real mux_, muy_, sigmax_, sigmay_, rhoxy_;
     };
+
+    namespace {
+        // Fixed-leg coupon amounts per unit nominal at the given (possibly
+        // spread-adjusted) rate: each amount is the rate times the coupon's
+        // own accrual period, taken off the swap's fixed leg. Such amounts
+        // are independent of the curve's day counter, and they stay defined
+        // when the swap's own fixed rate is zero.
+        std::vector<Real> fixedLegCoupons(const Leg& fixedLeg,
+                                          Rate fixedRate,
+                                          Size size) {
+            std::vector<Real> amounts(size);
+            for (Size i=0; i<amounts.size(); ++i) {
+                auto coupon = ext::dynamic_pointer_cast<Coupon>(fixedLeg[i]);
+                QL_REQUIRE(coupon, "fixed leg cashflow is not a coupon");
+                amounts[i] = fixedRate * coupon->accrualPeriod();
+            }
+            return amounts;
+        }
+    }
 
     Real G2::swaption(const Swaption::arguments& arguments,
                       Rate fixedRate, Real range, Size intervals) const {
@@ -285,10 +304,16 @@ namespace QuantLib {
                 dayCounter.yearFraction(settlement,
                                         arguments.fixedPayDates[i]);
 
+        // the fixed leg priced off its own coupons, independent of the
+        // curve's day counter
+        std::vector<Real> coupons =
+            fixedLegCoupons(arguments.swap->fixedLeg(),
+                            fixedRate, arguments.fixedCoupons.size());
+
         SwaptionPricingFunction function(a(), sigma(), b(), eta(), rho(),
                                          w, start,
                                          fixedPayTimes,
-                                         fixedRate, (*this));
+                                         coupons, (*this));
 
         Real upper = function.mux() + range*function.sigmax();
         Real lower = function.mux() - range*function.sigmax();

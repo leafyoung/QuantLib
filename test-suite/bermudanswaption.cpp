@@ -37,6 +37,7 @@
 #include <ql/pricingengines/swaption/g2swaptionengine.hpp>
 #include <ql/pricingengines/swaption/treeswaptionengine.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
+#include <ql/time/daycounters/actual360.hpp>
 #include <ql/time/daycounters/thirty360.hpp>
 #include <ql/time/schedule.hpp>
 
@@ -309,6 +310,145 @@ BOOST_AUTO_TEST_CASE(testCachedG2Values) {
                         << "calculated: " << calculatedTree << "\n"
                         << "expected:   " << expectedTree[i]);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testG2SwaptionEngineDayCount) {
+    BOOST_TEST_MESSAGE(
+        "Testing that G2SwaptionEngine respects the fixed leg's own day "
+        "count...");
+
+    // Regression test: G2SwaptionEngine must build the fixed-leg cashflows
+    // from each coupon's accrualPeriod() on the swap's own fixed-leg day
+    // count; a curve-day-count construction prices a different swap than
+    // the one given. A day-count mismatch is easy to miss because a
+    // relative tolerance that passes on matching day counters says nothing
+    // about the mismatched case. Parameters (realistic G2++, an Act/360
+    // annual fixed leg on a Euribor6M swap vs an Act/365F curve) make the
+    // discrepancy a multi-percent gap that any sane tolerance rejects.
+
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+
+    RelinkableHandle<YieldTermStructure> termStructure;
+    auto index = ext::make_shared<Euribor6M>(termStructure);
+    Calendar calendar = index->fixingCalendar();
+    Date settlement = calendar.advance(today, 2, Days);
+    termStructure.linkTo(flatRate(settlement, 0.03, Actual365Fixed()));
+
+    Date start = calendar.advance(settlement, 5, Years);
+    Date maturity = calendar.advance(start, 10, Years);
+    Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
+                           Unadjusted, Unadjusted,
+                           DateGeneration::Forward, false);
+    Schedule floatSchedule(start, maturity, Period(Semiannual), calendar,
+                           ModifiedFollowing, ModifiedFollowing,
+                           DateGeneration::Forward, false);
+
+    auto probeSwap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, 0.0, Actual360(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    probeSwap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+    const Rate atmRate = probeSwap->fairRate();
+
+    auto swap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, atmRate, Actual360(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    swap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+
+    const auto swaption = ext::make_shared<Swaption>(
+        swap, ext::make_shared<EuropeanExercise>(start));
+
+    const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
+    const auto g2Model =
+        ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
+
+    swaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
+    const Real analyticNPV = swaption->NPV();
+
+    swaption->setPricingEngine(
+        ext::make_shared<FdG2SwaptionEngine>(g2Model, 50, 200, 200, 0, 1e-4));
+    const Real fdmNPV = swaption->NPV();
+
+    // a loose tolerance: this only needs to catch a multi-percent day-count
+    // mismatch, not to certify the analytic/FDM agreement to high precision
+    const Real tol = 0.02 * fdmNPV;
+    if (std::fabs(analyticNPV - fdmNPV) > tol) {
+        BOOST_ERROR("G2SwaptionEngine disagrees with FdG2SwaptionEngine by "
+                    "more than " << tol << ": analytic=" << analyticNPV
+                    << ", fdm=" << fdmNPV);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testG2SwaptionEngineZeroFixedRate) {
+    BOOST_TEST_MESSAGE(
+        "Testing G2SwaptionEngine on a swap with a zero fixed rate...");
+
+    // Regression test: G2SwaptionEngine must price the fixed leg from each
+    // coupon's own accrual period times the (possibly spread-corrected)
+    // rate it actually prices, so that a swap whose own fixed rate is
+    // exactly 0 -- a legitimate, constructible instrument when the floating
+    // leg carries a nonzero spread -- still prices its coupons off the
+    // nonzero spread-adjusted rate. A coupon amount that divides by the
+    // swap's own fixed rate is undefined here (0/0), and mapping that
+    // ratio to 0 would price every coupon as if the spread-adjusted rate
+    // were 0 as well. testG2SwaptionEngineDayCount covers the day-count
+    // form of the same requirement; this one covers the rate form.
+
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+
+    RelinkableHandle<YieldTermStructure> termStructure;
+    auto index = ext::make_shared<Euribor6M>(termStructure);
+    Calendar calendar = index->fixingCalendar();
+    Date settlement = calendar.advance(today, 2, Days);
+    termStructure.linkTo(flatRate(settlement, 0.03, Actual365Fixed()));
+
+    Date start = calendar.advance(settlement, 5, Years);
+    Date maturity = calendar.advance(start, 10, Years);
+    Schedule fixedSchedule(start, maturity, Period(Annual), calendar,
+                           Unadjusted, Unadjusted,
+                           DateGeneration::Forward, false);
+    Schedule floatSchedule(start, maturity, Period(Semiannual), calendar,
+                           ModifiedFollowing, ModifiedFollowing,
+                           DateGeneration::Forward, false);
+
+    const Spread spread = 0.01;
+    auto swap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1000.0,
+        fixedSchedule, 0.0, Actual360(),
+        floatSchedule, index, spread, index->dayCounter());
+    swap->setPricingEngine(
+        ext::make_shared<DiscountingSwapEngine>(termStructure));
+
+    const auto swaption = ext::make_shared<Swaption>(
+        swap, ext::make_shared<EuropeanExercise>(start));
+
+    const Real a=0.77, sigma=0.022, b=0.083, eta=0.0107, rho=-0.7;
+    const auto g2Model =
+        ext::make_shared<G2>(termStructure, a, sigma, b, eta, rho);
+
+    swaption->setPricingEngine(
+        ext::make_shared<G2SwaptionEngine>(g2Model, 10.0, 400));
+    const Real analyticNPV = swaption->NPV();
+
+    swaption->setPricingEngine(
+        ext::make_shared<FdG2SwaptionEngine>(g2Model, 50, 200, 200, 0, 1e-4));
+    const Real fdmNPV = swaption->NPV();
+
+    // a loose tolerance: this only needs to catch the zero-fixed-rate
+    // coupon being wrongly collapsed to 0, not to certify analytic/FDM
+    // agreement to high precision
+    const Real tol = 0.02 * fdmNPV;
+    if (std::fabs(analyticNPV - fdmNPV) > tol) {
+        BOOST_ERROR("G2SwaptionEngine disagrees with FdG2SwaptionEngine by "
+                    "more than " << tol << " on a zero-fixed-rate swap: "
+                    "analytic=" << analyticNPV << ", fdm=" << fdmNPV);
     }
 }
 
