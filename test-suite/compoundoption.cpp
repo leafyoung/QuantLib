@@ -501,6 +501,18 @@ BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
     };
     QL_CHECK_CLOSE(put->theta(), (shifted(-1) - shifted(1)) / (2.0 / 365.0), 1.0e-4);
 
+    // a call on the underlying has no maximum value: the solver is used above the put bound
+    auto onCall = [&](Option::Type motherType) {
+        CompoundOption option(ext::make_shared<PlainVanillaPayoff>(motherType, 95.0),
+                              ext::make_shared<EuropeanExercise>(mother),
+                              ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+                              ext::make_shared<EuropeanExercise>(daughter));
+        option.setPricingEngine(engine);
+        return option.NPV();
+    };
+    QL_CHECK_CLOSE(onCall(Option::Call), 0.0051820147, 1.0e-2);
+    QL_CHECK_CLOSE(onCall(Option::Put), 76.2239268193, 1.0e-6);
+
     // every price input moves the result
     for (const auto& quote : {rRate, qRate}) {
         Real before = put->NPV();
