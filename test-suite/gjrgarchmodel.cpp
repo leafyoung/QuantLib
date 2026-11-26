@@ -467,7 +467,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticEngineRejectsDegenerateInput) {
                          ext::make_shared<EuropeanExercise>(today));
     auto engine = ext::make_shared<AnalyticGJRGARCHEngine>(regular.model);
     option.setupArguments(engine->getArguments());
-    BOOST_CHECK_EXCEPTION(engine->calculate(), Error, ExpectedErrorMessage("at least one model day"));
+    BOOST_CHECK_EXCEPTION(engine->calculate(), Error,
+                          ExpectedErrorMessage("at least one model day"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
