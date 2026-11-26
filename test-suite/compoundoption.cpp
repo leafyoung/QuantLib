@@ -27,12 +27,12 @@
 #include <ql/time/calendars/target.hpp>
 #include <ql/time/calendars/nullcalendar.hpp>
 #include <ql/time/daycounters/actual360.hpp>
+#include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/quotes/simplequote.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/termstructures/yield/zerocurve.hpp>
-#include <ql/termstructures/volatility/equityfx/blackvariancecurve.hpp>
-#include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
+#include <ql/termstructures/volatility/equityfx/blackvariancecurve.hpp>
 #include <ql/utilities/dataformatters.hpp>
 
 using namespace QuantLib;
@@ -521,7 +521,8 @@ BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
         quote->setValue(quote->value() - 0.005);
     }
 
-    // just below the bound the solver is used and agrees with the nested-integral value
+    // strike 86 is below the bound (the solver is used), 95 above it; all agree with the
+    // nested-integral value
     auto zeroCurve = [&](const std::vector<Rate>& rates) {
         return ext::make_shared<ZeroCurve>(std::vector<Date>{ today, mother, daughter }, rates,
                                            dc);
