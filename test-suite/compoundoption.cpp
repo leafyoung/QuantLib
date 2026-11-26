@@ -389,17 +389,20 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
     std::vector<Rate> steepR = { 0.015, 0.015, 0.055 }, steepQ = { 0.015, 0.015, 0.045 };
     std::vector<Volatility> flatVol = { 0.2, 0.2 }, termVol = { 0.28, 0.19 };
 
-    for (const auto& value : values) {
-        bool termRates = value.regime != 1;
-        bool termVols = value.regime != 0;
+    auto makeProcess = [&](int regime) {
+        bool termRates = regime != 1;
+        bool termVols = regime != 0;
         auto rTS = ext::make_shared<ZeroCurve>(curveDates, termRates ? steepR : flatR, dc);
         auto qTS = ext::make_shared<ZeroCurve>(curveDates, termRates ? steepQ : flatQ, dc);
         auto volTS = ext::make_shared<BlackVarianceCurve>(today, volDates,
                                                           termVols ? termVol : flatVol, dc);
-
-        auto process = ext::make_shared<BlackScholesMertonProcess>(
+        return ext::make_shared<BlackScholesMertonProcess>(
             Handle<Quote>(ext::make_shared<SimpleQuote>(100.0)), Handle<YieldTermStructure>(qTS),
             Handle<YieldTermStructure>(rTS), Handle<BlackVolTermStructure>(volTS));
+    };
+
+    for (const auto& value : values) {
+        auto process = makeProcess(value.regime);
 
         CompoundOption option(ext::make_shared<PlainVanillaPayoff>(value.typeMother,
                                                                    value.strikeMother),
@@ -407,18 +410,6 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
                               ext::make_shared<PlainVanillaPayoff>(value.typeDaughter, 100.0),
                               ext::make_shared<EuropeanExercise>(daughter));
         option.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(process));
-
-        if (value.strikeMother == 3.0 && value.typeMother == C && value.typeDaughter == C &&
-            value.regime == 2) {
-            // equal maturities leave no variance between the two horizons
-            CompoundOption degenerate(
-                ext::make_shared<PlainVanillaPayoff>(C, 3.0),
-                ext::make_shared<EuropeanExercise>(daughter),
-                ext::make_shared<PlainVanillaPayoff>(C, 100.0),
-                ext::make_shared<EuropeanExercise>(daughter));
-            degenerate.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(process));
-            BOOST_CHECK_THROW(degenerate.NPV(), Error);
-        }
 
         Real calculated = option.NPV();
         if (std::fabs(calculated - value.npv) > 3.0e-4 * value.npv) {
@@ -431,6 +422,14 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
                         << "\n    calculated: " << calculated);
         }
     }
+
+    // equal maturities leave no variance between the two horizons
+    CompoundOption degenerate(ext::make_shared<PlainVanillaPayoff>(C, 3.0),
+                              ext::make_shared<EuropeanExercise>(daughter),
+                              ext::make_shared<PlainVanillaPayoff>(C, 100.0),
+                              ext::make_shared<EuropeanExercise>(daughter));
+    degenerate.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(makeProcess(2)));
+    BOOST_CHECK_THROW(degenerate.NPV(), Error);
 }
 
 BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
