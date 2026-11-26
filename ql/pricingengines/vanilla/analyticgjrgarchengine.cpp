@@ -61,7 +61,7 @@ namespace QuantLib {
         const Real strikePrice = payoff->strike();
         const Real term = process->time(arguments_.exercise->lastDate());
         const auto days = std::lround(process->daysPerYear()*term);
-        QL_REQUIRE(days >= 1, "exercise must be at least one day after the reference date");
+        QL_REQUIRE(days >= 1, "exercise must be at least one model day after the reference date");
         Size T = Size(days);
         Real r = -std::log(riskFreeDiscount/dividendDiscount)/(process->daysPerYear()*term);
         Real h1 = process->v0();
@@ -122,7 +122,8 @@ namespace QuantLib {
                                    +pow(la,4)*N+18*la*la*N)
                 + 2*b1*b2*(3+la*la) + 2*b3*b1*(la*n+3*N+la*la*N); // ok
             x1 = -6*b2*la - 2*b3*(4*n+3*la*N); // ok
-            // the recursions below divide by 1-m_i and m_i-m_j
+            // the recursions below divide by 1-m_i and m_i-m_j; only exact
+            // degeneracy is rejected, nearby values lose accuracy
             QL_REQUIRE(m1 != 1.0 && m2 != 1.0 && m3 != 1.0 &&
                        m1 != m2 && m1 != m3 && m2 != m3,
                        "degenerate GJR-GARCH parameters: the moment recursion is undefined "
