@@ -19,6 +19,7 @@
 
 #include <ql/pricingengines/exotic/analyticcompoundoptionengine.hpp>
 #include <ql/math/solvers1d/brent.hpp>
+#include <ql/pricingengines/blackcalculator.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <utility>
 
@@ -51,6 +52,37 @@ namespace QuantLib {
             ext::shared_ptr<PlainVanillaPayoff> payoff_;
         };
 
+
+        // The underlying put is worth less than strike*forward discount at every spot,
+        // so a mother strike at or above that bound has no critical spot: a mother call
+        // is worthless and a mother put pays strike - (underlying put) at every spot.
+        // Greeks follow the constant-parameter convention of the main branch.
+        CompoundOption::results
+        noCriticalSpotResults(Option::Type motherType,
+                              Real strikeMother,
+                              const ext::shared_ptr<PlainVanillaPayoff>& payoff,
+                              Real spot,
+                              DiscountFactor dividendDiscount,
+                              DiscountFactor riskFreeDiscount,
+                              DiscountFactor riskFreeDiscountMother,
+                              Real standardDeviation,
+                              Time maturity,
+                              Rate riskFreeRate) {
+            CompoundOption::results results;
+            results.value = results.delta = results.gamma = results.vega = results.theta = 0.0;
+            if (motherType == Option::Call)
+                return results;
+            BlackCalculator put(payoff, spot * dividendDiscount / riskFreeDiscount,
+                                standardDeviation, riskFreeDiscount);
+            Real discountedStrike = strikeMother * riskFreeDiscountMother;
+            results.value = discountedStrike - put.value();
+            results.delta = -put.delta(spot);
+            results.gamma = -put.gamma(spot);
+            results.vega = -put.vega(maturity);
+            results.theta = riskFreeRate * discountedStrike - put.theta(spot, maturity);
+            return results;
+        }
+
     }
 
     AnalyticCompoundOptionEngine::AnalyticCompoundOptionEngine(
@@ -68,6 +100,15 @@ namespace QuantLib {
                    "Mother strike must be positive");
 
         QL_REQUIRE(spot() > 0.0, "negative or null underlying given");
+
+        if (payoffDaughter()->optionType() == Option::Put &&
+            strikeMother() >= strikeDaughter() * riskFreeDiscountMotherDaughter()) {
+            results_ = noCriticalSpotResults(
+                payoffMother()->optionType(), strikeMother(), payoffDaughter(), spot(),
+                dividendDiscountDaughter(), riskFreeDiscountDaughter(), riskFreeDiscountMother(),
+                stdDeviationDaughter(), residualTimeDaughter(), riskFreeRateDaughter());
+            return;
+        }
 
         /* Solver Setup ***************************************************/
         auto f = ext::make_shared<ImpliedSpotHelper>(dividendDiscountMotherDaughter(),

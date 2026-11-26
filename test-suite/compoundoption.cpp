@@ -408,6 +408,18 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
                               ext::make_shared<EuropeanExercise>(daughter));
         option.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(process));
 
+        if (value.strikeMother == 3.0 && value.typeMother == C && value.typeDaughter == C &&
+            value.regime == 2) {
+            // equal maturities leave no variance between the two horizons
+            CompoundOption degenerate(
+                ext::make_shared<PlainVanillaPayoff>(C, 3.0),
+                ext::make_shared<EuropeanExercise>(daughter),
+                ext::make_shared<PlainVanillaPayoff>(C, 100.0),
+                ext::make_shared<EuropeanExercise>(daughter));
+            degenerate.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(process));
+            BOOST_CHECK_THROW(degenerate.NPV(), Error);
+        }
+
         Real calculated = option.NPV();
         if (std::fabs(calculated - value.npv) > 3.0e-4 * value.npv) {
             BOOST_ERROR("wrong compound option value on non-flat curves:"
@@ -418,6 +430,99 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
                         << "\n    expected:   " << value.npv
                         << "\n    calculated: " << calculated);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
+
+    BOOST_TEST_MESSAGE("Testing compound options on a put when no critical spot exists...");
+
+    // A put on the underlying is worth less than strike * Dr(Td)/Dr(Tm) at Tm, so for a
+    // mother strike above that bound the mother call is worth zero and the mother put
+    // is worth strike * Dr(Tm) minus the underlying put.
+    Date today = Settings::instance().evaluationDate();
+    DayCounter dc = Actual365Fixed();
+    Date mother = today + 365, daughter = today + 1095;
+
+    auto spot = ext::make_shared<SimpleQuote>(100.0);
+    auto rRate = ext::make_shared<SimpleQuote>(0.03);
+    auto qRate = ext::make_shared<SimpleQuote>(0.01);
+    auto vol = ext::make_shared<SimpleQuote>(0.2);
+    auto process = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(spot),
+        Handle<YieldTermStructure>(
+            ext::make_shared<FlatForward>(today, Handle<Quote>(qRate), dc)),
+        Handle<YieldTermStructure>(
+            ext::make_shared<FlatForward>(today, Handle<Quote>(rRate), dc)),
+        Handle<BlackVolTermStructure>(
+            ext::make_shared<BlackConstantVol>(today, NullCalendar(), Handle<Quote>(vol), dc)));
+
+    auto engine = ext::make_shared<AnalyticCompoundOptionEngine>(process);
+    auto makeOption = [&](Option::Type motherType, Real strikeMother) {
+        auto option = ext::make_shared<CompoundOption>(
+            ext::make_shared<PlainVanillaPayoff>(motherType, strikeMother),
+            ext::make_shared<EuropeanExercise>(mother),
+            ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
+            ext::make_shared<EuropeanExercise>(daughter));
+        option->setPricingEngine(engine);
+        return option;
+    };
+
+    // Dr(Td)/Dr(Tm) = exp(-0.06), so the bound is 94.1764...
+    auto call = makeOption(Option::Call, 97.0);
+    auto put = makeOption(Option::Put, 97.0);
+    QL_CHECK_SMALL(call->NPV(), 1.0e-12);
+    QL_CHECK_SMALL(call->delta(), 1.0e-12);
+    QL_CHECK_CLOSE(put->NPV(), 83.8110706994, 1.0e-6);
+
+    // delta, gamma and vega against bumps (the vega bump is a parallel flat-vol bump)
+    Real h = 0.01, upper, lower, base = put->NPV();
+    spot->setValue(100.0 + h);
+    upper = put->NPV();
+    spot->setValue(100.0 - h);
+    lower = put->NPV();
+    spot->setValue(100.0);
+    QL_CHECK_CLOSE(put->delta(), (upper - lower) / (2 * h), 1.0e-6);
+    QL_CHECK_CLOSE(put->gamma(), (upper - 2 * base + lower) / (h * h), 1.0e-3);
+    vol->setValue(0.2 + 1.0e-5);
+    upper = put->NPV();
+    vol->setValue(0.2 - 1.0e-5);
+    lower = put->NPV();
+    vol->setValue(0.2);
+    QL_CHECK_CLOSE(put->vega(), (upper - lower) / 2.0e-5, 1.0e-6);
+
+    // every price input moves the result
+    for (const auto& quote : {rRate, qRate}) {
+        Real before = put->NPV();
+        quote->setValue(quote->value() + 0.005);
+        BOOST_CHECK(std::fabs(put->NPV() - before) > 1.0e-4);
+        quote->setValue(quote->value() - 0.005);
+    }
+
+    // just below the bound the solver is used and agrees with the nested-integral value
+    auto zeroCurve = [&](const std::vector<Rate>& rates) {
+        return ext::make_shared<ZeroCurve>(std::vector<Date>{ today, mother, daughter }, rates,
+                                           dc);
+    };
+    auto termProcess = ext::make_shared<BlackScholesMertonProcess>(
+        Handle<Quote>(spot), Handle<YieldTermStructure>(zeroCurve({ 0.015, 0.015, 0.045 })),
+        Handle<YieldTermStructure>(zeroCurve({ 0.015, 0.015, 0.055 })),
+        Handle<BlackVolTermStructure>(ext::make_shared<BlackVarianceCurve>(
+            today, std::vector<Date>{ mother, daughter }, std::vector<Volatility>{ 0.28, 0.19 },
+            dc)));
+    auto termEngine = ext::make_shared<AnalyticCompoundOptionEngine>(termProcess);
+    // Kd * Dr(Td)/Dr(Tm) = 86.0708 on these curves
+    const std::vector<std::pair<Option::Type, Real>> cases = {
+        { Option::Put, 74.7139224127 }, { Option::Put, 83.5799298691 }, { Option::Call, 0.0 }
+    };
+    const std::vector<Real> strikes = { 86.0, 95.0, 95.0 };
+    for (Size i = 0; i < cases.size(); ++i) {
+        CompoundOption option(ext::make_shared<PlainVanillaPayoff>(cases[i].first, strikes[i]),
+                              ext::make_shared<EuropeanExercise>(mother),
+                              ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
+                              ext::make_shared<EuropeanExercise>(daughter));
+        option.setPricingEngine(termEngine);
+        QL_CHECK_SMALL(option.NPV() - cases[i].second, 1.0e-4);
     }
 }
 
