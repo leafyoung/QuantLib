@@ -37,6 +37,7 @@
 #include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/time/daycounters/actualactual.hpp>
 #include <ql/time/period.hpp>
+#include <functional>
 
 using namespace QuantLib;
 using namespace boost::unit_test_framework;
@@ -303,6 +304,170 @@ BOOST_AUTO_TEST_CASE(testDAXCalibration) {
                    << "\n    calculated: " << sse
                    << "\n    expected: < " << maxExpected);
     }
+}
+
+namespace {
+
+    struct GJRGARCHInputs {
+        ext::shared_ptr<SimpleQuote> spot, rate, dividend;
+        ext::shared_ptr<GJRGARCHProcess> process;
+        ext::shared_ptr<GJRGARCHModel> model;
+
+        GJRGARCHInputs(Real s0, Rate r, Rate q, Real v0, Real omega, Real alpha,
+                       Real beta, Real gamma, Real lambda)
+        : spot(ext::make_shared<SimpleQuote>(s0)), rate(ext::make_shared<SimpleQuote>(r)),
+          dividend(ext::make_shared<SimpleQuote>(q)) {
+            const Date today = Settings::instance().evaluationDate();
+            const DayCounter dc = Actual365Fixed();
+            process = ext::make_shared<GJRGARCHProcess>(
+                Handle<YieldTermStructure>(
+                    ext::make_shared<FlatForward>(today, Handle<Quote>(rate), dc)),
+                Handle<YieldTermStructure>(
+                    ext::make_shared<FlatForward>(today, Handle<Quote>(dividend), dc)),
+                Handle<Quote>(spot), v0, omega, alpha, beta, gamma, lambda, 365.0);
+            model = ext::make_shared<GJRGARCHModel>(process);
+        }
+    };
+
+    Real stationaryVariance(Real omega, Real alpha, Real beta, Real gamma, Real lambda) {
+        const Real m1 = beta + (alpha + gamma * CumulativeNormalDistribution()(lambda)) *
+                                   (1.0 + lambda * lambda) +
+                        gamma * lambda * std::exp(-lambda * lambda / 2.0) / std::sqrt(2.0 * M_PI);
+        return omega / (1.0 - m1);
+    }
+
+    Real analyticPrice(const ext::shared_ptr<GJRGARCHModel>& model,
+                       Option::Type type, Real strike, Size days) {
+        const Date today = Settings::instance().evaluationDate();
+        VanillaOption option(ext::make_shared<PlainVanillaPayoff>(type, strike),
+                             ext::make_shared<EuropeanExercise>(today + days));
+        option.setPricingEngine(ext::make_shared<AnalyticGJRGARCHEngine>(model));
+        return option.NPV();
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticEngineDividendCarry) {
+    BOOST_TEST_MESSAGE("Testing analytic GJR-GARCH engine with a dividend yield...");
+
+    const Real omega = 2.0e-6, alpha = 0.024, beta = 0.93, gamma = 0.059;
+    const Real lambdas[] = {0.0, 0.1};
+    const Rate rates[][2] = {{0.05, 0.01}, {0.05, 0.05}, {0.02, 0.06}, {0.10, 0.03}};
+    const Real strikes[] = {45.0, 50.0, 55.0};
+    const Size maturities[] = {90, 180};
+
+    for (Real lambda : lambdas) {
+        const Real v0 = stationaryVariance(omega, alpha, beta, gamma, lambda);
+        for (const auto& rq : rates) {
+            const Rate r = rq[0], q = rq[1];
+            GJRGARCHInputs withDividend(50.0, r, q, v0, omega, alpha, beta, gamma, lambda);
+            GJRGARCHInputs netCarry(50.0, r - q, 0.0, v0, omega, alpha, beta, gamma, lambda);
+            for (Size days : maturities) {
+                const Time t = days / 365.0;
+                for (Real k : strikes) {
+                    // the price depends on (r, q) through r - q and the discounting at r
+                    for (auto type : {Option::Call, Option::Put}) {
+                        const Real calculated =
+                            analyticPrice(withDividend.model, type, k, days);
+                        const Real expected =
+                            std::exp(-q * t) * analyticPrice(netCarry.model, type, k, days);
+                        QL_CHECK_CLOSE(calculated, expected, 1.0e-8);
+                    }
+                    const Real call = analyticPrice(withDividend.model, Option::Call, k, days);
+                    const Real put = analyticPrice(withDividend.model, Option::Put, k, days);
+                    QL_CHECK_SMALL(call - put - (50.0 * std::exp(-q * t) - k * std::exp(-r * t)),
+                                   1.0e-10);
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticEngineConstantVarianceLimit) {
+    BOOST_TEST_MESSAGE("Testing analytic GJR-GARCH engine against Black-Scholes "
+                       "in the constant-variance limit...");
+
+    // beta = 1 - 1e-7 and a negligible omega keep the variance at v0 per day
+    const Real sigma = 0.3, s0 = 50.0, strike = 50.0, r = 0.05;
+    const Size days = 180;
+    const Time t = days / 365.0;
+    for (Rate q : std::vector<Real>{0.0, 0.02, 0.05}) {
+        GJRGARCHInputs inputs(s0, r, q, sigma * sigma / 365.0, 1.0e-12, 0.0,
+                              1.0 - 1.0e-7, 0.0, 0.0);
+        const Real forward = s0 * std::exp((r - q) * t);
+        const Real discount = std::exp(-r * t);
+        for (auto type : {Option::Call, Option::Put}) {
+            const Real expected =
+                blackFormula(type, strike, forward, sigma * std::sqrt(t), discount);
+            const Real calculated = analyticPrice(inputs.model, type, strike, days);
+            // the Gram-Charlier approximation is about 0.2% above Black-Scholes at q = 0
+            QL_CHECK_CLOSE(calculated, expected, 0.3);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticEngineRepricesWhenInputsMove) {
+    BOOST_TEST_MESSAGE("Testing analytic GJR-GARCH engine after rate and spot changes...");
+
+    const Real omega = 2.0e-6, alpha = 0.024, beta = 0.93, gamma = 0.059, lambda = 0.1;
+    const Real v0 = stationaryVariance(omega, alpha, beta, gamma, lambda);
+    GJRGARCHInputs inputs(50.0, 0.05, 0.0, v0, omega, alpha, beta, gamma, lambda);
+    const Date today = Settings::instance().evaluationDate();
+    VanillaOption option(ext::make_shared<PlainVanillaPayoff>(Option::Call, 50.0),
+                         ext::make_shared<EuropeanExercise>(today + 180));
+    option.setPricingEngine(ext::make_shared<AnalyticGJRGARCHEngine>(inputs.model));
+
+    Real previous = option.NPV();
+    const std::vector<std::function<void()>> moves = {
+        [&]() { inputs.rate->setValue(0.02); },
+        [&]() { inputs.dividend->setValue(0.03); },
+        [&]() { inputs.spot->setValue(52.0); },
+        [&]() { inputs.rate->setValue(0.04); inputs.dividend->setValue(0.04); }};
+    for (const auto& move : moves) {
+        move();
+        const Real calculated = option.NPV();
+        const Real expected = analyticPrice(inputs.model, Option::Call, 50.0, 180);
+        QL_CHECK_CLOSE(calculated, expected, 1.0e-10);
+        if (calculated == previous) {
+            BOOST_ERROR("price did not change after an input moved: " << calculated);
+        }
+        previous = calculated;
+    }
+
+    // one engine shared by options of different maturities
+    auto engine = ext::make_shared<AnalyticGJRGARCHEngine>(inputs.model);
+    for (Size days : {180, 90, 180}) {
+        VanillaOption other(ext::make_shared<PlainVanillaPayoff>(Option::Call, 50.0),
+                            ext::make_shared<EuropeanExercise>(today + days));
+        other.setPricingEngine(engine);
+        QL_CHECK_CLOSE(other.NPV(), analyticPrice(inputs.model, Option::Call, 50.0, days), 1.0e-10);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testAnalyticEngineRejectsDegenerateInput) {
+    BOOST_TEST_MESSAGE("Testing analytic GJR-GARCH engine with degenerate inputs...");
+
+    const Real v0 = 0.09 / 365.0;
+    // the moment recursion divides by zero for these parameters
+    GJRGARCHInputs allZero(50.0, 0.05, 0.02, v0, 1.0e-5, 0.0, 0.0, 0.0, 0.0);
+    BOOST_CHECK_EXCEPTION(analyticPrice(allZero.model, Option::Call, 50.0, 180), Error,
+                          ExpectedErrorMessage("degenerate GJR-GARCH parameters"));
+    GJRGARCHInputs unitBeta(50.0, 0.05, 0.02, v0, 1.0e-12, 0.0, 1.0, 0.0, 0.1);
+    BOOST_CHECK_EXCEPTION(analyticPrice(unitBeta.model, Option::Call, 50.0, 180), Error,
+                          ExpectedErrorMessage("degenerate GJR-GARCH parameters"));
+
+    GJRGARCHInputs regular(50.0, 0.05, 0.02, v0, 1.0e-6, 0.0, 0.5, 0.0, 0.0);
+    const Real price = analyticPrice(regular.model, Option::Call, 50.0, 180);
+    BOOST_CHECK(std::isfinite(value(price)) && price > 0.0);
+
+    // exercise on the reference date
+    // (an option expiring today is treated as expired by the instrument, so use the engine)
+    const Date today = Settings::instance().evaluationDate();
+    VanillaOption option(ext::make_shared<PlainVanillaPayoff>(Option::Call, 50.0),
+                         ext::make_shared<EuropeanExercise>(today));
+    auto engine = ext::make_shared<AnalyticGJRGARCHEngine>(regular.model);
+    option.setupArguments(engine->getArguments());
+    BOOST_CHECK_EXCEPTION(engine->calculate(), Error, ExpectedErrorMessage("at least one day"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
