@@ -400,7 +400,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticEngineConstantVarianceLimit) {
             const Real expected =
                 blackFormula(type, strike, forward, sigma * std::sqrt(t), discount);
             const Real calculated = analyticPrice(inputs.model, type, strike, days);
-            // the Gram-Charlier approximation is about 0.2% above Black-Scholes at q = 0
+            // the engine's fourth-moment term leaves it about 0.2% above
+            // Black-Scholes at these parameters
             QL_CHECK_CLOSE(calculated, expected, 0.3);
         }
     }

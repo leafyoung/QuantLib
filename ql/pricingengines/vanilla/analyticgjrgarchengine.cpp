@@ -127,7 +127,7 @@ namespace QuantLib {
             QL_REQUIRE(m1 != 1.0 && m2 != 1.0 && m3 != 1.0 &&
                        m1 != m2 && m1 != m3 && m2 != m3,
                        "degenerate GJR-GARCH parameters: the moment recursion is undefined "
-                       "(alpha = beta = gamma = 0, or beta = 1 with alpha = gamma = 0)");
+                       "(for instance alpha = beta = gamma = 0, or unit persistence)");
             b1_ = b1; b2_ = b2; b3_ = b3; la_ = la;
             m1_ = m1; m2_ = m2; m3_ = m3; 
             v1_ = v1; v2_ = v2; v3_ = v3; z1_ = z1; z2_ = z2; x1_ = x1;
