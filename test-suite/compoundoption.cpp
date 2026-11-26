@@ -29,6 +29,9 @@
 #include <ql/time/daycounters/actual360.hpp>
 #include <ql/quotes/simplequote.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
+#include <ql/termstructures/yield/zerocurve.hpp>
+#include <ql/termstructures/volatility/equityfx/blackvariancecurve.hpp>
+#include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
 #include <ql/utilities/dataformatters.hpp>
 
@@ -338,6 +341,82 @@ BOOST_AUTO_TEST_CASE(testValues){
             REPORT_FAILURE("theta", payoffMother, payoffDaughter, exerciseMother, exerciseDaughter,
                            value.s, value.q, value.r, todaysDate, value.v, value.theta, calculated,
                            error, tolerance);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testTermStructures) {
+
+    BOOST_TEST_MESSAGE("Testing compound options on non-flat curves...");
+
+    // Reference values: nested integral of the daughter's Black price over the
+    // mother's lognormal law (forward discounts and forward variance between
+    // the two maturities); the closed form with correlation sqrt(V(Tm)/V(Td))
+    // agrees with it for call-on-call to 1e-10.
+    struct TermStructureData {
+        int regime;  // 0: rates and dividends, 1: volatility, 2: all non-flat
+        Option::Type typeMother;
+        Option::Type typeDaughter;
+        Real strikeMother;
+        Real npv;
+    };
+
+    const Option::Type C = Option::Call, P = Option::Put;
+    TermStructureData values[] = {
+        // regime, type Mother, type Daughter, strike Mother, value
+        { 0, C, C, 8.0, 6.8459930608 }, { 0, C, P, 8.0, 4.2224815702 },
+        { 0, P, C, 8.0, 1.5549563665 }, { 0, P, P, 8.0, 1.5136656359 },
+        { 0, C, C, 3.0, 10.3993274734 }, { 0, C, P, 3.0, 7.7827900093 },
+        { 0, P, C, 3.0, 0.1827310811 }, { 0, P, P, 3.0, 0.1484143770 },
+        { 1, C, C, 8.0, 10.4224177638 }, { 1, C, P, 8.0, 5.1231709955 },
+        { 1, P, C, 8.0, 2.8438840841 }, { 1, P, P, 8.0, 3.1960721435 },
+        { 1, C, C, 3.0, 13.1541329246 }, { 1, C, P, 3.0, 7.5902322577 },
+        { 1, P, C, 3.0, 0.7233715772 }, { 1, P, P, 3.0, 0.8109057379 },
+        { 2, C, C, 8.0, 8.0083817877 }, { 2, C, P, 8.0, 5.1775881959 },
+        { 2, P, C, 8.0, 3.3013521514 }, { 2, P, P, 8.0, 3.0527793195 },
+        { 2, C, C, 3.0, 10.4959536471 }, { 2, C, P, 3.0, 7.8021429401 },
+        { 2, P, C, 3.0, 0.8633643127 }, { 2, P, P, 3.0, 0.7517743657 }
+    };
+
+    DayCounter dc = Actual365Fixed();
+    Date today = Settings::instance().evaluationDate();
+    Date mother = today + 365, daughter = today + 1095;
+    std::vector<Date> curveDates = { today, mother, daughter };
+    std::vector<Date> volDates = { mother, daughter };
+
+    // rates/dividends are continuous zero rates, linear in time between pillars
+    std::vector<Rate> flatR = { 0.03, 0.03, 0.03 }, flatQ = { 0.01, 0.01, 0.01 };
+    std::vector<Rate> steepR = { 0.015, 0.015, 0.055 }, steepQ = { 0.015, 0.015, 0.045 };
+    std::vector<Volatility> flatVol = { 0.2, 0.2 }, termVol = { 0.28, 0.19 };
+
+    for (const auto& value : values) {
+        bool termRates = value.regime != 1;
+        bool termVols = value.regime != 0;
+        auto rTS = ext::make_shared<ZeroCurve>(curveDates, termRates ? steepR : flatR, dc);
+        auto qTS = ext::make_shared<ZeroCurve>(curveDates, termRates ? steepQ : flatQ, dc);
+        auto volTS = ext::make_shared<BlackVarianceCurve>(today, volDates,
+                                                          termVols ? termVol : flatVol, dc);
+
+        auto process = ext::make_shared<BlackScholesMertonProcess>(
+            Handle<Quote>(ext::make_shared<SimpleQuote>(100.0)), Handle<YieldTermStructure>(qTS),
+            Handle<YieldTermStructure>(rTS), Handle<BlackVolTermStructure>(volTS));
+
+        CompoundOption option(ext::make_shared<PlainVanillaPayoff>(value.typeMother,
+                                                                   value.strikeMother),
+                              ext::make_shared<EuropeanExercise>(mother),
+                              ext::make_shared<PlainVanillaPayoff>(value.typeDaughter, 100.0),
+                              ext::make_shared<EuropeanExercise>(daughter));
+        option.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(process));
+
+        Real calculated = option.NPV();
+        if (std::fabs(calculated - value.npv) > 3.0e-4 * value.npv) {
+            BOOST_ERROR("wrong compound option value on non-flat curves:"
+                        << "\n    regime:     " << value.regime
+                        << "\n    mother:     " << value.typeMother
+                        << " (strike " << value.strikeMother << ")"
+                        << "\n    daughter:   " << value.typeDaughter
+                        << "\n    expected:   " << value.npv
+                        << "\n    calculated: " << calculated);
         }
     }
 }
