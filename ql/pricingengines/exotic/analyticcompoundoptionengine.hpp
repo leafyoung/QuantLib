@@ -53,7 +53,6 @@ namespace QuantLib {
         // helper methods
         Time residualTimeMother() const;
         Time residualTimeDaughter() const;
-        Time residualTimeMotherDaughter() const;
 
         Date maturityMother() const;
         Date maturityDaughter() const;
@@ -77,6 +76,7 @@ namespace QuantLib {
 
         Real stdDeviationDaughter() const;
         Real stdDeviationMother() const;
+        Real stdDeviationMotherDaughter() const;
 
         Real typeDaughter() const;
         Real typeMother() const;
