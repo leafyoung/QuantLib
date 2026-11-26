@@ -176,7 +176,7 @@ namespace QuantLib {
         // guarantee. The engine's own spread correction can produce
         // negative amounts on ordinary positive-spread swaps, so the solve
         // relies on the redemption term keeping the endpoint signs
-        // opposite there, as it did before.
+        // opposite there.
         template <class F>
         Real widenedYBracket(const F& function, Real bound) {
             Real fLower = function(-bound), fUpper = function(bound);
