@@ -463,6 +463,38 @@ BOOST_AUTO_TEST_CASE(testFuturesConvexityBias) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testFuturesConvexityBiasForSmallMeanReversion) {
+    BOOST_TEST_MESSAGE("Testing Hull-White futures convexity bias "
+                       "with mean reversion close to zero...");
+
+    // closed form evaluated in 60-digit arithmetic
+    struct Case {
+        Time t, T;
+        Real sigma, a, expected;
+    };
+    for (const auto& c : {
+        Case{5.0, 5.25, 0.015, 3e-16, 0.0031389422057161549217},
+        Case{5.0, 5.25, 0.015, 1e-15, 0.0031389422057161436402},
+        Case{5.0, 5.25, 0.015, 1e-14, 0.0031389422057159985916},
+        Case{5.0, 5.25, 0.015, 1e-12, 0.0031389422057000432423},
+        Case{5.0, 5.25, 0.015, 1e-10, 0.0031389422041045083135},
+        Case{5.0, 5.25, 0.015, 1e-8,  0.0031389420445510202404},
+        Case{1.0, 1.25, 0.01,  3e-16, 0.000076124286332585401667},
+        Case{1.0, 1.25, 0.01,  1e-14, 0.000076124286332584540202},
+        Case{1.0, 1.25, 0.01,  1e-10, 0.000076124286323704344833},
+    }) {
+        Real calculated = HullWhite::convexityBias(94.0, c.t, c.T, c.sigma, c.a);
+        QL_CHECK_CLOSE_FRACTION(calculated, c.expected, 1e-13);
+    }
+
+    // the bias is continuous at a = 0
+    for (Real a : {3e-16, 1e-15, 1e-14, 1e-12}) {
+        Real zero = HullWhite::convexityBias(94.0, 5.0, 5.25, 0.015, 0.0);
+        Real small = HullWhite::convexityBias(94.0, 5.0, 5.25, 0.015, a);
+        QL_CHECK_CLOSE_FRACTION(small, zero, 1e-10);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testG2DiscountBondForSmallMeanReversion) {
     BOOST_TEST_MESSAGE("Testing zero-bond pricing for G2 model with "
                        "mean reversion close to zero...");
