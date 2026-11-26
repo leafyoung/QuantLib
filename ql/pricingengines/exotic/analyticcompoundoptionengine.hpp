@@ -31,13 +31,24 @@
 namespace QuantLib {
 
     //! Pricing engine for compound options using analytical formulae
-    /*! The formulas are taken from "Foreign Exchange Risk",
-        Uwe Wystup, Risk 2002, where closed form Greeks are available.
-        (not available in Haug 2007).
-        Value: Page 84, Greeks: Pages 94-95.
+    /*! The value follows Geske's formula for an option on a European option,
+        see Haug, "The Complete Guide to Option Pricing Formulas", 2nd ed.,
+        section 4.13. It holds for deterministic risk-free rate, dividend
+        yield and total variance \f$ V(t) \f$ that do not depend on the
+        strike: the underlying option is valued with the forward discount
+        factors and the forward variance \f$ V(T_d) - V(T_m) \f$ between the
+        two maturities, and the correlation between the two horizons is
+        \f$ \sqrt{V(T_m)/V(T_d)} \f$. A put on the underlying whose
+        compound strike is at least the underlying's maximum value at the
+        compound maturity is valued in closed form without a critical spot.
+        The delta is exact for these inputs; vega, gamma and theta are the
+        constant-parameter expressions from "Foreign Exchange Risk",
+        Uwe Wystup, Risk 2002, pp. 94-95.
 
         \test the correctness of the returned value is tested by
-              reproducing results available in literature.
+              reproducing results available in literature and, on
+              non-flat curves, by comparison with a nested numerical
+              integration of the underlying option's value.
     */
     class AnalyticCompoundOptionEngine : public CompoundOption::engine {
       public:

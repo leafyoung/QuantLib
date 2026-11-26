@@ -490,6 +490,17 @@ BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
     vol->setValue(0.2);
     QL_CHECK_CLOSE(put->vega(), (upper - lower) / 2.0e-5, 1.0e-6);
 
+    // theta against a central difference in the time to both maturities
+    auto shifted = [&](Integer days) {
+        CompoundOption option(ext::make_shared<PlainVanillaPayoff>(Option::Put, 97.0),
+                              ext::make_shared<EuropeanExercise>(mother + days),
+                              ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
+                              ext::make_shared<EuropeanExercise>(daughter + days));
+        option.setPricingEngine(engine);
+        return option.NPV();
+    };
+    QL_CHECK_CLOSE(put->theta(), (shifted(-1) - shifted(1)) / (2.0 / 365.0), 1.0e-4);
+
     // every price input moves the result
     for (const auto& quote : {rRate, qRate}) {
         Real before = put->NPV();
