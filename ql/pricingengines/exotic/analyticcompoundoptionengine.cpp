@@ -69,6 +69,7 @@ namespace QuantLib {
                               Time maturity,
                               Rate riskFreeRate) {
             CompoundOption::results results;
+            results.reset();
             results.value = results.delta = results.gamma = results.vega = results.theta = 0.0;
             if (motherType == Option::Call)
                 return results;

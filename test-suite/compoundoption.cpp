@@ -473,6 +473,8 @@ BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
     QL_CHECK_SMALL(call->NPV(), 1.0e-12);
     QL_CHECK_SMALL(call->delta(), 1.0e-12);
     QL_CHECK_CLOSE(put->NPV(), 83.8110706994, 1.0e-6);
+    BOOST_CHECK_THROW(put->rho(), Error);
+    BOOST_CHECK_THROW(call->errorEstimate(), Error);
 
     // delta, gamma and vega against bumps (the vega bump is a parallel flat-vol bump)
     Real h = 0.01, upper, lower, base = put->NPV();
