@@ -60,7 +60,9 @@ namespace QuantLib {
         QL_REQUIRE(spotPrice > 0.0, "negative or null underlying given");
         const Real strikePrice = payoff->strike();
         const Real term = process->time(arguments_.exercise->lastDate());
-        Size T = Size(std::lround(process->daysPerYear()*term));
+        const auto days = std::lround(process->daysPerYear()*term);
+        QL_REQUIRE(days >= 1, "exercise must be at least one model day after the reference date");
+        Size T = Size(days);
         Real r = -std::log(riskFreeDiscount/dividendDiscount)/(process->daysPerYear()*term);
         Real h1 = process->v0();
         Real b0 = process->omega();
@@ -120,6 +122,12 @@ namespace QuantLib {
                                    +pow(la,4)*N+18*la*la*N)
                 + 2*b1*b2*(3+la*la) + 2*b3*b1*(la*n+3*N+la*la*N); // ok
             x1 = -6*b2*la - 2*b3*(4*n+3*la*N); // ok
+            // the recursions below divide by 1-m_i and m_i-m_j; only exact
+            // degeneracy is rejected, nearby values lose accuracy
+            QL_REQUIRE(m1 != 1.0 && m2 != 1.0 && m3 != 1.0 &&
+                       m1 != m2 && m1 != m3 && m2 != m3,
+                       "degenerate GJR-GARCH parameters: the moment recursion is undefined "
+                       "(for instance alpha = beta = gamma = 0, or unit persistence)");
             b1_ = b1; b2_ = b2; b3_ = b3; la_ = la;
             m1_ = m1; m2_ = m2; m3_ = m3; 
             v1_ = v1; v2_ = v2; v3_ = v3; z1_ = z1; z2_ = z2; x1_ = x1;
@@ -132,7 +140,7 @@ namespace QuantLib {
         }
         
         // compute the first four moments
-        if (!init_ || !constants_match || b0 != b0_ || h1 != h1_ || T != T_) {
+        if (!init_ || !constants_match || b0 != b0_ || h1 != h1_ || T != T_ || r != r_) {
             // these assignments are never used ?
             //b1 = b1_; b2 = b2_; b3 = b3_; la = la_;
             m1 = m1_; m2 = m2_; m3 = m3_; 
@@ -272,13 +280,14 @@ namespace QuantLib {
         Capp = C + k3*A3 + (k4-3)*A4;
         init_ = true;
 
+        // Capp is discounted at r-q; the price is discounted at r
         switch (payoff->optionType()) {
           case Option::Call:
-            results_.value = Capp;
+            results_.value = Capp*dividendDiscount;
             break;
           case Option::Put:
-            results_.value = Capp+strikePrice*riskFreeDiscount/dividendDiscount
-                -spotPrice;
+            results_.value = (Capp-spotPrice)*dividendDiscount
+                +strikePrice*riskFreeDiscount;
             break;
           default:
             QL_FAIL("unknown option type");
