@@ -41,7 +41,9 @@ namespace QuantLib {
         \f$ \sqrt{V(T_m)/V(T_d)} \f$. The rate curves and the volatility
         surface are expected to share one day counter. An underlying put
         whose compound strike is at least its maximum value at the compound
-        maturity is valued in closed form without a critical spot.
+        maturity is valued in closed form without a critical spot, and the
+        variance requirement between the two maturities applies to the
+        remaining cases.
         The delta is exact for these inputs; vega, gamma and theta are the
         constant-parameter expressions from "Foreign Exchange Risk",
         Uwe Wystup, Risk 2002, pp. 94-95.

@@ -401,6 +401,8 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
             Handle<YieldTermStructure>(rTS), Handle<BlackVolTermStructure>(volTS));
     };
 
+    // tolerance: the engine's bivariate normal approximation and the 1e-6 spot accuracy of
+    // the critical-spot solver give relative errors of order 1e-5 against these references
     for (const auto& value : values) {
         auto process = makeProcess(value.regime);
 
@@ -512,6 +514,7 @@ BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
         option.setPricingEngine(engine);
         return option.NPV();
     };
+    // small value: the solver accuracy dominates, hence the percent-level tolerance
     QL_CHECK_CLOSE(onCall(Option::Call), 0.0051820147, 1.0e-2);
     QL_CHECK_CLOSE(onCall(Option::Put), 76.2239268193, 1.0e-6);
 
