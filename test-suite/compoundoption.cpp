@@ -547,6 +547,19 @@ BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {
         option.setPricingEngine(termEngine);
         QL_CHECK_SMALL(option.NPV() - cases[i].second, 1.0e-4);
     }
+
+    // delta on the solver path against a spot bump
+    CompoundOption belowBound(ext::make_shared<PlainVanillaPayoff>(Option::Put, 86.0),
+                              ext::make_shared<EuropeanExercise>(mother),
+                              ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
+                              ext::make_shared<EuropeanExercise>(daughter));
+    belowBound.setPricingEngine(termEngine);
+    spot->setValue(100.01);
+    Real up = belowBound.NPV();
+    spot->setValue(99.99);
+    Real down = belowBound.NPV();
+    spot->setValue(100.0);
+    QL_CHECK_CLOSE(belowBound.delta(), (up - down) / 0.02, 1.0e-2);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -37,9 +37,9 @@ namespace QuantLib {
         yield and total variance \f$ V(t) \f$ that do not depend on the
         strike: the underlying option is valued with the forward discount
         factors and the forward variance \f$ V(T_d) - V(T_m) \f$ between the
-        two maturities (the rate curves and the volatility surface are
-        expected to share one day counter), and the correlation between the two horizons is
-        \f$ \sqrt{V(T_m)/V(T_d)} \f$. A put on the underlying whose
+        two maturities, and the correlation between the two horizons is
+        \f$ \sqrt{V(T_m)/V(T_d)} \f$. The rate curves and the volatility
+        surface are expected to share one day counter. A put on the underlying whose
         compound strike is at least the underlying's maximum value at the
         compound maturity is valued in closed form without a critical spot.
         The delta is exact for these inputs; vega, gamma and theta are the
