@@ -312,7 +312,8 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
             const Real black = blackFormula(
                 payoff, f0/discount, stdDev, discount);
 
-            for (Real beta : {1.0-1e-6, 1.0-1e-4, 1.0, 1.0+1e-4, 1.0+1e-6}) {
+            for (Real beta :
+                 {1.0-5e-5, 1.0-1e-6, 1.0-1e-4, 1.0, 1.0+1e-4, 1.0+1e-6}) {
                 VanillaOption option(payoff, exercise);
                 option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
@@ -556,6 +557,14 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
                     << std::fabs(calculated - expected)
                     << "\n    tolerance       : 1e-9");
             }
+        }
+
+        // at beta = 1 the effective time is the bare squared volatility
+        // times the interval
+        if (std::fabs(cevEffectiveTime(alpha, 1.0, rTS, 0.0, maturity)
+                      - alpha*alpha*maturity) > 1e-12) {
+            BOOST_ERROR(
+                "the beta = 1 effective time is not alpha^2*(end-start)");
         }
     }
 }
