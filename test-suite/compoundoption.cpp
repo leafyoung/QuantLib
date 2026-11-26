@@ -431,7 +431,8 @@ BOOST_AUTO_TEST_CASE(testTermStructures) {
                               ext::make_shared<PlainVanillaPayoff>(C, 100.0),
                               ext::make_shared<EuropeanExercise>(daughter));
     degenerate.setPricingEngine(ext::make_shared<AnalyticCompoundOptionEngine>(makeProcess(2)));
-    BOOST_CHECK_THROW(degenerate.NPV(), Error);
+    BOOST_CHECK_EXCEPTION(degenerate.NPV(), Error,
+                          ExpectedErrorMessage("variance of the underlying option"));
 }
 
 BOOST_AUTO_TEST_CASE(testNoCriticalSpot) {

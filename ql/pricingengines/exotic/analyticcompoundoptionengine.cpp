@@ -56,7 +56,7 @@ namespace QuantLib {
         // The underlying put is worth less than strike*forward discount at every spot,
         // so a mother strike at or above that bound has no critical spot: a mother call
         // is worthless and a mother put pays strike - (underlying put) at every spot.
-        // Greeks follow the constant-parameter convention of the main branch.
+        // Vega, gamma and theta are the constant-parameter expressions documented in the header.
         CompoundOption::results
         noCriticalSpotResults(Option::Type motherType,
                               Real strikeMother,
