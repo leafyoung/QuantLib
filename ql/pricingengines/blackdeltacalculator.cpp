@@ -164,7 +164,9 @@ namespace QuantLib {
                   // With zero width the delta has no interior maximum.
                   if (stdDev_ >= QL_EPSILON) {
                       Real maxDelta = deltaFromStrike(leftLimit);
-                      QL_REQUIRE(delta <= maxDelta,
+                      // Negated so that a maximum that cannot be evaluated
+                      // (overflowing bracket) does not reject the request.
+                      QL_REQUIRE(!(delta > maxDelta),
                                  "premium-adjusted call delta out of range: "
                                  << delta << " exceeds the maximum "
                                  << maxDelta << " attainable at this "

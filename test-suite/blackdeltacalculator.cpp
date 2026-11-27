@@ -757,6 +757,30 @@ BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaDomain) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaLargeStdDev) {
+
+    BOOST_TEST_MESSAGE("Testing premium-adjusted call strike-from-delta at large width...");
+
+    for (auto deltaType : {DeltaVolQuote::PaSpot, DeltaVolQuote::PaFwd}) {
+        // The strikes are representable, and the requests below the maximum are solved.
+        BlackDeltaCalculator calc(Option::Call, deltaType, 1.0, 0.99, 0.98, 8.0);
+        Real forward = 0.98 / 0.99;
+        Real scale = (deltaType == DeltaVolQuote::PaSpot) ? 0.98 : 1.0;
+        for (Real delta : std::vector<Real>{1e-12, 1e-6, 1e-3}) {
+            Real strike = calc.strikeFromDelta(delta);
+            Real back = premiumAdjustedCallDelta(strike, forward, 8.0, scale);
+            QL_CHECK_CLOSE(back, delta, 1e-6);
+        }
+
+        // Beyond double range the strikes overflow; the failure is not reported as a
+        // request above the maximum.
+        BlackDeltaCalculator wide(Option::Call, deltaType, 1.0, 0.99, 0.98, 40.0);
+        BOOST_CHECK_EXCEPTION(wide.strikeFromDelta(0.01), Error, [](const Error& e) {
+            return std::string(e.what()).find("exceeds the maximum") == std::string::npos;
+        });
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaZeroStdDev) {
 
     BOOST_TEST_MESSAGE("Testing premium-adjusted call strike-from-delta with zero width...");
