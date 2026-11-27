@@ -879,7 +879,16 @@ BOOST_AUTO_TEST_CASE(testFdmCevDriftStability) {
         {Option::Call, 100.0, 0.30, 10950, -0.02, 1.5, 0.1},
         {Option::Call, 90.0, 0.03, 365, 0.10, 0.5, 0.05},
         {Option::Call, 90.0, 0.03, 365, -0.05, 0.5, 0.05},
-        {Option::Put, 90.0, 0.03, 1825, -0.05, 0.5, 0.05}
+        {Option::Put, 90.0, 0.03, 1825, -0.05, 0.5, 0.05},
+        // beta above one has no absorbing zero, but the mesh still starts
+        // above zero for a low volatility
+        {Option::Call, 80.0, 0.03, 1825, -0.05, 2.5, 0.05},
+        {Option::Put, 80.0, 0.03, 1825, -0.05, 2.5, 0.05},
+        {Option::Call, 80.0, 0.03, 1825, -0.05, 1.5, 0.05},
+        // close to beta = 1 over a short maturity: the boundary evaluation
+        // must not reach the noncentral chi-squared failure region
+        {Option::Call, 100.0, 0.03, 30, 0.0, 0.99, 0.01},
+        {Option::Call, 100.0, 0.03, 30, 0.05, 0.99, 0.01}
     };
 
     const Real f0 = 100.0;
