@@ -602,9 +602,8 @@ BOOST_AUTO_TEST_CASE(testFdmCevPiecewiseRateCurve) {
         f0, alpha, 0.9, rTS));
     const Real analyticNPV = option.NPV();
 
-    // a time grid finer than one day (1/365 of a year) per step drives
-    // the rollback's boundary evaluation up against the curve's
-    // maximum time
+    // a time grid with more than 365 steps per year puts rollback steps
+    // within a day of the curve's maximum time
     option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
         f0, alpha, 0.9, rTS, 400, 400, 1, 1.0, 1e-6));
 
@@ -648,6 +647,12 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevExpiredOption) {
         100.0, 0.30, 0.9, rTS, 100, 100, 1, 1.0, 1e-6));
 
     BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
+
+    // inside the Black band the same input is rejected, not priced
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        100.0, 0.30, 1.0, rTS));
+
+    BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
 }
 
 BOOST_AUTO_TEST_CASE(testCevEffectiveTimeWithNonzeroStart) {
@@ -671,6 +676,10 @@ BOOST_AUTO_TEST_CASE(testCevEffectiveTimeWithNonzeroStart) {
                     << "\n    expected   : " << flatExpected
                     << "\n    calculated : " << flatCalculated);
     }
+
+    // beta = 1: geometric Brownian motion, alpha^2 times the interval length
+    const Real gbm = cevEffectiveTime(alpha, 1.0, flat, start, end);
+    QL_CHECK_CLOSE(gbm, alpha*alpha*(end-start), 1e-10);
 
     BOOST_CHECK_THROW(cevEffectiveTime(alpha, beta, flat, end, end), Error);
     BOOST_CHECK_THROW(cevEffectiveTime(alpha, beta, flat, end, start), Error);
@@ -817,15 +826,19 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
     const DayCounter dc = Actual365Fixed();
     Settings::instance().evaluationDate() = today;
 
-    const Real f0 = 100.0, beta = 1.5, rate = 0.05;
-    const Real alpha = 0.30*std::pow(f0, 1.0-beta);
+    const Real f0 = 100.0, rate = 0.05;
     const Handle<YieldTermStructure> rTS(flatRate(today, rate, dc));
     const ext::shared_ptr<Exercise> exercise =
         ext::make_shared<EuropeanExercise>(today + Period(12, Months));
 
     // a wide mesh (eps = 0.1) brings the lower boundary close enough for
-    // its treatment to matter: beta > 1 has no absorbing boundary at zero
-    for (Option::Type type : {Option::Call, Option::Put}) {
+    // its treatment to matter: beta > 1 has no absorbing boundary at zero.
+    // beta = 1.5 and 2.5 lie on either side of delta = 3, so a shifted
+    // delta threshold is caught. (The mesher does not support beta < 0:
+    // boost rejects the negative noncentrality.)
+    for (Real beta : {1.5, 2.5}) {
+      const Real alpha = 0.30*std::pow(f0, 1.0-beta);
+      for (Option::Type type : {Option::Call, Option::Put}) {
         VanillaOption option(
             ext::make_shared<PlainVanillaPayoff>(type, 100.0), exercise);
         option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
@@ -835,10 +848,12 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
             f0, alpha, beta, rTS, 200, 400, 1, 1.0, 0.1));
         const Real pde = option.NPV();
         if (std::fabs(analytic - pde) > 0.02) {
-            BOOST_ERROR("failed to reproduce the analytic price for beta > 1"
+            BOOST_ERROR("failed to reproduce the analytic price"
+                        << "\n    beta         : " << beta
                         << "\n    analytic npv : " << analytic
                         << "\n    pde npv      : " << pde);
         }
+      }
     }
 }
 
