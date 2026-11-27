@@ -55,6 +55,10 @@ namespace QuantLib {
 
         /*! Value of a European option for the driftless CEV process
             \f$ df_t = \alpha f_t^\beta dW_t \f$ at time \p t.
+            Requires \f$ |\beta - 1| \f$ at least
+            cevBlackLimitBandWidth: closer to one the degrees of freedom
+            of the closed form grow beyond what the noncentral chi-squared
+            evaluation supports. The engines handle that band themselves.
             To price under a rate curve, use this value with a unit
             volatility calculator at the effective time returned by
             cevEffectiveTime and the strike discounted from the maturity
@@ -73,9 +77,12 @@ namespace QuantLib {
     };
 
     /*! Width of the neighbourhood of \f$ \beta = 1 \f$ inside which the CEV
-        price is replaced by its exact Black-Scholes limit. Outside the band
-        the closed form is valid; inside it, the noncentral chi-squared
-        degrees of freedom grow beyond what boost's evaluation supports.
+        price is replaced by its Black-Scholes limit. At \f$ \beta = 1 \f$
+        the limit is exact; inside the band it is an approximation whose
+        deviation from the CEV price is of the order of the band width.
+        Outside the band the closed form is valid; inside it, the noncentral
+        chi-squared degrees of freedom grow beyond what boost's evaluation
+        supports.
     */
     constexpr double cevBlackLimitBandWidth = 1e-4;
 
@@ -99,7 +106,8 @@ namespace QuantLib {
         \f$ K\,disc(0,end)/disc(0,start) \f$. For
         \f$ \beta = 1 \f$ the process is geometric Brownian motion and the
         effective time \f$ \alpha^2(end-start) \f$ reproduces the
-        Black-Scholes limit exactly.
+        Black-Scholes limit exactly. The integral is evaluated by a fixed
+        64 point Gauss-Legendre rule.
     */
     Time cevEffectiveTime(
         Real alpha, Real beta,
@@ -107,6 +115,12 @@ namespace QuantLib {
         Time start, Time end);
 
 
+    //! Analytic engine for European options on a CEV asset
+    /*! The underlying \f$ f \f$ is an asset with drift \f$ r_t f_t \f$
+        given by the discount curve, not a driftless forward; a flat zero
+        curve gives the driftless process. The Black-Scholes limit is used
+        for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth.
+    */
     class AnalyticCEVEngine : public VanillaOption::engine {
       public:
         AnalyticCEVEngine(Real f0, Real alpha, Real beta, Handle<YieldTermStructure> discountCurve);

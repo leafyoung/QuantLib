@@ -31,6 +31,11 @@
 namespace QuantLib {
     class YieldTermStructure;
 
+    //! Finite-difference engine for European and American options on a CEV asset
+    /*! As in AnalyticCEVEngine, the underlying is an asset with drift
+        given by the discount curve, not a driftless forward. FdSabrVanillaEngine
+        models a driftless forward, so the two agree only for a zero rate.
+    */
     class FdCEVVanillaEngine : public VanillaOption::engine {
       public:
         FdCEVVanillaEngine(Real f0,

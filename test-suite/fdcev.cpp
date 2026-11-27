@@ -28,7 +28,9 @@
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/shared_ptr.hpp>
+#include <ql/quotes/simplequote.hpp>
 #include <ql/termstructures/yield/discountcurve.hpp>
+#include <ql/termstructures/yield/flatforward.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 
 using namespace QuantLib;
@@ -646,6 +648,131 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevExpiredOption) {
         100.0, 0.30, 0.9, rTS, 100, 100, 1, 1.0, 1e-6));
 
     BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
+}
+
+BOOST_AUTO_TEST_CASE(testCevEffectiveTimeWithNonzeroStart) {
+    BOOST_TEST_MESSAGE("Testing the CEV effective time on sub-intervals...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real alpha = 0.30, beta = 0.7, rate = 0.04;
+    const Time start = 0.4, end = 1.3;
+
+    // flat curve: closed form depending on the interval length only
+    const ext::shared_ptr<YieldTermStructure> flat = flatRate(today, rate, dc);
+    const Real k = 2.0*(1.0-beta);
+    const Real flatExpected = alpha*alpha *
+        (1.0 - std::exp(-k*rate*(end-start))) / (k*rate);
+    const Real flatCalculated = cevEffectiveTime(alpha, beta, flat, start, end);
+    if (std::fabs(flatCalculated - flatExpected) > 1e-12*flatExpected) {
+        BOOST_ERROR("failed to reproduce the flat curve effective time"
+                    << "\n    expected   : " << flatExpected
+                    << "\n    calculated : " << flatCalculated);
+    }
+
+    // curve with a forward rate jump: compare with a fine midpoint sum.
+    // The jump is a kink of the integrand, which limits the 64 point rule
+    // to about 1e-6 relative accuracy here.
+    const ext::shared_ptr<YieldTermStructure> kinked =
+        ext::make_shared<DiscountCurve>(
+            std::vector<Date>{today, today + Period(6, Months),
+                              today + Period(24, Months)},
+            std::vector<DiscountFactor>{
+                1.0, std::exp(-0.01*0.5),
+                std::exp(-0.01*0.5 - 0.12*1.5)}, dc);
+    const Size n = 200000;
+    const Real h = (end-start)/n;
+    Real sum = 0.0;
+    const DiscountFactor dStart = kinked->discount(start);
+    for (Size i = 0; i < n; ++i)
+        sum += std::pow(kinked->discount(start + (i+0.5)*h)/dStart, k);
+    const Real kinkedExpected = alpha*alpha*h*sum;
+    const Real kinkedCalculated =
+        cevEffectiveTime(alpha, beta, kinked, start, end);
+    if (std::fabs(kinkedCalculated - kinkedExpected) > 1e-5*kinkedExpected) {
+        BOOST_ERROR("failed to reproduce the kinked curve effective time"
+                    << "\n    expected   : " << kinkedExpected
+                    << "\n    calculated : " << kinkedCalculated);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testCevEnginesReactToRateCurve) {
+    BOOST_TEST_MESSAGE("Testing that the CEV engines follow the rate curve...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const auto quote = ext::make_shared<SimpleQuote>(0.01);
+    const Handle<YieldTermStructure> rTS(
+        ext::make_shared<FlatForward>(today, Handle<Quote>(quote), dc));
+
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
+
+    const std::vector<ext::shared_ptr<PricingEngine>> engines = {
+        ext::make_shared<AnalyticCEVEngine>(100.0, 0.30, 0.8, rTS),
+        ext::make_shared<FdCEVVanillaEngine>(100.0, 0.30, 0.8, rTS,
+                                             50, 100, 1, 1.0, 1e-6)
+    };
+
+    for (const auto& engine : engines) {
+        option.setPricingEngine(engine);
+        const Real before = option.NPV();
+        quote->setValue(0.06);
+        const Real after = option.NPV();
+        quote->setValue(0.01);
+
+        // a higher rate raises the call price of the drifted asset by
+        // several units here; a stale cached value would not move
+        if (after - before < 1.0) {
+            BOOST_ERROR("the price did not follow the rate curve"
+                        << "\n    at 1% : " << before
+                        << "\n    at 6% : " << after);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
+    BOOST_TEST_MESSAGE("Testing the FDM CEV boundary inside the Black band...");
+
+    // A wide mesh (large eps) puts the upper Dirichlet boundary close
+    // enough to the spot for its value to matter. Just inside the Black
+    // band the boundary uses the Black limit; just outside, the closed
+    // form. The two prices describe the same model to O(band width), so
+    // they must agree whatever the boundary value is.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, alpha = 0.30, rate = 0.08;
+    const Handle<YieldTermStructure> rTS(flatRate(today, rate, dc));
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
+
+    const Real eps = 0.2;
+    const Real tol = 0.05;
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        const auto payoff = ext::make_shared<PlainVanillaPayoff>(type, 100.0);
+        VanillaOption vanilla(payoff, option.exercise());
+        std::vector<Real> prices;
+        for (Real beta : {1.0-5e-5, 1.0-5e-4}) {
+            vanilla.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+                f0, alpha, beta, rTS, 200, 400, 1, 1.0, eps));
+            prices.push_back(vanilla.NPV());
+        }
+        if (std::fabs(prices[0] - prices[1]) > tol) {
+            BOOST_ERROR("the FDM boundary inside the Black band disagrees "
+                        "with the closed form outside it"
+                        << "\n    inside  : " << prices[0]
+                        << "\n    outside : " << prices[1]
+                        << "\n    tolerance: " << tol);
+        }
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
