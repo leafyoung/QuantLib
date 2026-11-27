@@ -120,11 +120,11 @@ namespace QuantLib {
 
         Real yi = ci - Pi;
         Real di = dc - dp;
-        Real Xc = strike(Option::Call);
-        Real Xp = strike(Option::Put);
+        const Real Xc = strike(Option::Call);
+        const Real Xp = strike(Option::Put);
 
-        // residual tolerance relative to the strikes: homogeneous in the prices
-        //Newton-Raphson process
+        // Newton-Raphson process; the residual tolerance is relative to the strikes so that the
+        // value is homogeneous of degree one in the prices
         while (std::fabs(yi) > 1.0e-10 * std::max<Real>(Xc, Xp)) {
             Sv = Sv - yi / di;
 
