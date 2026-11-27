@@ -815,6 +815,35 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionEngineYBracket) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testG2SwaptionRejectsMalformedArguments) {
+    BOOST_TEST_MESSAGE("Testing G2::swaption with malformed arguments...");
+
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+
+    Handle<YieldTermStructure> termStructure(flatRate(today, 0.03, Actual365Fixed()));
+    G2 model(termStructure, 0.1, 0.01, 0.2, 0.012, -0.5);
+
+    // no underlying swap
+    Swaption::arguments arguments;
+    arguments.nominal = 1.0;
+    BOOST_CHECK_THROW(model.swaption(arguments, 0.03, 6.0, 16), Error);
+
+    // fixed pay dates that do not match the underlying fixed leg
+    auto index = ext::make_shared<Euribor6M>(termStructure);
+    Schedule fixedSchedule(today + 1*Years, today + 5*Years, Period(Annual),
+                           index->fixingCalendar(), Unadjusted, Unadjusted,
+                           DateGeneration::Forward, false);
+    Schedule floatSchedule(today + 1*Years, today + 5*Years, Period(Semiannual),
+                           index->fixingCalendar(), ModifiedFollowing,
+                           ModifiedFollowing, DateGeneration::Forward, false);
+    arguments.swap = ext::make_shared<VanillaSwap>(
+        Swap::Payer, 1.0, fixedSchedule, 0.03, index->dayCounter(),
+        floatSchedule, index, 0.0, index->dayCounter());
+    arguments.fixedPayDates = {today + 2*Years};
+    BOOST_CHECK_THROW(model.swaption(arguments, 0.03, 6.0, 16), Error);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()

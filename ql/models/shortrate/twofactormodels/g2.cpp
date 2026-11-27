@@ -304,6 +304,12 @@ namespace QuantLib {
 
         QL_REQUIRE(arguments.nominal != Null<Real>(),
                    "non-constant nominals are not supported yet");
+        QL_REQUIRE(arguments.swap, "underlying swap not set");
+        QL_REQUIRE(arguments.swap->fixedLeg().size() ==
+                       arguments.fixedPayDates.size(),
+                   "fixed leg size (" << arguments.swap->fixedLeg().size()
+                   << ") does not match number of fixed pay dates ("
+                   << arguments.fixedPayDates.size() << ")");
 
         auto settlement = termStructure()->referenceDate();
         auto dayCounter = termStructure()->dayCounter();
