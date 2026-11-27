@@ -156,8 +156,20 @@ namespace QuantLib {
                     return cumD2(strike) * stdDev_ - nD2(strike);
                   };
 
-                  leftLimit = solver.solve(g, accuracy, rightLimit * 0.5,
-                                         0.0, rightLimit);
+                  // The maximum lies below forward * exp(stdDev^2 / 2) whatever
+                  // delta is requested, so this bracket always contains it.
+                  leftLimit = solver.solve(g, accuracy, fExpPos_ * 0.5,
+                                         0.0, fExpPos_);
+
+                  // With zero width the delta has no interior maximum.
+                  if (stdDev_ >= QL_EPSILON) {
+                      Real maxDelta = deltaFromStrike(leftLimit);
+                      QL_REQUIRE(delta <= maxDelta,
+                                 "premium-adjusted call delta out of range: "
+                                 << delta << " exceeds the maximum "
+                                 << maxDelta << " attainable at this "
+                                 "standard deviation");
+                  }
 
                   Real guess = leftLimit+(rightLimit - leftLimit) * 0.5;
 

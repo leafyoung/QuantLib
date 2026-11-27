@@ -672,6 +672,102 @@ BOOST_AUTO_TEST_CASE(testAtmCalcs){
     }
 }
 
+namespace {
+
+    // Premium-adjusted call delta, written out independently of the class under test.
+    Real premiumAdjustedCallDelta(Real strike, Real forward, Real stdDev, Real scale) {
+        Real d2 = std::log(forward / strike) / stdDev - 0.5 * stdDev;
+        return scale * (strike / forward) * 0.5 * std::erfc(-d2 / std::sqrt(2.0));
+    }
+
+    // The delta is unimodal in the strike (it increases up to its maximum and decreases
+    // afterwards), so a ternary search in the log-strike locates the maximum without
+    // using the stationarity condition the class solves for.
+    Real maximumPremiumAdjustedCallDelta(Real forward, Real stdDev, Real scale) {
+        Real lo = -10.0 * stdDev - stdDev * stdDev;
+        Real hi = 0.5 * stdDev * stdDev;
+        for (Size i = 0; i < 200; ++i) {
+            Real m1 = lo + (hi - lo) / 3.0;
+            Real m2 = hi - (hi - lo) / 3.0;
+            Real d1 = premiumAdjustedCallDelta(forward * std::exp(m1), forward, stdDev, scale);
+            Real d2 = premiumAdjustedCallDelta(forward * std::exp(m2), forward, stdDev, scale);
+            if (d1 < d2)
+                lo = m1;
+            else
+                hi = m2;
+        }
+        Real mid = forward * std::exp(0.5 * (lo + hi));
+        return premiumAdjustedCallDelta(mid, forward, stdDev, scale);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaDomain) {
+
+    BOOST_TEST_MESSAGE("Testing premium-adjusted call delta domain in strike-from-delta...");
+
+    struct State {
+        Real spot, dDf, fDf, stdDev;
+    };
+    const State states[] = {{1.0, 1.0, 1.0, 0.3},
+                            {1.0, 1.0, 1.0, 0.6},
+                            {1.0, 1.0, 1.0, 1.0},
+                            {1.421, 0.997306, 0.992266, 2.0},
+                            {122.121, 0.9695434, 0.9872347, 0.9}};
+
+    for (auto deltaType : {DeltaVolQuote::PaSpot, DeltaVolQuote::PaFwd}) {
+        for (const State& s : states) {
+            BlackDeltaCalculator calc(Option::Call, deltaType, s.spot, s.dDf, s.fDf, s.stdDev);
+            Real forward = s.spot * s.fDf / s.dDf;
+            Real scale = (deltaType == DeltaVolQuote::PaSpot) ? s.fDf : 1.0;
+            Real maximum = maximumPremiumAdjustedCallDelta(forward, s.stdDev, scale);
+
+            // Below the maximum the strike exists and reproduces the delta.
+            for (Real fraction : std::vector<Real>{0.1, 0.5, 0.9, 0.9999}) {
+                Real delta = fraction * maximum;
+                Real strike = calc.strikeFromDelta(delta);
+                Real back = premiumAdjustedCallDelta(strike, forward, s.stdDev, scale);
+                QL_CHECK_CLOSE(back, delta, 1e-6);
+                // The right-hand root is the one on the decreasing branch.
+                Real above = premiumAdjustedCallDelta(strike * 1.001, forward, s.stdDev, scale);
+                BOOST_CHECK_LT(above, delta);
+            }
+
+            // Above the maximum there is no strike, and the error states the maximum.
+            for (Real delta : std::vector<Real>{1.0001 * maximum, 1.5 * maximum, scale}) {
+                try {
+                    calc.strikeFromDelta(delta);
+                    BOOST_ERROR("no exception for premium-adjusted call delta " << delta
+                                << " above the maximum " << maximum
+                                << " (delta type " << deltaType << ", stdDev " << s.stdDev << ")");
+                } catch (Error& e) {
+                    std::string message = e.what();
+                    auto position = message.find("maximum ");
+                    if (position == std::string::npos) {
+                        BOOST_ERROR("error does not state the maximum delta " << maximum
+                                    << " (delta type " << deltaType << ", stdDev " << s.stdDev
+                                    << "): " << message);
+                        continue;
+                    }
+                    Real reported = std::stod(message.substr(position + 8));
+                    QL_CHECK_CLOSE(reported, maximum, 1e-3); // percent; the message has six digits
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaZeroStdDev) {
+
+    BOOST_TEST_MESSAGE("Testing premium-adjusted call strike-from-delta with zero width...");
+
+    // With zero width the delta is (K/F) on K < F and zero beyond, so it has no interior
+    // maximum and the request is solved on the ramp.
+    BlackDeltaCalculator calc(Option::Call, DeltaVolQuote::PaFwd, 1.2, 0.98, 0.99, 0.0);
+    Real forward = 1.2 * 0.99 / 0.98;
+    QL_CHECK_CLOSE(calc.strikeFromDelta(0.25), 0.25 * forward, 1e-6);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()
