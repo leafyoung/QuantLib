@@ -496,10 +496,10 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityVegaNonVanillaPayoffs) {
     BOOST_TEST_MESSAGE(
         "Testing BlackCalculator ATM zero-volatility vega for non-vanilla payoffs...");
 
-    // Regression test: the ATM zero-stdDev branch of vega() once hardcoded
-    // the plain-vanilla-only closed form discount*forward*phi(0)*sqrt(T),
-    // which is wrong for other StrikedTypePayoff types that this same
-    // (non-virtual, payoff-polymorphic) calculator supports. Checking
+    // Regression test: the ATM zero-stdDev vega of every StrikedTypePayoff
+    // type the (non-virtual, payoff-polymorphic) calculator supports must
+    // follow the general formula, not the plain-vanilla closed form
+    // discount*forward*phi(0)*sqrt(T). Checking
     // against closed forms derived independently from the general formula
     // (temp2 = DalphaDsigma*forward + DbetaDsigma*x, with temp=0 at the
     // degenerate ATM limit), not from the production code itself.
@@ -514,8 +514,7 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityVegaNonVanillaPayoffs) {
     // vega = discount*sqrt(T)*0.5*(0*forward - DbetaDd2_*cashPayoff).
     {
         Real cashPayoff = 15.0;
-        ext::shared_ptr<StrikedTypePayoff> payoff =
-            ext::make_shared<CashOrNothingPayoff>(Option::Call, forward, cashPayoff);
+        auto payoff = ext::make_shared<CashOrNothingPayoff>(Option::Call, forward, cashPayoff);
         BlackCalculator calc(payoff, forward, stdDev, discount);
         Real expected = -0.5 * discount * std::sqrt(maturity) * phi0 * cashPayoff;
         Real calculated = calc.vega(maturity);
@@ -526,8 +525,7 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityVegaNonVanillaPayoffs) {
     }
     {
         Real cashPayoff = 15.0;
-        ext::shared_ptr<StrikedTypePayoff> payoff =
-            ext::make_shared<CashOrNothingPayoff>(Option::Put, forward, cashPayoff);
+        auto payoff = ext::make_shared<CashOrNothingPayoff>(Option::Put, forward, cashPayoff);
         BlackCalculator calc(payoff, forward, stdDev, discount);
         Real expected = 0.5 * discount * std::sqrt(maturity) * phi0 * cashPayoff;
         Real calculated = calc.vega(maturity);
@@ -541,8 +539,7 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityVegaNonVanillaPayoffs) {
     // (==forward_ at the money).
     // vega = discount*sqrt(T)*0.5*DalphaDd1_*forward.
     {
-        ext::shared_ptr<StrikedTypePayoff> payoff =
-            ext::make_shared<AssetOrNothingPayoff>(Option::Call, forward);
+        auto payoff = ext::make_shared<AssetOrNothingPayoff>(Option::Call, forward);
         BlackCalculator calc(payoff, forward, stdDev, discount);
         Real expected = 0.5 * discount * std::sqrt(maturity) * phi0 * forward;
         Real calculated = calc.vega(maturity);
@@ -552,8 +549,7 @@ BOOST_AUTO_TEST_CASE(testBlackCalculatorZeroVolatilityVegaNonVanillaPayoffs) {
         }
     }
     {
-        ext::shared_ptr<StrikedTypePayoff> payoff =
-            ext::make_shared<AssetOrNothingPayoff>(Option::Put, forward);
+        auto payoff = ext::make_shared<AssetOrNothingPayoff>(Option::Put, forward);
         BlackCalculator calc(payoff, forward, stdDev, discount);
         Real expected = -0.5 * discount * std::sqrt(maturity) * phi0 * forward;
         Real calculated = calc.vega(maturity);
