@@ -22,7 +22,6 @@
 #include <ql/pricingengines/exotic/analyticcomplexchooserengine.hpp>
 #include <ql/math/distributions/bivariatenormaldistribution.hpp>
 #include <algorithm>
-#include <cmath>
 #include <utility>
 
 using std::pow;
@@ -125,12 +124,8 @@ namespace QuantLib {
         Real epsilon = 1.0e-10 * std::max<Real>(strike(Option::Call), strike(Option::Put));
 
         //Newton-Raphson process
-        Size iterations = 0;
-        while (std::fabs(yi) > epsilon || !std::isfinite(yi)) {
-            QL_REQUIRE(++iterations <= 100, "critical value: max iterations exceeded");
+        while (std::fabs(yi) > epsilon){
             Sv = Sv - yi / di;
-            QL_REQUIRE(std::isfinite(Sv) && Sv > 0.0,
-                       "critical value: non-positive or non-finite iterate");
 
             bs=bsCalculator(Sv,Option::Call);
             ci = bs.value();
