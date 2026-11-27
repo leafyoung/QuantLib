@@ -21,6 +21,7 @@
 
 #include <ql/exercise.hpp>
 #include <ql/math/functional.hpp>
+#include <ql/math/integrals/gaussianquadratures.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <boost/math/distributions/non_central_chi_squared.hpp>
@@ -28,6 +29,34 @@
 #include <utility>
 
 namespace QuantLib {
+
+    Time cevEffectiveTime(
+        Real alpha, Real beta,
+        const ext::shared_ptr<YieldTermStructure>& discountCurve,
+        Time start, Time end) {
+
+        QL_REQUIRE(start < end,
+                   "cevEffectiveTime requires a positive time interval");
+
+        if (beta == 1.0)
+            return squared(alpha)*(end-start);
+
+        const DiscountFactor dStart = discountCurve->discount(start);
+        const Real exponent = 2.0*(1.0-beta);
+
+        // the integrand is smooth and positive for flat rate curves and
+        // piecewise smooth otherwise; a fixed 64 point Gauss-Legendre rule
+        // resolves it well beyond pricing tolerances
+        const GaussLegendreIntegration quadrature(64);
+        const Time halfLength = 0.5*(end-start);
+        const Time mid = 0.5*(end+start);
+
+        return squared(alpha)*halfLength*quadrature(
+            [&](Real x) -> Real {
+                const Time s = mid + halfLength*x;
+                return std::pow(discountCurve->discount(s)/dStart, exponent);
+            });
+    }
 
     CEVCalculator::CEVCalculator(Real f0, Real alpha, Real beta)
     : f0_(f0),
@@ -42,19 +71,6 @@ namespace QuantLib {
 
     Real CEVCalculator::value(
         Option::Type optionType, Real strike, Time t) const {
-
-        // At beta=1, dF = alpha*F*dW is exactly geometric Brownian motion
-        // with volatility alpha: the CEV closed form degenerates (delta_'s
-        // 1/(1-beta) factor blows up, feeding the chi-squared distributions
-        // below a divide-by-zero/overflowing degrees-of-freedom parameter,
-        // which throws rather than returning a sensible price) exactly
-        // where the true model is just Black. Dispatch to the Black formula
-        // for beta at or extremely close to 1, where the CEV closed form is
-        // both undefined/unstable and numerically indistinguishable from it
-        // anyway.
-        if (std::fabs(beta_ - 1.0) < 1.0e-4) {
-            return blackFormula(optionType, strike, f0_, alpha_*std::sqrt(t), 1.0);
-        }
 
         typedef boost::math::non_central_chi_squared_distribution<Real>
             nc_chi2;
@@ -86,15 +102,17 @@ namespace QuantLib {
                            nc_chi2(2.0-delta_, kTilde/t), x0_/t));
             }
             else {
-                return - f0_ * boost::math::cdf(
-                           nc_chi2(delta_-2.0, kTilde/t), x0_/t)
-                       + strike * (1.0 - boost::math::cdf(
-                           nc_chi2(delta_, x0_/t), kTilde/t));
+                // for beta > 1 the driftless CEV process is a strict local
+                // martingale with E[f_t] = f0*gamma_p(delta_/2-1, x0_/(2t)),
+                // so put = call - E[f_t] + strike
+                return value(Option::Call, strike, t)
+                     - f0_ * boost::math::gamma_p(0.5*delta_-1.0,
+                                                  x0_/(2.0*t))
+                     + strike;
             }
         }
-        else {
+        else
             QL_FAIL("unknown option type");
-}
 
     }
 
@@ -117,12 +135,38 @@ namespace QuantLib {
         QL_REQUIRE(payoff, "non-striked payoff given");
 
         const Date exerciseDate = arguments_.exercise->lastDate();
+        const Time maturity = discountCurve_->timeFromReference(exerciseDate);
 
-        results_.value = calculator_->value(
-                payoff->optionType(),
-                payoff->strike(),
-                discountCurve_->timeFromReference(exerciseDate))
-            * discountCurve_->discount(exerciseDate);
+        QL_REQUIRE(maturity > 0.0,
+                   "the option matures at or before the discount curve's reference date");
+
+        const DiscountFactor discount = discountCurve_->discount(exerciseDate);
+        const Real beta = calculator_->beta();
+
+        if (std::fabs(beta - 1.0) < cevBlackLimitBandWidth) {
+            // the CEV price converges to its Black-Scholes limit as beta
+            // approaches one. Within the band the closed form degenerates
+            // towards infinite degrees of freedom and boost's noncentral
+            // chi-squared evaluation can raise, while the deviation from the
+            // limit stays within the model curvature of the neighbourhood
+            results_.value = blackFormula(
+                payoff->optionType(), payoff->strike(),
+                calculator_->f0()/discount,
+                calculator_->alpha()*std::sqrt(maturity), discount);
+            return;
+        }
+
+        // Remove the deterministic drift: the option value is the
+        // undiscounted value of the drift-removed unit volatility CEV
+        // process at the effective time, at the discounted strike.
+        // Exact for deterministic rate curves, see cevEffectiveTime.
+        const CEVCalculator unitVolCalculator(calculator_->f0(), 1.0, beta);
+
+        results_.value = unitVolCalculator.value(
+            payoff->optionType(),
+            payoff->strike()*discount,
+            cevEffectiveTime(calculator_->alpha(), beta,
+                             discountCurve_.currentLink(), 0.0, maturity));
     }
 
 }

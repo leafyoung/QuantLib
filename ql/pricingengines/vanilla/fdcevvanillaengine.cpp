@@ -32,6 +32,7 @@
 #include <ql/methods/finitedifferences/utilities/fdmdiscountdirichletboundary.hpp>
 #include <ql/methods/finitedifferences/utilities/fdminnervaluecalculator.hpp>
 #include <ql/methods/finitedifferences/utilities/fdmtimedepdirichletboundary.hpp>
+#include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/termstructures/yieldtermstructure.hpp>
@@ -45,24 +46,41 @@ namespace QuantLib {
             PriceAtBoundary(Time maturityTime,
                             ext::shared_ptr<StrikedTypePayoff> payoff,
                             ext::shared_ptr<YieldTermStructure> rTS,
-                            ext::shared_ptr<CEVCalculator> calculator)
+                            Real upperBound, Real alpha, Real beta)
             : maturityTime_(maturityTime), payoff_(std::move(payoff)),
-              calculator_(std::move(calculator)), rTS_(std::move(rTS)) {}
+              rTS_(std::move(rTS)),
+              calculator_(upperBound, 1.0, beta),
+              upperBound_(upperBound), alpha_(alpha), beta_(beta) {}
 
             Real operator()(Real t) const {
-                const Time time2Expiry = std::max(1/365., maturityTime_ - t);
+                // t is a rollback step destination and strictly below the
+                // maturity, so the evaluation window always has positive
+                // length and stays within the curve's range
                 const DiscountFactor df =
                     rTS_->discount(maturityTime_) / rTS_->discount(t);
 
-                return  df * calculator_->value(
-                    payoff_->optionType(), payoff_->strike(), time2Expiry);
+                if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
+                    // the CEV price converges to its Black-Scholes limit as
+                    // beta approaches one; see AnalyticCEVEngine
+                    return blackFormula(
+                        payoff_->optionType(), payoff_->strike(),
+                        upperBound_/df,
+                        alpha_*std::sqrt(maturityTime_ - t), df);
+                }
+
+                // drift-removed unit volatility process, see cevEffectiveTime
+                return calculator_.value(
+                    payoff_->optionType(),
+                    payoff_->strike()*df,
+                    cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_));
             }
 
           private:
             const Time maturityTime_;
             const ext::shared_ptr<StrikedTypePayoff> payoff_;
-            const ext::shared_ptr<CEVCalculator> calculator_;
             const ext::shared_ptr<YieldTermStructure> rTS_;
+            const CEVCalculator calculator_;
+            const Real upperBound_, alpha_, beta_;
         };
     }
 
@@ -98,6 +116,10 @@ namespace QuantLib {
         const Date maturityDate = arguments_.exercise->lastDate();
         const Time maturityTime = dc.yearFraction(referenceDate, maturityDate);
 
+        QL_REQUIRE(maturityTime > 0.0,
+                   "the option matures at or before the discount curve's "
+                   "reference date");
+
         const ext::shared_ptr<Fdm1dMesher> cevMesher =
             ext::make_shared<FdmCEV1dMesher>(
                 xGrid_,
@@ -126,8 +148,7 @@ namespace QuantLib {
         FdmBoundaryConditionSet boundaries;
 
         const PriceAtBoundary upperBoundPrice(
-            maturityTime, payoff, rTS,
-            ext::make_shared<CEVCalculator>(upperBound, alpha_, beta_));
+            maturityTime, payoff, rTS, upperBound, alpha_, beta_);
 
         boundaries.push_back(ext::make_shared<FdmTimeDepDirichletBoundary>(
             mesher, std::function<Real (Real)>(upperBoundPrice),

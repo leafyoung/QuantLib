@@ -36,7 +36,9 @@ namespace QuantLib {
         Size direction)
     : rTS_(rTS),
       direction_(direction),
-      dxxMap_(SecondDerivativeOp(0, mesher)
+      dxMap_(FirstDerivativeOp(direction_, mesher)
+             .mult(mesher->locations(direction))),
+      dxxMap_(SecondDerivativeOp(direction_, mesher)
               .mult(0.5 * alpha * alpha *
                     Pow(mesher->locations(direction), 2.0 * beta))),
       mapT_(direction, mesher) {
@@ -46,7 +48,7 @@ namespace QuantLib {
 
     void FdmCEVOp::setTime(Time t1, Time t2) {
         const Rate r = rTS_->forwardRate(t1, t2, Continuous).rate();
-        mapT_.axpyb(Array(), dxxMap_, dxxMap_, Array(1, -r));
+        mapT_.axpyb(Array(1, r), dxMap_, dxxMap_, Array(1, -r));
     }
 
     Array FdmCEVOp::apply(const Array& r) const {
