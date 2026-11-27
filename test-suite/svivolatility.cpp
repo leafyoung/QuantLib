@@ -81,7 +81,7 @@ BOOST_AUTO_TEST_CASE(testSviRightWingSlope) {
         {1.0, 0.0, true},   // slope 1
         {1.5, 0.0, true},   // slope 1.5
         {1.0, 0.5, true},   // slope 1.5
-        {2.35, -0.7, true}, // slope 0.705, inside the b(1+|rho|) <= 4 bound
+        {2.35, -0.7, true}, // slope 0.705, b(1+|rho|) = 3.995 <= 4: only the right wing is checked
         {2.5, -0.7, false}, // slope 0.75, b(1+|rho|) = 4.25 above the bound of 4
         {2.0, 0.0, false},  // slope 2: the call price does not vanish
         {2.6, -0.2, false}, // slope 2.08, b(1+|rho|) = 3.12
@@ -222,7 +222,7 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
 
     // Every parameter set the transformation can produce is admissible.
     for (Real x3 : angles) {
-        for (Real x1 : {-1.0e6, -10.0, 0.0, 10.0, 1.0e6}) {
+        for (Real x1 : std::vector<Real>{-1.0e6, -10.0, 0.0, 10.0, 1.0e6}) {
             const Array x = {0.3, x1, 0.2, x3, 0.0};
             const Array y = specs.direct(x, isFixed, params, forward);
             BOOST_CHECK_NO_THROW(detail::checkSviParameters(y[0], y[1], y[2], y[3], y[4], tte));
@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
     }
 
     // The same holds with b fixed and rho free.
-    for (Real fixedB : {0.5, 1.0, 1.5, 2.0, 2.5}) {
+    for (Real fixedB : std::vector<Real>{0.5, 1.0, 1.5, 2.0, 2.5}) {
         const std::vector<bool> bFixed = {false, true, false, false, false};
         const std::vector<Real> bParams = {Null<Real>(), fixedB, Null<Real>(), Null<Real>(),
                                            Null<Real>()};
@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
 
     // The default rho lies inside the interval admitted for a fixed b, and equals -0.4 when
     // that is well inside it.
-    for (Real fixedB : {1.5, 2.9}) {
+    for (Real fixedB : std::vector<Real>{1.5, 2.9}) {
         std::vector<Real> seedParams = {Null<Real>(), fixedB, Null<Real>(), Null<Real>(),
                                         Null<Real>()};
         std::vector<bool> seedFixed = {false, true, false, false, false};
