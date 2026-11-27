@@ -35,6 +35,7 @@ namespace QuantLib {
         const ext::shared_ptr<YieldTermStructure>& discountCurve,
         Time start, Time end) {
 
+        QL_REQUIRE(discountCurve, "no discount curve given");
         QL_REQUIRE(start < end,
                    "cevEffectiveTime requires a positive time interval");
 
@@ -46,8 +47,9 @@ namespace QuantLib {
 
         // the integrand is smooth and positive for flat rate curves and
         // piecewise smooth otherwise; a fixed 64 point Gauss-Legendre rule
-        // resolves it well beyond pricing tolerances
-        const GaussLegendreIntegration quadrature(64);
+        // resolves it well beyond pricing tolerances. The rule is built
+        // once: the FDM boundary evaluates this at every time step.
+        static const GaussLegendreIntegration quadrature(64);
         const Time halfLength = 0.5*(end-start);
         const Time mid = 0.5*(end+start);
 
@@ -159,7 +161,8 @@ namespace QuantLib {
         // Remove the deterministic drift: the option value is the
         // undiscounted value of the drift-removed unit volatility CEV
         // process at the effective time, at the discounted strike.
-        // Exact for deterministic rate curves, see cevEffectiveTime.
+        // Exact for deterministic rate curves up to the quadrature accuracy
+        // of cevEffectiveTime.
         const CEVCalculator unitVolCalculator(calculator_->f0(), 1.0, beta);
 
         results_.value = unitVolCalculator.value(
