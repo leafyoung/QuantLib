@@ -345,6 +345,40 @@ BOOST_AUTO_TEST_CASE(testHolderExtensibleOptionIsHomogeneousInPriceInputs) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testHolderExtensibleOptionTinyPremiumPut) {
+    BOOST_TEST_MESSAGE(
+        "Testing holder-extensible puts with a tiny premium and a far critical price...");
+
+    /* The upper critical price lies far above the strikes, where the residual is dominated by
+       rounding noise, so the stopping tolerance must grow with the iterate. Reference values:
+       discounted expectation at the first expiry of max(exercise, extension - premium, 0),
+       by numerical integration. */
+    DayCounter dc = Actual365Fixed();
+    Date today = Settings::instance().evaluationDate();
+
+    struct Case {
+        Real volatility;
+        Real expected;
+    };
+    Case cases[] = {{1.0, 52.484713519075}, {1.2, 57.243559141513}};
+
+    for (const auto& c : cases) {
+        auto process = ext::make_shared<BlackScholesMertonProcess>(
+            Handle<Quote>(ext::make_shared<SimpleQuote>(100.0)),
+            Handle<YieldTermStructure>(flatRate(today, 0.0, dc)),
+            Handle<YieldTermStructure>(flatRate(today, 0.05, dc)),
+            Handle<BlackVolTermStructure>(flatVol(today, c.volatility, dc)));
+        HolderExtensibleOption option(
+            Option::Put, 1.0e-6, today + 3650, 100.0,
+            ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
+            ext::make_shared<EuropeanExercise>(today + 90));
+        option.setPricingEngine(ext::make_shared<AnalyticHolderExtensibleOptionEngine>(process));
+
+        BOOST_TEST_MESSAGE("    volatility " << c.volatility);
+        QL_CHECK_CLOSE(option.NPV(), c.expected, 1.0e-3);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()

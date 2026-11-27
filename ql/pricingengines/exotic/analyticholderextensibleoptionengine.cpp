@@ -38,10 +38,11 @@ namespace QuantLib {
         // maximum number of Newton-Raphson steps to find a critical price
         const Size maxIterations = 100;
 
-        // residual tolerance of the critical-price solves, relative to the strikes so that the
-        // value is homogeneous of degree one in the price inputs
-        Real criticalPriceTolerance(Real strike1, Real strike2) {
-            return 1.0e-10 * std::max<Real>(strike1, strike2);
+        // The residual tolerance is relative to the strikes and to the current iterate, so that
+        // the value is homogeneous of degree one in the price inputs and the tolerance stays
+        // above the rounding noise of the residual at large iterates.
+        bool criticalPriceConverged(Real residual, Real strike1, Real strike2, Real iterate) {
+            return std::fabs(residual) <= 1.0e-10 * std::max<Real>({strike1, strike2, iterate});
         }
 
         Real nextCriticalPrice(Real spot, Real value, Real derivative) {
@@ -145,11 +146,10 @@ namespace QuantLib {
             Real yi = ci - A;
             //da/ds = 0
             Real di = dc - 0;
-            Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
             //Newton-Raphson process
             Size iterations = 0;
-            while (std::fabs(yi) > epsilon || !std::isfinite(yi)) {
+            while (!criticalPriceConverged(yi, strike(), arguments_.secondStrike, Sv)) {
                 QL_REQUIRE(++iterations <= maxIterations,
                            "lower critical price: max iterations exceeded");
                 Sv = nextCriticalPrice(Sv, yi, di);
@@ -206,11 +206,10 @@ namespace QuantLib {
             Real yi = ci - A - Sv + X1;
             //da/ds = 1
             Real di = dc - 1;
-            Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
             //Newton-Raphson process
             Size iterations = 0;
-            while (std::fabs(yi) > epsilon || !std::isfinite(yi)) {
+            while (!criticalPriceConverged(yi, strike(), arguments_.secondStrike, Sv)) {
                 QL_REQUIRE(++iterations <= maxIterations,
                            "upper critical price: max iterations exceeded");
                 Sv = nextCriticalPrice(Sv, yi, di);
@@ -247,11 +246,10 @@ namespace QuantLib {
         Real yi = pi - A + Sv - X1;
         //da/ds = 1
         Real di = dc + 1;
-        Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
         //Newton-Raphson prosess
         Size iterations = 0;
-        while (std::fabs(yi) > epsilon || !std::isfinite(yi)) {
+        while (!criticalPriceConverged(yi, strike(), arguments_.secondStrike, Sv)) {
             QL_REQUIRE(++iterations <= maxIterations,
                        "lower critical price: max iterations exceeded");
             Sv = nextCriticalPrice(Sv, yi, di);
@@ -280,11 +278,10 @@ namespace QuantLib {
             Real yi = pi - A;
             //da/ds = 0
             Real di = dc - 0;
-            Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
             //Newton-Raphson prosess
             Size iterations = 0;
-            while (std::fabs(yi) > epsilon || !std::isfinite(yi)) {
+            while (!criticalPriceConverged(yi, strike(), arguments_.secondStrike, Sv)) {
                 QL_REQUIRE(++iterations <= maxIterations,
                            "upper critical price: max iterations exceeded");
                 Sv = nextCriticalPrice(Sv, yi, di);

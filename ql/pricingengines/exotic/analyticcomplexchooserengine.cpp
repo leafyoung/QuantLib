@@ -120,11 +120,12 @@ namespace QuantLib {
 
         Real yi = ci - Pi;
         Real di = dc - dp;
-        // relative to the strikes, so that the value is homogeneous of degree one in the prices
-        Real epsilon = 1.0e-10 * std::max<Real>(strike(Option::Call), strike(Option::Put));
+        Real Xc = strike(Option::Call);
+        Real Xp = strike(Option::Put);
 
+        // residual tolerance relative to the strikes and the iterate: homogeneous in the prices
         //Newton-Raphson process
-        while (std::fabs(yi) > epsilon){
+        while (std::fabs(yi) > 1.0e-10 * std::max<Real>({Xc, Xp, Sv})) {
             Sv = Sv - yi / di;
 
             bs=bsCalculator(Sv,Option::Call);
