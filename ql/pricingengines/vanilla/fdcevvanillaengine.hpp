@@ -35,6 +35,9 @@ namespace QuantLib {
     /*! As in AnalyticCEVEngine, the underlying is an asset with drift
         given by the discount curve, not a driftless forward. FdSabrVanillaEngine
         models a driftless forward, so the two agree only for a zero rate.
+        The mesher requires \f$ \beta \neq 1 \f$ (and fails to converge
+        closer to one than about 3e-4 on a wide mesh), unlike
+        AnalyticCEVEngine, which accepts \f$ \beta = 1 \f$.
     */
     class FdCEVVanillaEngine : public VanillaOption::engine {
       public:

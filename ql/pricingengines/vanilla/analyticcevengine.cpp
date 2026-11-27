@@ -74,6 +74,10 @@ namespace QuantLib {
     Real CEVCalculator::value(
         Option::Type optionType, Real strike, Time t) const {
 
+        QL_REQUIRE(std::fabs(beta_ - 1.0) >= cevBlackLimitBandWidth,
+                   "beta " << beta_ << " is within " << cevBlackLimitBandWidth
+                   << " of one: the closed form is not evaluated there");
+
         typedef boost::math::non_central_chi_squared_distribution<Real>
             nc_chi2;
 
