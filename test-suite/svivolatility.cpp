@@ -19,6 +19,7 @@
 
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
+#include <ql/experimental/volatility/sviinterpolation.hpp>
 #include <ql/experimental/volatility/svismilesection.hpp>
 
 using namespace QuantLib;
@@ -63,6 +64,147 @@ BOOST_AUTO_TEST_CASE(testSviSmileSection) {
 
     BOOST_CHECK_EQUAL(date_section->atmLevel(), forward);
     QL_CHECK_CLOSE(date_section->variance(strike), a + b * sigma, 1E-10);
+}
+
+BOOST_AUTO_TEST_CASE(testSviRightWingSlope) {
+
+    BOOST_TEST_MESSAGE("Testing SviSmileSection right wing slope bound...");
+
+    // The right wing of the total variance has slope b(1+rho); the call price
+    // vanishes at large strikes only if that slope is below 2.
+    const Time tte = 1.0;
+    const Real forward = 1.0;
+    const Real a = 0.01, sigma = 0.1, m = 0.0;
+
+    struct Case { Real b, rho; bool accepted; };
+    const std::vector<Case> cases = {
+        {1.0, 0.0, true},   // slope 1
+        {1.5, 0.0, true},   // slope 1.5
+        {1.0, 0.5, true},   // slope 1.5
+        {2.35, -0.7, true}, // slope 0.705, inside the b(1+|rho|) <= 4 bound
+        {2.5, -0.7, false}, // slope 0.75, b(1+|rho|) = 4.25 above the retained bound of 4
+        {2.0, 0.0, false},  // slope 2: the call price does not vanish
+        {2.6, -0.2, false}, // slope 2.08, b(1+|rho|) = 3.12
+        {3.0, 0.0, false},  // slope 3, b(1+|rho|) = 3
+        {2.0, 0.5, false},  // slope 3
+        {4.0, 0.0, false},  // slope 4
+        {4.1, 0.0, false}   // b(1+|rho|) above 4
+    };
+
+    for (const auto& c : cases) {
+        const std::vector<Real> params = {a, c.b, sigma, c.rho, m};
+        if (c.accepted) {
+            BOOST_CHECK_NO_THROW(SviSmileSection(tte, forward, params));
+        } else {
+            BOOST_CHECK_THROW(SviSmileSection(tte, forward, params), Error);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testSviCallPriceTail) {
+
+    BOOST_TEST_MESSAGE("Testing SviSmileSection call price at large strikes...");
+
+    // Reference call prices (discount 1) from an independent evaluation of
+    // C = N(d1) - K N(d2) with the SVI total variance at k = log(K/F).
+    const Time tte = 1.0;
+    const Real forward = 1.0;
+    const Real a = 0.01, sigma = 0.1, m = 0.0;
+
+    struct Case { Real b, rho, call8, call12; };
+    const std::vector<Case> cases = {
+        {1.0, 0.0, 0.0460002960, 0.0252096522},
+        {1.5, 0.0, 0.2032085565, 0.1796678382},
+        {1.0, 0.5, 0.2031933160, 0.1796602044},
+        {1.0, -0.5, 0.0005072837, 0.0000458948}
+    };
+
+    for (const auto& c : cases) {
+        SviSmileSection section(tte, forward, {a, c.b, sigma, c.rho, m});
+        const Real low = section.optionPrice(forward * std::exp(8.0), Option::Call);
+        const Real high = section.optionPrice(forward * std::exp(12.0), Option::Call);
+        QL_CHECK_CLOSE(low, c.call8, 1.0e-4);
+        QL_CHECK_CLOSE(high, c.call12, 1.0e-4);
+        // an arbitrage-free call price decreases in the strike
+        if (!(high < low))
+            BOOST_ERROR("call price does not decrease at large strikes (b=" << c.b
+                        << ", rho=" << c.rho << "): " << low << " -> " << high);
+    }
+
+    // The wing slope b(1+rho) = 3 makes the call price rise towards the forward;
+    // such a smile is rejected at construction.
+    BOOST_CHECK_THROW(SviSmileSection(tte, forward, {a, 3.0, sigma, 0.0, m}), Error);
+}
+
+BOOST_AUTO_TEST_CASE(testSviInterpolationWingSlope) {
+
+    BOOST_TEST_MESSAGE("Testing SviInterpolation calibration under the wing slope bound...");
+
+    const Time tte = 1.0;
+    const Real forward = 1.0;
+    const std::vector<Real> source = {0.01, 1.0, 0.1, 0.5, 0.0}; // slope 1.5
+    SviSmileSection reference(tte, forward, source);
+
+    std::vector<Real> strikes, vols;
+    for (Real k = -1.5; k <= 1.5001; k += 0.25) {
+        strikes.push_back(forward * std::exp(k));
+        vols.push_back(reference.volatility(strikes.back()));
+    }
+
+    SviInterpolation fit(strikes.begin(), strikes.end(), vols.begin(), tte, forward,
+                         Null<Real>(), Null<Real>(), Null<Real>(), Null<Real>(),
+                         Null<Real>(), false, false, false, false, false, true);
+    fit.update();
+    BOOST_CHECK_SMALL(fit.rmsError(), 1.0e-4);
+    BOOST_CHECK_MESSAGE(fit.b() * (1.0 + fit.rho()) < 2.0,
+                        "calibrated right wing slope " << fit.b() * (1.0 + fit.rho())
+                        << " is not below 2");
+
+    // With rho fixed at a positive value the default seed for b must also satisfy the bound.
+    SviInterpolation fixedRho(strikes.begin(), strikes.end(), vols.begin(), tte, forward,
+                              Null<Real>(), Null<Real>(), Null<Real>(), 0.5, Null<Real>(),
+                              false, false, false, true, false, true);
+    fixedRho.update();
+    BOOST_CHECK_SMALL(fixedRho.rmsError(), 1.0e-4);
+    BOOST_CHECK_MESSAGE(fixedRho.b() * (1.0 + fixedRho.rho()) < 2.0,
+                        "calibrated right wing slope with fixed rho is not below 2");
+}
+
+BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
+
+    BOOST_TEST_MESSAGE("Testing SviSpecs parameter transformation range...");
+
+    detail::SviSpecs specs;
+    const std::vector<bool> isFixed(5, false);
+    const std::vector<Real> params(5, Null<Real>());
+    const Real forward = 1.0;
+    const Time tte = 1.0;
+
+    // Every parameter set the transformation can produce is admissible.
+    for (Real x3 = -1.5; x3 <= 1.5; x3 += 0.1) {
+        for (Real x1 : {-1.0e6, -10.0, 0.0, 10.0, 1.0e6}) {
+            const Array x = {0.3, x1, 0.2, x3, 0.0};
+            const Array y = specs.direct(x, isFixed, params, forward);
+            BOOST_CHECK_NO_THROW(detail::checkSviParameters(y[0], y[1], y[2], y[3], y[4], tte));
+        }
+    }
+
+    // The random guesses used for restarts are admissible as well.
+    for (Real r = 0.05; r < 1.0; r += 0.1) {
+        for (Real r3 = 0.0; r3 <= 1.0; r3 += 0.1) {
+            Array values(5);
+            const std::vector<Real> seq = {r, r3, r, r, r};
+            specs.guess(values, isFixed, forward, tte, seq, std::vector<Real>());
+            BOOST_CHECK_NO_THROW(detail::checkSviParameters(values[0], values[1], values[2],
+                                                            values[3], values[4], tte));
+        }
+    }
+
+    // inverse undoes direct for b.
+    const Array y = {0.02, 0.8, 0.2, 0.5, 0.1};
+    const Array x = specs.inverse(y, isFixed, params, forward);
+    const Array roundTrip = specs.direct(x, isFixed, params, forward);
+    QL_CHECK_CLOSE(roundTrip[1], y[1], 1.0e-8);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

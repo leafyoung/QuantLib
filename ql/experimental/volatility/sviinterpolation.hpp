@@ -26,6 +26,7 @@
 
 #include <ql/experimental/volatility/svismilesection.hpp>
 #include <ql/math/interpolations/xabrinterpolation.hpp>
+#include <algorithm>
 #include <utility>
 
 namespace QuantLib {
@@ -43,7 +44,15 @@ inline void checkSviParameters(const Real a, const Real b, const Real sigma,
                                                << ") must be non negative");
     QL_REQUIRE(b * (1.0 + std::fabs(rho)) <= 4.0,
                "b(1+|rho|) must be less than or equal to 4, (b=" << b << ", rho=" << rho << ")");
+    // The right wing of the total variance has slope b(1+rho). The call price
+    // tends to zero at large strikes only if that slope is below 2.
+    QL_REQUIRE(b * (1.0 + rho) < 2.0,
+               "b(1+rho) must be less than 2, (b=" << b << ", rho=" << rho << ")");
+}
 
+// Supremum of b admitted by checkSviParameters for the given rho.
+inline Real sviMaxB(const Real rho) {
+    return std::min<Real>(4.0 / (1.0 + std::fabs(rho)), 2.0 / (1.0 + rho));
 }
 
 inline Real sviTotalVariance(const Real a, const Real b, const Real sigma,
@@ -67,7 +76,7 @@ struct SviSpecs {
         if (params[4] == Null<Real>())
             params[4] = 0.0;
         if (params[1] == Null<Real>())
-            params[1] = 2.0 / (1.0 + std::fabs(params[3]));
+            params[1] = std::min<Real>(2.0 / (1.0 + std::fabs(params[3])), 1.0 / (1.0 + params[3]));
         if (params[0] == Null<Real>()) {
             params[0] = std::max(
                 0.20 * 0.20 * expiryTime -
@@ -89,7 +98,7 @@ struct SviSpecs {
         if (!paramIsFixed[4])
             values[4] = (2.0 * r[j++] - 1.0);
         if (!paramIsFixed[1])
-            values[1] = r[j++] * 4.0 / (1.0 + std::fabs(values[3])) * eps2();
+            values[1] = r[j++] * sviMaxB(values[3]) * eps2();
         if (!paramIsFixed[0])
             values[0] = r[j++] * expiryTime -
                         eps2() * (values[1] * values[2] *
@@ -101,8 +110,7 @@ struct SviSpecs {
         x[2] = std::sqrt(y[2] - eps1());
         x[3] = std::asin(y[3] / eps2());
         x[4] = y[4];
-        x[1] = std::tan(y[1] / 4.0 * (1.0 + std::fabs(y[3])) / eps2() * M_PI -
-                        M_PI / 2.0);
+        x[1] = std::tan(y[1] / (sviMaxB(y[3]) * eps2()) * M_PI - M_PI / 2.0);
         x[0] = std::sqrt(y[0] - eps1() +
                          y[1] * y[2] * std::sqrt(1.0 - y[3] * y[3]));
         return x;
@@ -118,8 +126,7 @@ struct SviSpecs {
         if (paramIsFixed[1])
             y[1] = params[1];
         else
-            y[1] = (std::atan(x[1]) + M_PI / 2.0) / M_PI * eps2() * 4.0 /
-                   (1.0 + std::fabs(y[3]));
+            y[1] = (std::atan(x[1]) + M_PI / 2.0) / M_PI * eps2() * sviMaxB(y[3]);
         if (paramIsFixed[0])
             y[0] = params[0];
         else
