@@ -719,7 +719,7 @@ BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaDomain) {
         for (const State& s : states) {
             BlackDeltaCalculator calc(Option::Call, deltaType, s.spot, s.dDf, s.fDf, s.stdDev);
             Real forward = s.spot * s.fDf / s.dDf;
-            Real scale = (deltaType == DeltaVolQuote::PaSpot) ? s.fDf : 1.0;
+            Real scale = (deltaType == DeltaVolQuote::PaSpot) ? Real(s.fDf) : Real(1.0);
             Real maximum = maximumPremiumAdjustedCallDelta(forward, s.stdDev, scale);
 
             // Below the maximum the strike exists and reproduces the delta.
@@ -765,7 +765,7 @@ BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaLargeStdDev) {
         // The strikes are representable, and the requests below the maximum are solved.
         BlackDeltaCalculator calc(Option::Call, deltaType, 1.0, 0.99, 0.98, 8.0);
         Real forward = 0.98 / 0.99;
-        Real scale = (deltaType == DeltaVolQuote::PaSpot) ? 0.98 : 1.0;
+        Real scale = (deltaType == DeltaVolQuote::PaSpot) ? Real(0.98) : Real(1.0);
         for (Real delta : std::vector<Real>{1e-12, 1e-6, 1e-3}) {
             Real strike = calc.strikeFromDelta(delta);
             Real back = premiumAdjustedCallDelta(strike, forward, 8.0, scale);
