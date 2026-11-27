@@ -297,6 +297,48 @@ BOOST_AUTO_TEST_CASE(testHolderExtensibleOptionNegativeDividendYield) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testHolderExtensibleOptionIsHomogeneousInPriceInputs) {
+    BOOST_TEST_MESSAGE(
+        "Testing that the holder-extensible value scales with the price inputs...");
+
+    /* Multiplying the spot, both strikes and the premium by k multiplies the value by k. The
+       reference values are the discounted expectation at the first expiry of
+       max(exercise, extension - premium, 0), by numerical integration, at k = 1. */
+    DayCounter dc = Actual360();
+    Date today = Settings::instance().evaluationDate();
+
+    struct Case {
+        Option::Type type;
+        Real strike2, premium;
+        Real expected;
+    };
+    Case cases[] = {
+        {Option::Call, 105.0, 1.0, 9.42329926358},
+        {Option::Call, 105.0, 0.05, 9.80807713982},
+        {Option::Put, 95.0, 1.0, 5.20095543317},
+    };
+
+    for (const auto& c : cases) {
+        for (Real k : {1.0e3, 1.0, 1.0e-2, 1.0e-4, 1.0e-6}) {
+            auto process = ext::make_shared<BlackScholesMertonProcess>(
+                Handle<Quote>(ext::make_shared<SimpleQuote>(100.0 * k)),
+                Handle<YieldTermStructure>(flatRate(today, 0.0, dc)),
+                Handle<YieldTermStructure>(flatRate(today, 0.08, dc)),
+                Handle<BlackVolTermStructure>(flatVol(today, 0.25, dc)));
+            HolderExtensibleOption option(
+                c.type, c.premium * k, today + 270, c.strike2 * k,
+                ext::make_shared<PlainVanillaPayoff>(c.type, 100.0 * k),
+                ext::make_shared<EuropeanExercise>(today + 180));
+            option.setPricingEngine(
+                ext::make_shared<AnalyticHolderExtensibleOptionEngine>(process));
+
+            BOOST_TEST_MESSAGE("    scale " << k << ", type " << c.type << ", premium "
+                                            << c.premium);
+            QL_CHECK_CLOSE(option.NPV() / k, c.expected, 1.0e-5);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()
