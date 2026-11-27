@@ -123,9 +123,9 @@ namespace QuantLib {
         Real Xc = strike(Option::Call);
         Real Xp = strike(Option::Put);
 
-        // residual tolerance relative to the strikes and the iterate: homogeneous in the prices
+        // residual tolerance relative to the strikes: homogeneous in the prices
         //Newton-Raphson process
-        while (std::fabs(yi) > 1.0e-10 * std::max<Real>({Xc, Xp, Sv})) {
+        while (std::fabs(yi) > 1.0e-10 * std::max<Real>(Xc, Xp)) {
             Sv = Sv - yi / di;
 
             bs=bsCalculator(Sv,Option::Call);
