@@ -84,8 +84,15 @@ struct SviSpecs {
                        const std::vector<Real> &addParams) {
         if (params[2] == Null<Real>())
             params[2] = 0.1;
-        if (params[3] == Null<Real>())
+        if (params[3] == Null<Real>()) {
             params[3] = -0.4;
+            if (paramIsFixed[1]) {
+                // keep the default rho inside the interval admitted for the fixed b
+                Real center, halfWidth;
+                sviRhoRange(params[1], center, halfWidth);
+                params[3] = std::max<Real>(center - 0.5 * halfWidth, params[3]);
+            }
+        }
         if (params[4] == Null<Real>())
             params[4] = 0.0;
         if (params[1] == Null<Real>())
@@ -126,7 +133,7 @@ struct SviSpecs {
         Array x(5);
         x[2] = std::sqrt(y[2] - eps1());
         Real center = 0.0, halfWidth = 1.0;
-        if (paramIsFixed[1])
+        if (paramIsFixed[1] && !paramIsFixed[3])
             sviRhoRange(y[1], center, halfWidth);
         x[3] = halfWidth > 0.0
                    ? std::asin(std::max<Real>(-1.0, std::min<Real>(1.0, (y[3] - center) /
@@ -147,8 +154,9 @@ struct SviSpecs {
         y[4] = x[4];
         if (paramIsFixed[1]) {
             y[1] = params[1];
-            Real center, halfWidth;
-            sviRhoRange(y[1], center, halfWidth);
+            Real center = 0.0, halfWidth = 1.0;
+            if (!paramIsFixed[3])
+                sviRhoRange(y[1], center, halfWidth);
             y[3] = center + std::sin(x[3]) * halfWidth * eps2();
         } else {
             y[3] = std::sin(x[3]) * eps2();

@@ -155,7 +155,7 @@ BOOST_AUTO_TEST_CASE(testSviInterpolationWingSlope) {
                          Null<Real>(), Null<Real>(), Null<Real>(), Null<Real>(),
                          Null<Real>(), false, false, false, false, false, true);
     fit.update();
-    BOOST_CHECK_SMALL(fit.rmsError(), 1.0e-4);
+    QL_CHECK_SMALL(fit.rmsError(), 1.0e-4);
     BOOST_CHECK_MESSAGE(fit.b() * (1.0 + fit.rho()) < 2.0,
                         "calibrated right wing slope " << fit.b() * (1.0 + fit.rho())
                         << " is not below 2");
@@ -165,7 +165,7 @@ BOOST_AUTO_TEST_CASE(testSviInterpolationWingSlope) {
                               Null<Real>(), Null<Real>(), Null<Real>(), 0.5, Null<Real>(),
                               false, false, false, true, false, true);
     fixedRho.update();
-    BOOST_CHECK_SMALL(fixedRho.rmsError(), 1.0e-4);
+    QL_CHECK_SMALL(fixedRho.rmsError(), 1.0e-4);
     BOOST_CHECK_MESSAGE(fixedRho.b() * (1.0 + fixedRho.rho()) < 2.0,
                         "calibrated right wing slope with fixed rho is not below 2");
 
@@ -179,8 +179,25 @@ BOOST_AUTO_TEST_CASE(testSviInterpolationWingSlope) {
                             Null<Real>(), 1.5, Null<Real>(), Null<Real>(), Null<Real>(),
                             false, true, false, false, false, true);
     BOOST_CHECK_NO_THROW(fixedB.update());
+    QL_CHECK_CLOSE(fixedB.b(), 1.5, 1.0e-12);
     BOOST_CHECK_MESSAGE(fixedB.b() * (1.0 + fixedB.rho()) < 2.0,
                         "calibrated right wing slope with fixed b is not below 2");
+    BOOST_CHECK_MESSAGE(fixedB.rho() > 0.25,
+                        "calibrated rho " << fixedB.rho() << " should lie near its upper bound");
+
+    // With b and rho both fixed, rho is kept as given, also close to the admissible edge.
+    SviInterpolation bothFixed(strikes.begin(), strikes.end(), vols.begin(), tte, forward,
+                               Null<Real>(), 1.5, Null<Real>(), 0.3333333, Null<Real>(),
+                               false, true, false, true, false, true);
+    BOOST_CHECK_NO_THROW(bothFixed.update());
+    QL_CHECK_CLOSE(bothFixed.rho(), 0.3333333, 1.0e-10);
+    QL_CHECK_CLOSE(bothFixed.b(), 1.5, 1.0e-12);
+
+    // A fixed pair with right wing slope above 2 is rejected.
+    BOOST_CHECK_THROW(SviInterpolation(strikes.begin(), strikes.end(), vols.begin(), tte,
+                                       forward, Null<Real>(), 1.5, Null<Real>(), 0.5,
+                                       Null<Real>(), false, true, false, true, false, true),
+                      Error);
 }
 
 BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
@@ -193,8 +210,12 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
     const Real forward = 1.0;
     const Time tte = 1.0;
 
+    std::vector<Real> angles = {-M_PI / 2, M_PI / 2};
+    for (Real x3 = -1.5; x3 <= 1.5; x3 += 0.1)
+        angles.push_back(x3);
+
     // Every parameter set the transformation can produce is admissible.
-    for (Real x3 = -1.5; x3 <= 1.5; x3 += 0.1) {
+    for (Real x3 : angles) {
         for (Real x1 : {-1.0e6, -10.0, 0.0, 10.0, 1.0e6}) {
             const Array x = {0.3, x1, 0.2, x3, 0.0};
             const Array y = specs.direct(x, isFixed, params, forward);
@@ -218,7 +239,7 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
         const std::vector<bool> bFixed = {false, true, false, false, false};
         const std::vector<Real> bParams = {Null<Real>(), fixedB, Null<Real>(), Null<Real>(),
                                            Null<Real>()};
-        for (Real x3 = -1.5; x3 <= 1.5; x3 += 0.1) {
+        for (Real x3 : angles) {
             const Array x = {0.3, 0.0, 0.2, x3, 0.0};
             const Array y = specs.direct(x, bFixed, bParams, forward);
             BOOST_CHECK_NO_THROW(detail::checkSviParameters(y[0], y[1], y[2], y[3], y[4], tte));
@@ -230,6 +251,24 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
             BOOST_CHECK_NO_THROW(detail::checkSviParameters(values[0], values[1], values[2],
                                                             values[3], values[4], tte));
         }
+    }
+
+    // The default rho lies inside the interval admitted for a fixed b, and is left alone
+    // where it is admissible already.
+    for (Real fixedB : {1.5, 2.9}) {
+        std::vector<Real> seedParams = {Null<Real>(), fixedB, Null<Real>(), Null<Real>(),
+                                        Null<Real>()};
+        std::vector<bool> seedFixed = {false, true, false, false, false};
+        specs.defaultValues(seedParams, seedFixed, forward, tte, std::vector<Real>());
+        BOOST_CHECK_NO_THROW(detail::checkSviParameters(seedParams[0], seedParams[1],
+                                                        seedParams[2], seedParams[3],
+                                                        seedParams[4], tte));
+        if (fixedB == 1.5)
+            QL_CHECK_CLOSE(seedParams[3], -0.4, 1.0e-12);
+        else
+            BOOST_CHECK_MESSAGE(seedParams[3] > -0.379 && seedParams[3] < -0.310,
+                                "default rho " << seedParams[3]
+                                               << " outside the interval for b = 2.9");
     }
 
     // inverse undoes direct for b.
