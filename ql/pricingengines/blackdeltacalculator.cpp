@@ -132,7 +132,11 @@ namespace QuantLib {
 
               Brent solver;
               solver.setMaxEvaluations(1000);
-              Real accuracy = 1.0e-10;
+              // Relative to the price level, so that quoting in other units
+              // does not change the solved strike. The solver floors the
+              // accuracy at QL_EPSILON, which limits this to forwards above
+              // about 1e-6.
+              Real accuracy = 1.0e-10 * forward_;
 
               Real rightLimit = 0.0;
               Real leftLimit = 0.0;
@@ -153,11 +157,30 @@ namespace QuantLib {
                   // corresponding to the value where premium adjusted
                   // deltas have their maximum
                   auto g = [&](Real strike) -> Real {
-                    return cumD2(strike) * stdDev_ - nD2(strike);
+                    // Divided by n(d2) where that is positive, so that its size
+                    // stays of order one in the tails; Brent would otherwise
+                    // accept any value below its zero tolerance as a root.
+                    Real n = nD2(strike);
+                    Real cum = cumD2(strike) * stdDev_;
+                    return n > 0.0 ? Real(cum / n - 1.0) : Real(cum - n);
                   };
 
-                  leftLimit = solver.solve(g, accuracy, rightLimit * 0.5,
-                                         0.0, rightLimit);
+                  // The maximum lies below forward * exp(stdDev^2 / 2) whatever
+                  // delta is requested, so this bracket always contains it.
+                  leftLimit = solver.solve(g, accuracy, fExpPos_ * 0.5,
+                                         0.0, fExpPos_);
+
+                  // With zero width the delta has no interior maximum.
+                  if (stdDev_ >= QL_EPSILON) {
+                      Real maxDelta = deltaFromStrike(leftLimit);
+                      // Negated so that a maximum that cannot be evaluated
+                      // (overflowing bracket) does not reject the request.
+                      QL_REQUIRE(!(delta > maxDelta),
+                                 "premium-adjusted call delta out of range: "
+                                 << delta << " exceeds the maximum "
+                                 << maxDelta << " attainable at this "
+                                 "standard deviation");
+                  }
 
                   Real guess = leftLimit+(rightLimit - leftLimit) * 0.5;
 
