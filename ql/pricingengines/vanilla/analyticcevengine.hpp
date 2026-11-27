@@ -83,9 +83,12 @@ namespace QuantLib {
         Outside the band the closed form is valid in exact arithmetic; inside
         it, the noncentral chi-squared degrees of freedom grow beyond what
         boost's evaluation supports. The evaluation can still fail to
-        converge just outside the band (the FDM engine's mesher does so for
-        \f$ |\beta - 1| \f$ up to about 3e-4 on a wide mesh), in which case
-        boost raises an exception.
+        converge just outside the band when the noncentrality, about
+        \f$ f_0^{2(1-\beta)} / ((1-\beta)^2 \alpha^2 t) \f$, is large, for
+        example for very short maturities or low volatilities (the FDM
+        engine's mesher does so for \f$ |\beta - 1| \f$ up to about 3e-4
+        on a wide mesh); boost then raises its own exception, not a
+        QuantLib::Error.
     */
     constexpr double cevBlackLimitBandWidth = 1e-4;
 

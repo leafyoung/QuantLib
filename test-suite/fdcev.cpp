@@ -315,16 +315,15 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                 payoff, f0/discount, stdDev, discount);
 
             for (Real beta :
-                 {1.0-5e-5, 1.0-1e-6, 1.0-1e-4, 1.0, 1.0+1e-4, 1.0+1e-6}) {
+                 {1.0-5e-5, 1.0-1e-6, 1.0, 1.0+1e-6, 1.0+5e-5}) {
                 VanillaOption option(payoff, exercise);
                 option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
                 const Real calculated = option.NPV();
 
-                // exact at beta=1; within model curvature of the limit
-                // for the neighbouring beta values
-                const Real tol = (beta == 1.0) ? Real(1e-10*black) : Real(0.05);
+                // inside the band the engine returns the Black price
+                const Real tol = 1e-10*black;
 
                 if (std::fabs(calculated - black) > tol) {
                     BOOST_ERROR(
@@ -834,8 +833,7 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
     // a wide mesh (eps = 0.1) brings the lower boundary close enough for
     // its treatment to matter: beta > 1 has no absorbing boundary at zero.
     // beta = 1.5 and 2.5 lie on either side of delta = 3, so a shifted
-    // delta threshold is caught. (The mesher does not support beta < 0:
-    // boost rejects the negative noncentrality.)
+    // delta threshold is caught
     for (Real beta : {1.5, 2.5}) {
       const Real alpha = 0.30*std::pow(f0, 1.0-beta);
       for (Option::Type type : {Option::Call, Option::Put}) {
@@ -854,6 +852,47 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
                         << "\n    pde npv      : " << pde);
         }
       }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testFdmCevLongMaturityWithRate) {
+    BOOST_TEST_MESSAGE(
+        "Testing the FDM CEV engine on long maturities with a positive rate...");
+
+    // Regression test: the drift term must not destabilize the default
+    // time grid. Calls are the sensitive case, since the upper boundary
+    // value is large.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    struct Case { Integer years; Rate rate; Real beta; Real tolerance; };
+    const Case cases[] = {
+        {10, 0.10, 1.5, 0.05}, {30, 0.05, 0.5, 0.1},
+        {5, 0.20, 1.5, 0.05}, {30, -0.02, 1.5, 0.1}
+    };
+
+    const Real f0 = 100.0;
+    for (const auto& c : cases) {
+        const Handle<YieldTermStructure> rTS(flatRate(today, c.rate, dc));
+        const Real alpha = 0.30*std::pow(f0, 1.0-c.beta);
+        VanillaOption option(
+            ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+            ext::make_shared<EuropeanExercise>(today + Period(c.years, Years)));
+        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            f0, alpha, c.beta, rTS));
+        const Real analytic = option.NPV();
+        option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+            f0, alpha, c.beta, rTS));
+        const Real pde = option.NPV();
+        if (!(std::fabs(analytic - pde) <= c.tolerance)) {
+            BOOST_ERROR("failed to reproduce the analytic price"
+                        << "\n    years        : " << c.years
+                        << "\n    rate         : " << c.rate
+                        << "\n    beta         : " << c.beta
+                        << "\n    analytic npv : " << analytic
+                        << "\n    pde npv      : " << pde);
+        }
     }
 }
 
