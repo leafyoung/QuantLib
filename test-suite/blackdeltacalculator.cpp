@@ -784,8 +784,8 @@ BOOST_AUTO_TEST_CASE(testPremiumAdjustedStrikeFromDeltaScaleInvariance) {
                 if (r.type == Option::Call) {
                     // The maximum is located as accurately as at unit scale.
                     Real forward = scale * 0.98 / 0.99;
-                    Real unit = (deltaType == DeltaVolQuote::PaSpot) ? Real(0.98) : Real(1.0);
-                    Real maximum = maximumPremiumAdjustedCallDelta(forward, r.stdDev, unit);
+                    Real deltaScale = (deltaType == DeltaVolQuote::PaSpot) ? Real(0.98) : Real(1.0);
+                    Real maximum = maximumPremiumAdjustedCallDelta(forward, r.stdDev, deltaScale);
                     BOOST_CHECK_NO_THROW(scaled.strikeFromDelta(0.9999 * maximum));
                     BOOST_CHECK_THROW(scaled.strikeFromDelta(1.0001 * maximum), Error);
                 }
