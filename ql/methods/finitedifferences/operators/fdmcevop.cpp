@@ -29,6 +29,30 @@
 
 namespace QuantLib {
 
+    namespace {
+
+        // The first derivative operator with an empty row at the upper mesh
+        // boundary. That node carries a Dirichlet condition, so its row only
+        // matters through the implicit solve, where the downwind difference
+        // of a positive drift term contributes a positive diagonal entry
+        // that destabilizes the neighbouring rows for large time steps.
+        class DriftDerivativeOp : public FirstDerivativeOp {
+          public:
+            DriftDerivativeOp(Size direction,
+                              const ext::shared_ptr<FdmMesher>& mesher)
+            : FirstDerivativeOp(direction, mesher) {
+                const Size last = mesher->layout()->dim()[direction] - 1;
+                for (const auto& iter : *mesher->layout()) {
+                    if (iter.coordinates()[direction] == last) {
+                        const Size i = iter.index();
+                        lower_[i] = diag_[i] = upper_[i] = 0.0;
+                    }
+                }
+            }
+        };
+
+    }
+
     FdmCEVOp::FdmCEVOp(
         const ext::shared_ptr<FdmMesher>& mesher,
         const ext::shared_ptr<YieldTermStructure>& rTS,
@@ -36,7 +60,7 @@ namespace QuantLib {
         Size direction)
     : rTS_(rTS),
       direction_(direction),
-      dxMap_(FirstDerivativeOp(direction_, mesher)
+      dxMap_(DriftDerivativeOp(direction_, mesher)
              .mult(mesher->locations(direction))),
       dxxMap_(SecondDerivativeOp(direction_, mesher)
               .mult(0.5 * alpha * alpha *
