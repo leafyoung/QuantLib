@@ -132,13 +132,16 @@ struct SviSpecs {
                   const std::vector<Real> &, const Real) {
         Array x(5);
         x[2] = std::sqrt(y[2] - eps1());
-        Real center = 0.0, halfWidth = 1.0;
-        if (paramIsFixed[1] && !paramIsFixed[3])
+        if (paramIsFixed[1] && !paramIsFixed[3]) {
+            Real center, halfWidth;
             sviRhoRange(y[1], center, halfWidth);
-        x[3] = halfWidth > 0.0
-                   ? Real(std::asin(std::max<Real>(
-                         -1.0, std::min<Real>(1.0, (y[3] - center) / (halfWidth * eps2())))))
-                   : Real(0.0);
+            x[3] = halfWidth > 0.0
+                       ? Real(std::asin(std::max<Real>(
+                             -1.0, std::min<Real>(1.0, (y[3] - center) / (halfWidth * eps2())))))
+                       : Real(0.0);
+        } else {
+            x[3] = std::asin(y[3] / eps2());
+        }
         x[4] = y[4];
         x[1] = std::tan(y[1] / (sviMaxB(y[3]) * eps2()) * M_PI - M_PI / 2.0);
         x[0] = std::sqrt(y[0] - eps1() +

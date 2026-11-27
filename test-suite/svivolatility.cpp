@@ -193,6 +193,12 @@ BOOST_AUTO_TEST_CASE(testSviInterpolationWingSlope) {
     QL_CHECK_CLOSE(bothFixed.rho(), 0.3333333, 1.0e-10);
     QL_CHECK_CLOSE(bothFixed.b(), 1.5, 1.0e-12);
 
+    // A fixed rho beyond the range of the transformation is not replaced by another value.
+    SviInterpolation edgeRho(strikes.begin(), strikes.end(), vols.begin(), tte, forward,
+                             Null<Real>(), Null<Real>(), Null<Real>(), 0.9999995, Null<Real>(),
+                             false, false, false, true, false, true);
+    BOOST_CHECK_THROW(edgeRho.update(), Error);
+
     // A fixed pair with right wing slope above 2 is rejected.
     BOOST_CHECK_THROW(SviInterpolation(strikes.begin(), strikes.end(), vols.begin(), tte,
                                        forward, Null<Real>(), 1.5, Null<Real>(), 0.5,
