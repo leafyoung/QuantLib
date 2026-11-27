@@ -259,8 +259,8 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
         }
     }
 
-    // The default rho lies inside the interval admitted for a fixed b, and is left alone
-    // where it is admissible already.
+    // The default rho lies inside the interval admitted for a fixed b, and equals -0.4 when
+    // that is well inside it.
     for (Real fixedB : {1.5, 2.9}) {
         std::vector<Real> seedParams = {Null<Real>(), fixedB, Null<Real>(), Null<Real>(),
                                         Null<Real>()};
