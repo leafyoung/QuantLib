@@ -26,6 +26,7 @@
 
 #include <ql/experimental/volatility/svismilesection.hpp>
 #include <ql/math/interpolations/xabrinterpolation.hpp>
+#include <algorithm>
 #include <utility>
 
 namespace QuantLib {
@@ -43,7 +44,28 @@ inline void checkSviParameters(const Real a, const Real b, const Real sigma,
                                                << ") must be non negative");
     QL_REQUIRE(b * (1.0 + std::fabs(rho)) <= 4.0,
                "b(1+|rho|) must be less than or equal to 4, (b=" << b << ", rho=" << rho << ")");
+    // The right wing of the total variance has slope b(1+rho). The call price
+    // tends to zero at large strikes only if that slope is below 2.
+    QL_REQUIRE(b * (1.0 + rho) < 2.0,
+               "b(1+rho) must be less than 2, (b=" << b << ", rho=" << rho << ")");
+}
 
+// Supremum of b admitted by checkSviParameters for the given rho.
+inline Real sviMaxB(const Real rho) {
+    return std::min<Real>(4.0 / (1.0 + std::fabs(rho)), 2.0 / (1.0 + rho));
+}
+
+// Interval of rho admitted by checkSviParameters for the given b, as center and half width.
+inline void sviRhoRange(const Real b, Real& center, Real& halfWidth) {
+    if (b <= 0.0) {
+        center = 0.0;
+        halfWidth = 1.0;
+        return;
+    }
+    const Real lower = -std::min<Real>(1.0, 4.0 / b - 1.0);
+    const Real upper = std::min<Real>(1.0, 2.0 / b - 1.0);
+    center = 0.5 * (lower + upper);
+    halfWidth = std::max<Real>(0.5 * (upper - lower), 0.0);
 }
 
 inline Real sviTotalVariance(const Real a, const Real b, const Real sigma,
@@ -62,12 +84,19 @@ struct SviSpecs {
                        const std::vector<Real> &addParams) {
         if (params[2] == Null<Real>())
             params[2] = 0.1;
-        if (params[3] == Null<Real>())
+        if (params[3] == Null<Real>()) {
             params[3] = -0.4;
+            if (paramIsFixed[1]) {
+                // keep the default rho inside the interval admitted for the fixed b
+                Real center, halfWidth;
+                sviRhoRange(params[1], center, halfWidth);
+                params[3] = std::max<Real>(center - 0.5 * halfWidth, params[3]);
+            }
+        }
         if (params[4] == Null<Real>())
             params[4] = 0.0;
         if (params[1] == Null<Real>())
-            params[1] = 2.0 / (1.0 + std::fabs(params[3]));
+            params[1] = std::min<Real>(2.0 / (1.0 + std::fabs(params[3])), 1.0 / (1.0 + params[3]));
         if (params[0] == Null<Real>()) {
             params[0] = std::max(
                 0.20 * 0.20 * expiryTime -
@@ -84,25 +113,37 @@ struct SviSpecs {
         Size j = 0;
         if (!paramIsFixed[2])
             values[2] = r[j++] + eps1();
-        if (!paramIsFixed[3])
-            values[3] = (2.0 * r[j++] - 1.0) * eps2();
+        if (!paramIsFixed[3]) {
+            Real center = 0.0, halfWidth = 1.0;
+            if (paramIsFixed[1])
+                sviRhoRange(values[1], center, halfWidth);
+            values[3] = center + (2.0 * r[j++] - 1.0) * halfWidth * eps2();
+        }
         if (!paramIsFixed[4])
             values[4] = (2.0 * r[j++] - 1.0);
         if (!paramIsFixed[1])
-            values[1] = r[j++] * 4.0 / (1.0 + std::fabs(values[3])) * eps2();
+            values[1] = r[j++] * sviMaxB(values[3]) * eps2();
         if (!paramIsFixed[0])
             values[0] = r[j++] * expiryTime -
                         eps2() * (values[1] * values[2] *
                                   std::sqrt(1.0 - values[3] * values[3]));
     }
-    Array inverse(const Array &y, const std::vector<bool> &,
+    Array inverse(const Array &y, const std::vector<bool> &paramIsFixed,
                   const std::vector<Real> &, const Real) {
         Array x(5);
         x[2] = std::sqrt(y[2] - eps1());
-        x[3] = std::asin(y[3] / eps2());
+        if (paramIsFixed[1] && !paramIsFixed[3]) {
+            Real center, halfWidth;
+            sviRhoRange(y[1], center, halfWidth);
+            x[3] = halfWidth > 0.0
+                       ? Real(std::asin(std::max<Real>(
+                             -1.0, std::min<Real>(1.0, (y[3] - center) / (halfWidth * eps2())))))
+                       : Real(0.0);
+        } else {
+            x[3] = std::asin(y[3] / eps2());
+        }
         x[4] = y[4];
-        x[1] = std::tan(y[1] / 4.0 * (1.0 + std::fabs(y[3])) / eps2() * M_PI -
-                        M_PI / 2.0);
+        x[1] = std::tan(y[1] / (sviMaxB(y[3]) * eps2()) * M_PI - M_PI / 2.0);
         x[0] = std::sqrt(y[0] - eps1() +
                          y[1] * y[2] * std::sqrt(1.0 - y[3] * y[3]));
         return x;
@@ -113,13 +154,17 @@ struct SviSpecs {
                  const std::vector<Real> &params, const Real forward) {
         Array y(5);
         y[2] = x[2] * x[2] + eps1();
-        y[3] = std::sin(x[3]) * eps2();
         y[4] = x[4];
-        if (paramIsFixed[1])
+        if (paramIsFixed[1]) {
             y[1] = params[1];
-        else
-            y[1] = (std::atan(x[1]) + M_PI / 2.0) / M_PI * eps2() * 4.0 /
-                   (1.0 + std::fabs(y[3]));
+            Real center = 0.0, halfWidth = 1.0;
+            if (!paramIsFixed[3])
+                sviRhoRange(y[1], center, halfWidth);
+            y[3] = center + std::sin(x[3]) * halfWidth * eps2();
+        } else {
+            y[3] = std::sin(x[3]) * eps2();
+            y[1] = (std::atan(x[1]) + M_PI / 2.0) / M_PI * eps2() * sviMaxB(y[3]);
+        }
         if (paramIsFixed[0])
             y[0] = params[0];
         else
