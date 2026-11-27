@@ -32,6 +32,7 @@
 #include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
 #include <ql/utilities/dataformatters.hpp>
 #include <map>
+#include <string>
 
 using namespace QuantLib;
 using namespace boost::unit_test_framework;
@@ -625,6 +626,18 @@ BOOST_AUTO_TEST_CASE(testLargeJumpIntensityDefaultIterations) {
                           ext::make_shared<EuropeanExercise>(today + 730));
     capped.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process, 1.0e-8, 100));
     BOOST_CHECK_THROW(capped.NPV(), Error);
+
+    // an explicit cap at the expected number of jumps raises the iteration error,
+    // and a larger cap prices
+    jumpIntensity->setValue(99.5 / maturity);
+    EuropeanOption atCap(ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+                         ext::make_shared<EuropeanExercise>(today + 730));
+    atCap.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process, 1.0e-4, 100));
+    BOOST_CHECK_EXCEPTION(atCap.NPV(), Error, [](const Error& e) {
+        return std::string(e.what()).find("not enough") != std::string::npos;
+    });
+    atCap.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process, 1.0e-4, 200));
+    BOOST_CHECK_NO_THROW(atCap.NPV());
 }
 
 BOOST_AUTO_TEST_CASE(testDefaultIterationCapHeadroom) {
