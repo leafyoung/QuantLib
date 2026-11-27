@@ -22,6 +22,7 @@
 #include <ql/math/distributions/normaldistribution.hpp>
 #include <ql/math/functional.hpp>
 #include <ql/pricingengines/exotic/analyticholderextensibleoptionengine.hpp>
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -36,6 +37,12 @@ namespace QuantLib {
 
         // maximum number of Newton-Raphson steps to find a critical price
         const Size maxIterations = 100;
+
+        // residual tolerance of the critical-price solves, relative to the strikes so that the
+        // value is homogeneous of degree one in the price inputs
+        Real criticalPriceTolerance(Real strike1, Real strike2) {
+            return 1.0e-10 * std::max<Real>(strike1, strike2);
+        }
 
         Real nextCriticalPrice(Real spot, Real value, Real derivative) {
             QL_REQUIRE(std::isfinite(value), "critical price: non-finite residual");
@@ -138,7 +145,7 @@ namespace QuantLib {
             Real yi = ci - A;
             //da/ds = 0
             Real di = dc - 0;
-            Real epsilon = 0.001;
+            Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
             //Newton-Raphson process
             Size iterations = 0;
@@ -199,7 +206,7 @@ namespace QuantLib {
             Real yi = ci - A - Sv + X1;
             //da/ds = 1
             Real di = dc - 1;
-            Real epsilon = 0.001;
+            Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
             //Newton-Raphson process
             Size iterations = 0;
@@ -240,7 +247,7 @@ namespace QuantLib {
         Real yi = pi - A + Sv - X1;
         //da/ds = 1
         Real di = dc + 1;
-        Real epsilon = 0.001;
+        Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
         //Newton-Raphson prosess
         Size iterations = 0;
@@ -273,7 +280,7 @@ namespace QuantLib {
             Real yi = pi - A;
             //da/ds = 0
             Real di = dc - 0;
-            Real epsilon = 0.001;
+            Real epsilon = criticalPriceTolerance(strike(), arguments_.secondStrike);
 
             //Newton-Raphson prosess
             Size iterations = 0;

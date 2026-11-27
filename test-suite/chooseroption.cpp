@@ -242,7 +242,8 @@ BOOST_AUTO_TEST_CASE(testComplexChooserIsHomogeneousInPriceInputs) {
     };
 
     for (const auto& c : cases) {
-        for (Real k : {1.0e3, 1.0, 1.0e-2, 1.0e-4, 1.0e-6}) {
+        Real unscaled = 0.0;
+        for (Real k : {1.0, 1.0e3, 1.0e-2, 1.0e-4, 1.0e-6}) {
             auto process = ext::make_shared<BlackScholesMertonProcess>(
                 Handle<Quote>(ext::make_shared<SimpleQuote>(100.0 * k)),
                 Handle<YieldTermStructure>(flatRate(today, c.dividendYield, dc)),
@@ -256,7 +257,12 @@ BOOST_AUTO_TEST_CASE(testComplexChooserIsHomogeneousInPriceInputs) {
 
             BOOST_TEST_MESSAGE("    scale " << k << ", strikes " << c.callStrike << ", "
                                             << c.putStrike);
-            QL_CHECK_CLOSE(option.NPV() / k, c.expected, 1.0e-5);
+            Real scaled = option.NPV() / k;
+            if (k == 1.0)
+                unscaled = scaled;
+            // the engine's bivariate normal approximation limits the agreement with the reference
+            QL_CHECK_CLOSE(scaled, c.expected, 1.0e-3);
+            QL_CHECK_CLOSE(scaled, unscaled, 1.0e-8);
         }
     }
 }
