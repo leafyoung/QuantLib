@@ -80,9 +80,12 @@ namespace QuantLib {
         price is replaced by its Black-Scholes limit. At \f$ \beta = 1 \f$
         the limit is exact; inside the band it is an approximation whose
         deviation from the CEV price is of the order of the band width.
-        Outside the band the closed form is valid; inside it, the noncentral
-        chi-squared degrees of freedom grow beyond what boost's evaluation
-        supports.
+        Outside the band the closed form is valid in exact arithmetic; inside
+        it, the noncentral chi-squared degrees of freedom grow beyond what
+        boost's evaluation supports. The evaluation can still fail to
+        converge just outside the band (the FDM engine's mesher does so for
+        \f$ |\beta - 1| \f$ up to about 3e-4 on a wide mesh), in which case
+        boost raises an exception.
     */
     constexpr double cevBlackLimitBandWidth = 1e-4;
 
