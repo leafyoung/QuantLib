@@ -648,10 +648,8 @@ BOOST_AUTO_TEST_CASE(testLocalFloorCapOnSmile) {
             return option.NPV();
         };
         BOOST_TEST_CONTEXT(type << " option") {
-            const ext::shared_ptr<PricingEngine> cliquet =
-                ext::make_shared<AnalyticCliquetEngine>(process);
-            const ext::shared_ptr<PricingEngine> performance =
-                ext::make_shared<AnalyticPerformanceEngine>(process);
+            auto cliquet = ext::make_shared<AnalyticCliquetEngine>(process);
+            auto performance = ext::make_shared<AnalyticPerformanceEngine>(process);
             auto payoff = ext::make_shared<PercentageStrikePayoff>(type, k);
             CliquetOption option(payoff, exercise, reset, floor, cap);
 
