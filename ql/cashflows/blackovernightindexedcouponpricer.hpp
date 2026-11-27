@@ -46,7 +46,7 @@ namespace QuantLib {
     class BlackCompoundingOvernightIndexedCouponPricer : public CompoundingOvernightIndexedCouponPricer {
     public:
         explicit BlackCompoundingOvernightIndexedCouponPricer(
-                Handle<OptionletVolatilityStructure> v = Handle<OptionletVolatilityStructure>(),
+                Handle<OptionletVolatilityStructure> v = {},
                 bool effectiveVolatilityInput = false,
                 Real dampingExponent = 1.0);
         //! \name FloatingRateCoupon interface
@@ -78,7 +78,7 @@ namespace QuantLib {
     class BlackAveragingOvernightIndexedCouponPricer : public ArithmeticAveragedOvernightIndexedCouponPricer {
     public:
         explicit BlackAveragingOvernightIndexedCouponPricer(
-                Handle<OptionletVolatilityStructure> v = Handle<OptionletVolatilityStructure>(),
+                Handle<OptionletVolatilityStructure> v = {},
                 bool effectiveVolatilityInput = false);
         //! \name FloatingRateCoupon interface
         //@{

@@ -39,7 +39,7 @@ namespace QuantLib {
     class DiscountingSwapEngine : public Swap::engine {
       public:
         explicit DiscountingSwapEngine(
-            Handle<YieldTermStructure> discountCurve = Handle<YieldTermStructure>(),
+            Handle<YieldTermStructure> discountCurve = {},
             const std::optional<bool>& includeSettlementDateFlows = std::nullopt,
             Date settlementDate = Date(),
             Date npvDate = Date());
@@ -47,6 +47,13 @@ namespace QuantLib {
         const Handle<YieldTermStructure>& discountCurve() const {
             return discountCurve_;
         }
+        const std::optional<bool>& includeSettlementDateFlows() const {
+            return includeSettlementDateFlows_;
+        }
+        //! the settlement date passed to the constructor, possibly null
+        Date settlementDate() const { return settlementDate_; }
+        //! the NPV date passed to the constructor, possibly null
+        Date npvDate() const { return npvDate_; }
       private:
         Handle<YieldTermStructure> discountCurve_;
         std::optional<bool> includeSettlementDateFlows_;
