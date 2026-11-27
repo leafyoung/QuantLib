@@ -662,7 +662,9 @@ BOOST_AUTO_TEST_CASE(testDefaultIterationCapHeadroom) {
     EuropeanOption put(ext::make_shared<PlainVanillaPayoff>(Option::Put, 20.0),
                        ext::make_shared<EuropeanExercise>(today + 730));
     put.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process));
-    BOOST_CHECK_THROW(put.NPV(), Error);
+    BOOST_CHECK_EXCEPTION(put.NPV(), Error, [](const Error& e) {
+        return std::string(e.what()).find("not finite") != std::string::npos;
+    });
 }
 
 BOOST_AUTO_TEST_SUITE_END()

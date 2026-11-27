@@ -27,6 +27,7 @@
 
 #include <ql/instruments/vanillaoption.hpp>
 #include <ql/processes/merton76process.hpp>
+#include <ql/utilities/null.hpp>
 
 namespace QuantLib {
 
@@ -52,8 +53,8 @@ namespace QuantLib {
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:
-        /*! \param maxIterations the maximum number of addenda; reaching it
-                   before the stopping test is met raises an error. If left
+        /*! \param maxIterations the maximum number of addenda; an error is
+                   raised if the number of addenda reaches it. If left
                    at Null<Size>(), it is the larger of 100 and a number of
                    terms, with a safety margin, beyond which the Poisson tail
                    mass is below the relative accuracy.

@@ -25,6 +25,8 @@
 #include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/utilities/dataformatters.hpp>
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace QuantLib {
