@@ -200,7 +200,10 @@ namespace QuantLib {
 
             lastContribution *= weight;
         }
-        QL_ENSURE(std::isfinite(results_.value),
+        QL_ENSURE(std::isfinite(results_.value) && std::isfinite(results_.delta) &&
+                      std::isfinite(results_.gamma) && std::isfinite(results_.theta) &&
+                      std::isfinite(results_.vega) && std::isfinite(results_.rho) &&
+                      std::isfinite(results_.dividendRho),
                   "the series of " << i << " addenda is not finite: the jump parameters "
                   << "overflow the Black-Scholes terms");
         QL_ENSURE(i<maxIterations,

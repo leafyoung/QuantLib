@@ -50,6 +50,9 @@ namespace QuantLib {
         compares the last addendum with the running sum; for strikes so far
         out of the money that the sum is negligible over that range it can
         stop early, so the relative accuracy is not a bound on the error there.
+        With mean log-jumps below about -2 and intensity times T in the hundreds,
+        the Black-Scholes terms in the forced range can underflow or overflow, and
+        an error is raised instead of a price.
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:
