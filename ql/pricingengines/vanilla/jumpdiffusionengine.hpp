@@ -42,11 +42,19 @@ namespace QuantLib {
         The option value is a Poisson mixture of Black-Scholes values, summed
         until the last addendum is below the relative accuracy.
 
-        \param maxIterations the maximum number of addenda. If left at
+        At least floor(max(lambda', lambda) T) + 1 addenda are summed, with
+        lambda' the intensity times the mean jump factor and lambda the
+        intensity, so that the running sum has covered the bulk of the call
+        and put weights before the stopping test applies. The stopping test
+        compares the last addendum with the running sum; for strikes so far
+        out of the money that the sum is negligible over that range it can
+        stop early, so the relative accuracy is not a bound on the error there.
+
+        \param maxIterations the maximum number of addenda; reaching it
+               before the stopping test is met raises an error. If left at
                Null<Size>(), it is the larger of 100 and the number of
                terms after which the Poisson tail mass is below the
-               relative accuracy, so that the series can be summed for
-               any expected number of jumps.
+               relative accuracy.
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:

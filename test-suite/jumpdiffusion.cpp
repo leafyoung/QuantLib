@@ -522,7 +522,6 @@ BOOST_AUTO_TEST_CASE(testGreeks) {
     } // type loop
 }
 
-
 BOOST_AUTO_TEST_CASE(testLargeJumpIntensityDefaultIterations) {
 
     BOOST_TEST_MESSAGE("Testing Merton76 pricing with a large expected number of jumps...");
@@ -612,6 +611,13 @@ BOOST_AUTO_TEST_CASE(testLargeJumpIntensityDefaultIterations) {
         QL_CHECK_CLOSE(option.NPV(), c.expected, 1.0e-5); // percent
     }
     meanLogJump->setValue(-0.0002);
+
+    // default accuracy: the stopping test bounds the error by a few times the accuracy
+    jumpIntensity->setValue(150.0 / maturity);
+    EuropeanOption coarse(ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+                          ext::make_shared<EuropeanExercise>(today + 730));
+    coarse.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process));
+    QL_CHECK_CLOSE(coarse.NPV(), 15.6162571122, 0.1); // percent
 
     // an explicit cap is honored: 150 expected jumps cannot be summed in 100 terms
     jumpIntensity->setValue(150.0 / maturity);
