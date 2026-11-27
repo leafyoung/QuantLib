@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(testSviRightWingSlope) {
         {1.5, 0.0, true},   // slope 1.5
         {1.0, 0.5, true},   // slope 1.5
         {2.35, -0.7, true}, // slope 0.705, inside the b(1+|rho|) <= 4 bound
-        {2.5, -0.7, false}, // slope 0.75, b(1+|rho|) = 4.25 above the retained bound of 4
+        {2.5, -0.7, false}, // slope 0.75, b(1+|rho|) = 4.25 above the bound of 4
         {2.0, 0.0, false},  // slope 2: the call price does not vanish
         {2.6, -0.2, false}, // slope 2.08, b(1+|rho|) = 3.12
         {3.0, 0.0, false},  // slope 3, b(1+|rho|) = 3
@@ -168,6 +168,19 @@ BOOST_AUTO_TEST_CASE(testSviInterpolationWingSlope) {
     BOOST_CHECK_SMALL(fixedRho.rmsError(), 1.0e-4);
     BOOST_CHECK_MESSAGE(fixedRho.b() * (1.0 + fixedRho.rho()) < 2.0,
                         "calibrated right wing slope with fixed rho is not below 2");
+
+    // With b fixed and rho free, the admissible rho depends on b.
+    std::vector<Real> fixedBSource = {0.01, 0.9, 0.1, 0.95, 0.2};
+    SviSmileSection steep(tte, forward, fixedBSource);
+    std::vector<Real> steepVols;
+    for (Real strike : strikes)
+        steepVols.push_back(steep.volatility(strike));
+    SviInterpolation fixedB(strikes.begin(), strikes.end(), steepVols.begin(), tte, forward,
+                            Null<Real>(), 1.5, Null<Real>(), Null<Real>(), Null<Real>(),
+                            false, true, false, false, false, true);
+    BOOST_CHECK_NO_THROW(fixedB.update());
+    BOOST_CHECK_MESSAGE(fixedB.b() * (1.0 + fixedB.rho()) < 2.0,
+                        "calibrated right wing slope with fixed b is not below 2");
 }
 
 BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
@@ -200,11 +213,38 @@ BOOST_AUTO_TEST_CASE(testSviTransformationRange) {
         }
     }
 
+    // The same holds with b fixed and rho free.
+    for (Real fixedB : {0.5, 1.0, 1.5, 2.0, 2.5}) {
+        const std::vector<bool> bFixed = {false, true, false, false, false};
+        const std::vector<Real> bParams = {Null<Real>(), fixedB, Null<Real>(), Null<Real>(),
+                                           Null<Real>()};
+        for (Real x3 = -1.5; x3 <= 1.5; x3 += 0.1) {
+            const Array x = {0.3, 0.0, 0.2, x3, 0.0};
+            const Array y = specs.direct(x, bFixed, bParams, forward);
+            BOOST_CHECK_NO_THROW(detail::checkSviParameters(y[0], y[1], y[2], y[3], y[4], tte));
+        }
+        for (Real r3 = 0.0; r3 <= 1.0; r3 += 0.1) {
+            Array values = {0.0, fixedB, 0.0, 0.0, 0.0};
+            const std::vector<Real> seq = {0.5, r3, 0.5, 0.5};
+            specs.guess(values, bFixed, forward, tte, seq, std::vector<Real>());
+            BOOST_CHECK_NO_THROW(detail::checkSviParameters(values[0], values[1], values[2],
+                                                            values[3], values[4], tte));
+        }
+    }
+
     // inverse undoes direct for b.
     const Array y = {0.02, 0.8, 0.2, 0.5, 0.1};
     const Array x = specs.inverse(y, isFixed, params, forward);
     const Array roundTrip = specs.direct(x, isFixed, params, forward);
     QL_CHECK_CLOSE(roundTrip[1], y[1], 1.0e-8);
+
+    // inverse undoes direct for rho when b is fixed.
+    const std::vector<bool> bFixed = {false, true, false, false, false};
+    const std::vector<Real> bParams = {Null<Real>(), 1.5, Null<Real>(), Null<Real>(), Null<Real>()};
+    const Array yFixed = {0.02, 1.5, 0.2, 0.2, 0.1};
+    const Array xFixed = specs.inverse(yFixed, bFixed, bParams, forward);
+    const Array roundTripFixed = specs.direct(xFixed, bFixed, bParams, forward);
+    QL_CHECK_CLOSE(roundTripFixed[3], yFixed[3], 1.0e-8);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
