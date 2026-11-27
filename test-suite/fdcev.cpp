@@ -855,30 +855,40 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(testFdmCevLongMaturityWithRate) {
+BOOST_AUTO_TEST_CASE(testFdmCevDriftStability) {
     BOOST_TEST_MESSAGE(
-        "Testing the FDM CEV engine on long maturities with a positive rate...");
+        "Testing the FDM CEV engine on long maturities and low volatilities "
+        "with a nonzero rate...");
 
     // Regression test: the drift term must not destabilize the default
-    // time grid. Calls are the sensitive case, since the upper boundary
-    // value is large.
+    // time grid, neither at the upper boundary (long maturities, where the
+    // call value there is large) nor at the lower one (low volatilities,
+    // where the mesh starts far above zero), for either sign of the rate.
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
     Settings::instance().evaluationDate() = today;
 
-    struct Case { Integer years; Rate rate; Real beta; Real tolerance; };
+    struct Case {
+        Option::Type type; Real strike; Real vol; Integer days; Rate rate;
+        Real beta; Real tolerance;
+    };
     const Case cases[] = {
-        {10, 0.10, 1.5, 0.05}, {30, 0.05, 0.5, 0.1},
-        {5, 0.20, 1.5, 0.05}, {30, -0.02, 1.5, 0.1}
+        {Option::Call, 100.0, 0.30, 3650, 0.10, 1.5, 0.05},
+        {Option::Call, 100.0, 0.30, 10950, 0.05, 0.5, 0.1},
+        {Option::Call, 100.0, 0.30, 1825, 0.20, 1.5, 0.05},
+        {Option::Call, 100.0, 0.30, 10950, -0.02, 1.5, 0.1},
+        {Option::Call, 90.0, 0.03, 365, 0.10, 0.5, 0.05},
+        {Option::Call, 90.0, 0.03, 365, -0.05, 0.5, 0.05},
+        {Option::Put, 90.0, 0.03, 1825, -0.05, 0.5, 0.05}
     };
 
     const Real f0 = 100.0;
     for (const auto& c : cases) {
         const Handle<YieldTermStructure> rTS(flatRate(today, c.rate, dc));
-        const Real alpha = 0.30*std::pow(f0, 1.0-c.beta);
+        const Real alpha = c.vol*std::pow(f0, 1.0-c.beta);
         VanillaOption option(
-            ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
-            ext::make_shared<EuropeanExercise>(today + Period(c.years, Years)));
+            ext::make_shared<PlainVanillaPayoff>(c.type, c.strike),
+            ext::make_shared<EuropeanExercise>(today + c.days));
         option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
             f0, alpha, c.beta, rTS));
         const Real analytic = option.NPV();
@@ -887,7 +897,8 @@ BOOST_AUTO_TEST_CASE(testFdmCevLongMaturityWithRate) {
         const Real pde = option.NPV();
         if (!(std::fabs(analytic - pde) <= c.tolerance)) {
             BOOST_ERROR("failed to reproduce the analytic price"
-                        << "\n    years        : " << c.years
+                        << "\n    days         : " << c.days
+                        << "\n    volatility   : " << c.vol
                         << "\n    rate         : " << c.rate
                         << "\n    beta         : " << c.beta
                         << "\n    analytic npv : " << analytic

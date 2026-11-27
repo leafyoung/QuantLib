@@ -46,11 +46,11 @@ namespace QuantLib {
             PriceAtBoundary(Time maturityTime,
                             ext::shared_ptr<StrikedTypePayoff> payoff,
                             ext::shared_ptr<YieldTermStructure> rTS,
-                            Real upperBound, Real alpha, Real beta)
+                            Real boundary, Real alpha, Real beta)
             : maturityTime_(maturityTime), payoff_(std::move(payoff)),
               rTS_(std::move(rTS)),
-              calculator_(upperBound, 1.0, beta),
-              upperBound_(upperBound), alpha_(alpha), beta_(beta) {}
+              calculator_(boundary, 1.0, beta),
+              boundary_(boundary), alpha_(alpha), beta_(beta) {}
 
             Real operator()(Real t) const {
                 // t is a rollback step destination and strictly below the
@@ -64,7 +64,7 @@ namespace QuantLib {
                     // beta approaches one; see AnalyticCEVEngine
                     return blackFormula(
                         payoff_->optionType(), payoff_->strike(),
-                        upperBound_/df,
+                        boundary_/df,
                         alpha_*std::sqrt(maturityTime_ - t), df);
                 }
 
@@ -80,7 +80,7 @@ namespace QuantLib {
             const ext::shared_ptr<StrikedTypePayoff> payoff_;
             const ext::shared_ptr<YieldTermStructure> rTS_;
             const CEVCalculator calculator_;
-            const Real upperBound_, alpha_, beta_;
+            const Real boundary_, alpha_, beta_;
         };
     }
 
@@ -156,12 +156,25 @@ namespace QuantLib {
 
         const Real delta = (1-2*beta_)/(1-beta_);
         if (delta < 2.0) {
-            const Real terminalCashFlow = (*payoff)(lowerBound);
+            if (lowerBound > 0.0) {
+                // the asset has drift, so the value at the lower bound is
+                // the drifted CEV price there, as at the upper bound
+                const PriceAtBoundary lowerBoundPrice(
+                    maturityTime, payoff, rTS, lowerBound, alpha_, beta_);
 
-            boundaries.push_back(
-                ext::make_shared<FdmDiscountDirichletBoundary>(
-                    mesher, rTS, maturityTime, terminalCashFlow,
-                    0, FdmTimeDepDirichletBoundary::Lower));
+                boundaries.push_back(
+                    ext::make_shared<FdmTimeDepDirichletBoundary>(
+                        mesher, std::function<Real (Real)>(lowerBoundPrice),
+                        0, FdmTimeDepDirichletBoundary::Lower));
+            }
+            else {
+                const Real terminalCashFlow = (*payoff)(lowerBound);
+
+                boundaries.push_back(
+                    ext::make_shared<FdmDiscountDirichletBoundary>(
+                        mesher, rTS, maturityTime, terminalCashFlow,
+                        0, FdmTimeDepDirichletBoundary::Lower));
+            }
         }
 
         // 5. Solver

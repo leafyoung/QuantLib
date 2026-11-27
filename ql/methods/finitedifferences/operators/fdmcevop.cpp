@@ -31,19 +31,23 @@ namespace QuantLib {
 
     namespace {
 
-        // The first derivative operator with an empty row at the upper mesh
-        // boundary. That node carries a Dirichlet condition, so its row only
-        // matters through the implicit solve, where the downwind difference
-        // of a positive drift term contributes a positive diagonal entry
-        // that destabilizes the neighbouring rows for large time steps.
+        // The first derivative operator with empty rows at the mesh
+        // boundaries that carry a Dirichlet condition (the upper one always,
+        // the lower one when emptyLower is set). Those rows only matter
+        // through the implicit solve, where the one-sided drift term at a
+        // node with a large location-to-spacing ratio contributes a
+        // diagonal entry that destabilizes the neighbouring rows for
+        // large time steps, for either sign of the rate.
         class DriftDerivativeOp : public FirstDerivativeOp {
           public:
             DriftDerivativeOp(Size direction,
-                              const ext::shared_ptr<FdmMesher>& mesher)
+                              const ext::shared_ptr<FdmMesher>& mesher,
+                              bool emptyLower)
             : FirstDerivativeOp(direction, mesher) {
                 const Size last = mesher->layout()->dim()[direction] - 1;
                 for (const auto& iter : *mesher->layout()) {
-                    if (iter.coordinates()[direction] == last) {
+                    const Size coordinate = iter.coordinates()[direction];
+                    if (coordinate == last || (emptyLower && coordinate == 0)) {
                         const Size i = iter.index();
                         lower_[i] = diag_[i] = upper_[i] = 0.0;
                     }
@@ -60,7 +64,7 @@ namespace QuantLib {
         Size direction)
     : rTS_(rTS),
       direction_(direction),
-      dxMap_(DriftDerivativeOp(direction_, mesher)
+      dxMap_(DriftDerivativeOp(direction_, mesher, beta < 1.0)
              .mult(mesher->locations(direction))),
       dxxMap_(SecondDerivativeOp(direction_, mesher)
               .mult(0.5 * alpha * alpha *
