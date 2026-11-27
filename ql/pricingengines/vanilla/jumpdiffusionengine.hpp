@@ -27,6 +27,7 @@
 
 #include <ql/instruments/vanillaoption.hpp>
 #include <ql/processes/merton76process.hpp>
+#include <ql/utilities/null.hpp>
 
 namespace QuantLib {
 
@@ -38,12 +39,32 @@ namespace QuantLib {
           reproducing results available in literature.
         - the correctness of the returned greeks is tested by
           reproducing numerical derivatives.
+
+        The option value is a Poisson mixture of Black-Scholes values, summed
+        until the last addendum is below the relative accuracy.
+
+        At least floor(max(lambda', lambda) T) + 1 addenda are summed, with
+        lambda' the intensity times the mean jump factor and lambda the
+        intensity, so that the running sum has covered the bulk of the call
+        and put weights before the stopping test applies. The stopping test
+        compares the last addendum with the running sum; for strikes so far
+        out of the money that the sum is negligible over that range it can
+        stop early, so the relative accuracy is not a bound on the error there.
+        With mean log-jumps below about -2 and intensity times T in the hundreds,
+        the Black-Scholes terms in the forced range can underflow or overflow, and
+        an error is raised instead of a price.
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:
+        /*! \param maxIterations the maximum number of addenda; an error is
+                   raised if the number of addenda reaches it. If left
+                   at Null<Size>(), it is the larger of 100 and a number of
+                   terms, with a safety margin, beyond which the Poisson tail
+                   mass is below the relative accuracy.
+        */
         explicit JumpDiffusionEngine(ext::shared_ptr<Merton76Process>,
                                      Real relativeAccuracy_ = 1e-4,
-                                     Size maxIterations = 100);
+                                     Size maxIterations = Null<Size>());
         void calculate() const override;
 
       private:

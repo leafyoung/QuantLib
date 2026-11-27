@@ -25,9 +25,33 @@
 #include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <ql/utilities/dataformatters.hpp>
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace QuantLib {
+
+    namespace {
+
+        // Number of terms after which the tail of the mixture is below accuracy.
+        // The call and put legs weigh the terms by Poisson(lambda' t) and by a
+        // multiple exp(rawMean - mean) of Poisson(rawMean), with rawMean the
+        // intensity times t; each tail is bounded with Bernstein's inequality
+        // P(X >= m + x) <= exp(-x^2 / (2 (m + x/3))) for the larger mean. The
+        // stopping test compares the weighted ratio of the last addendum to the
+        // running sum of each result, which can exceed one by a large factor, so
+        // the bound is doubled in x to leave room for it.
+        Size poissonTruncationBound(Real mean, Real rawMean, Real accuracy) {
+            Real exponent = -std::log(std::max<Real>(accuracy, QL_EPSILON));
+            exponent = std::max<Real>(exponent, 1.0) + std::fabs(rawMean - mean);
+            Real m = std::max<Real>(mean, rawMean);
+            Real x = exponent / 3.0 + std::sqrt(exponent * exponent / 9.0 + 2.0 * exponent * m);
+            return static_cast<Size>(std::ceil(m + 2.0 * x));
+        }
+
+        const Size defaultMaxIterations = 100;
+
+    }
 
     JumpDiffusionEngine::JumpDiffusionEngine(ext::shared_ptr<Merton76Process> process,
                                              Real relativeAccuracy,
@@ -68,6 +92,17 @@ namespace QuantLib {
 
         PoissonDistribution p(lambda*t);
 
+        // The addenda are summed at least past the larger of the two means, so that the
+        // running sum has seen the bulk of both legs before the stopping test applies
+        const Real rawMean = process_->jumpIntensity()->value() * t;
+        const Size minIterations = static_cast<Size>(std::max<Real>(lambda * t, rawMean)) + 1;
+        const Size maxIterations =
+            maxIterations_ != Null<Size>() ?
+                maxIterations_ :
+                std::max(defaultMaxIterations,
+                         poissonTruncationBound(lambda * t, rawMean,
+                                                relativeAccuracy_));
+
         Handle<Quote> stateVariable = process_->stateVariable();
         Handle<YieldTermStructure> dividendTS = process_->dividendYield();
         RelinkableHandle<YieldTermStructure> riskFreeTS(
@@ -103,8 +138,8 @@ namespace QuantLib {
         Real theta_correction;
         // Haug arbitrary criterium is:
         //for (i=0; i<11; i++) {
-        for (i=0;  (lastContribution>relativeAccuracy_ && i<maxIterations_) 
-                 || i < Size(lambda*t); i++) {
+        for (i=0;  (lastContribution>relativeAccuracy_ && i<maxIterations)
+                 || i < minIterations; i++) {
 
             // constant vol/rate assumption. It should be relaxed
             v = std::sqrt((variance + i*jumpSquareVol)/t);
@@ -165,7 +200,13 @@ namespace QuantLib {
 
             lastContribution *= weight;
         }
-        QL_ENSURE(i<maxIterations_,
+        QL_ENSURE(std::isfinite(results_.value) && std::isfinite(results_.delta) &&
+                      std::isfinite(results_.gamma) && std::isfinite(results_.theta) &&
+                      std::isfinite(results_.vega) && std::isfinite(results_.rho) &&
+                      std::isfinite(results_.dividendRho),
+                  "the series of " << i << " addenda is not finite: the jump parameters "
+                  << "overflow the Black-Scholes terms");
+        QL_ENSURE(i<maxIterations,
                   i << " iterations have been not enough to reach "
                   << "the required " << relativeAccuracy_
                   << " accuracy. The " << io::ordinal(i)
