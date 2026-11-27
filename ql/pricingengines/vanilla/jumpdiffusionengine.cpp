@@ -37,10 +37,10 @@ namespace QuantLib {
         // intensity times t; each tail is bounded with Bernstein's inequality
         // P(X >= m + x) <= exp(-x^2 / (2 (m + x/3))) for the larger mean.
         Size poissonTruncationBound(Real mean, Real rawMean, Real accuracy) {
-            Real l = -std::log(std::max<Real>(accuracy, QL_EPSILON));
-            l = std::max<Real>(l, 1.0) + std::fabs(rawMean - mean);
+            Real exponent = -std::log(std::max<Real>(accuracy, QL_EPSILON));
+            exponent = std::max<Real>(exponent, 1.0) + std::fabs(rawMean - mean);
             Real m = std::max<Real>(mean, rawMean);
-            Real x = l / 3.0 + std::sqrt(l * l / 9.0 + 2.0 * l * m);
+            Real x = exponent / 3.0 + std::sqrt(exponent * exponent / 9.0 + 2.0 * exponent * m);
             return Size(std::ceil(m + x));
         }
 
@@ -133,7 +133,7 @@ namespace QuantLib {
         Real theta_correction;
         // Haug arbitrary criterium is:
         //for (i=0; i<11; i++) {
-        for (i=0;  (lastContribution>relativeAccuracy_ && i<maxIterations) 
+        for (i=0;  (lastContribution>relativeAccuracy_ && i<maxIterations)
                  || i < minIterations; i++) {
 
             // constant vol/rate assumption. It should be relaxed

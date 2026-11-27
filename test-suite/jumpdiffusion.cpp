@@ -20,10 +20,10 @@
 
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
-#include <ql/shared_ptr.hpp>
 #include <ql/quotes/simplequote.hpp>
-#include <ql/time/daycounters/actual365fixed.hpp>
+#include <ql/shared_ptr.hpp>
 #include <ql/time/daycounters/actual360.hpp>
+#include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/instruments/europeanoption.hpp>
 #include <ql/pricingengines/vanilla/analyticeuropeanengine.hpp>
 #include <ql/pricingengines/vanilla/jumpdiffusionengine.hpp>
