@@ -21,6 +21,8 @@
 #include "toplevelfixture.hpp"
 #include "utilities.hpp"
 #include <ql/shared_ptr.hpp>
+#include <ql/quotes/simplequote.hpp>
+#include <ql/time/daycounters/actual365fixed.hpp>
 #include <ql/time/daycounters/actual360.hpp>
 #include <ql/instruments/europeanoption.hpp>
 #include <ql/pricingengines/vanilla/analyticeuropeanengine.hpp>
@@ -518,6 +520,105 @@ BOOST_AUTO_TEST_CASE(testGreeks) {
             }
         }
     } // type loop
+}
+
+
+BOOST_AUTO_TEST_CASE(testLargeJumpIntensityDefaultIterations) {
+
+    BOOST_TEST_MESSAGE("Testing Merton76 pricing with a large expected number of jumps...");
+
+    // Reference values: the Poisson mixture of Black-Scholes prices summed
+    // to a tail far below double precision, computed independently of the engine.
+    struct Case {
+        Real expectedJumps; // jump intensity times maturity (before the mean-jump factor)
+        Option::Type type;
+        Real strike;
+        Real expected;
+    };
+    const Case cases[] = {
+        {70, Option::Call, 100.0, 13.5969845041},
+        {100, Option::Call, 100.0, 14.3970265906},
+        {150, Option::Call, 100.0, 15.6162571122},
+        {400, Option::Call, 100.0, 20.4465308256},
+        {1000, Option::Call, 100.0, 28.3744947341},
+        {3000, Option::Call, 100.0, 44.0400039268},
+        {100, Option::Put, 110.0, 13.6778957924},
+        {1000, Option::Put, 110.0, 28.4270437766},
+        {3000, Option::Put, 110.0, 44.8833904921}
+    };
+
+    DayCounter dc = Actual365Fixed();
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+    const Time maturity = 2.0;
+
+    auto spot = ext::make_shared<SimpleQuote>(100.0);
+    auto qTS = flatRate(today, 0.0, dc);
+    auto rTS = flatRate(today, 0.03, dc);
+    auto volTS = flatVol(today, 0.15, dc);
+    auto jumpIntensity = ext::make_shared<SimpleQuote>(1.0);
+    auto meanLogJump = ext::make_shared<SimpleQuote>(-0.0002);
+    auto jumpVol = ext::make_shared<SimpleQuote>(0.02);
+    auto process = ext::make_shared<Merton76Process>(
+        Handle<Quote>(spot), Handle<YieldTermStructure>(qTS), Handle<YieldTermStructure>(rTS),
+        Handle<BlackVolTermStructure>(volTS), Handle<Quote>(jumpIntensity),
+        Handle<Quote>(meanLogJump), Handle<Quote>(jumpVol));
+    // default iteration cap, tight accuracy so that the truncation error is negligible
+    auto engine = ext::make_shared<JumpDiffusionEngine>(process, 1.0e-8);
+
+    for (const auto& c : cases) {
+        jumpIntensity->setValue(c.expectedJumps / maturity);
+
+        EuropeanOption option(ext::make_shared<PlainVanillaPayoff>(c.type, c.strike),
+                              ext::make_shared<EuropeanExercise>(today + 730));
+        option.setPricingEngine(engine);
+
+        Real calculated = Null<Real>();
+        BOOST_CHECK_NO_THROW(calculated = option.NPV());
+        if (calculated != Null<Real>())
+            QL_CHECK_CLOSE(calculated, c.expected, 1.0e-5); // percent
+    }
+
+    // negative mean jumps put the mass of the put leg beyond the mixture mean
+    meanLogJump->setValue(-0.3);
+    const Case downJumpCases[] = {
+        {30, Option::Put, 40.0, 13.3584117376},
+        {70, Option::Put, 100.0, 70.8155877442},
+        {30, Option::Call, 100.0, 57.3407113360},
+        {300, Option::Put, 100.0, 92.6698149893}
+    };
+    for (const auto& c : downJumpCases) {
+        jumpIntensity->setValue(c.expectedJumps / maturity);
+        EuropeanOption option(ext::make_shared<PlainVanillaPayoff>(c.type, c.strike),
+                              ext::make_shared<EuropeanExercise>(today + 730));
+        option.setPricingEngine(engine);
+        QL_CHECK_CLOSE(option.NPV(), c.expected, 1.0e-5); // percent
+    }
+    // positive mean jumps put the mass of the call leg beyond the intensity times t
+    meanLogJump->setValue(0.2);
+    const Case upJumpCases[] = {
+        {70, Option::Call, 100.0, 63.8249682522},
+        {300, Option::Call, 100.0, 93.5559130912},
+        {70, Option::Put, 100.0, 58.0014216107},
+        {30, Option::Call, 400.0, 14.55642946},
+        {70, Option::Call, 400.0, 37.6383537},
+        {70, Option::Call, 1000.0, 22.37038514}
+    };
+    for (const auto& c : upJumpCases) {
+        jumpIntensity->setValue(c.expectedJumps / maturity);
+        EuropeanOption option(ext::make_shared<PlainVanillaPayoff>(c.type, c.strike),
+                              ext::make_shared<EuropeanExercise>(today + 730));
+        option.setPricingEngine(engine);
+        QL_CHECK_CLOSE(option.NPV(), c.expected, 1.0e-5); // percent
+    }
+    meanLogJump->setValue(-0.0002);
+
+    // an explicit cap is honored: 150 expected jumps cannot be summed in 100 terms
+    jumpIntensity->setValue(150.0 / maturity);
+    EuropeanOption capped(ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+                          ext::make_shared<EuropeanExercise>(today + 730));
+    capped.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process, 1.0e-8, 100));
+    BOOST_CHECK_THROW(capped.NPV(), Error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

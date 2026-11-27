@@ -29,6 +29,25 @@
 
 namespace QuantLib {
 
+    namespace {
+
+        // Number of terms after which the tail of the mixture is below accuracy.
+        // The call and put legs weigh the terms by Poisson(lambda' t) and by a
+        // multiple exp(rawMean - mean) of Poisson(rawMean), with rawMean the
+        // intensity times t; each tail is bounded with Bernstein's inequality
+        // P(X >= m + x) <= exp(-x^2 / (2 (m + x/3))) for the larger mean.
+        Size poissonTruncationBound(Real mean, Real rawMean, Real accuracy) {
+            Real l = -std::log(std::max<Real>(accuracy, QL_EPSILON));
+            l = std::max<Real>(l, 1.0) + std::fabs(rawMean - mean);
+            Real m = std::max<Real>(mean, rawMean);
+            Real x = l / 3.0 + std::sqrt(l * l / 9.0 + 2.0 * l * m);
+            return Size(std::ceil(m + x));
+        }
+
+        const Size defaultMaxIterations = 100;
+
+    }
+
     JumpDiffusionEngine::JumpDiffusionEngine(ext::shared_ptr<Merton76Process> process,
                                              Real relativeAccuracy,
                                              Size maxIterations)
@@ -68,6 +87,17 @@ namespace QuantLib {
 
         PoissonDistribution p(lambda*t);
 
+        // The addenda are summed at least past the larger of the two means, so that the
+        // running sum has seen the bulk of both legs before the stopping test applies
+        const Real rawMean = process_->jumpIntensity()->value() * t;
+        const Size minIterations = Size(std::max<Real>(lambda * t, rawMean)) + 1;
+        const Size maxIterations =
+            maxIterations_ != Null<Size>() ?
+                maxIterations_ :
+                std::max(defaultMaxIterations,
+                         poissonTruncationBound(lambda * t, rawMean,
+                                                relativeAccuracy_));
+
         Handle<Quote> stateVariable = process_->stateVariable();
         Handle<YieldTermStructure> dividendTS = process_->dividendYield();
         RelinkableHandle<YieldTermStructure> riskFreeTS(
@@ -103,8 +133,8 @@ namespace QuantLib {
         Real theta_correction;
         // Haug arbitrary criterium is:
         //for (i=0; i<11; i++) {
-        for (i=0;  (lastContribution>relativeAccuracy_ && i<maxIterations_) 
-                 || i < Size(lambda*t); i++) {
+        for (i=0;  (lastContribution>relativeAccuracy_ && i<maxIterations) 
+                 || i < minIterations; i++) {
 
             // constant vol/rate assumption. It should be relaxed
             v = std::sqrt((variance + i*jumpSquareVol)/t);
@@ -165,7 +195,7 @@ namespace QuantLib {
 
             lastContribution *= weight;
         }
-        QL_ENSURE(i<maxIterations_,
+        QL_ENSURE(i<maxIterations,
                   i << " iterations have been not enough to reach "
                   << "the required " << relativeAccuracy_
                   << " accuracy. The " << io::ordinal(i)

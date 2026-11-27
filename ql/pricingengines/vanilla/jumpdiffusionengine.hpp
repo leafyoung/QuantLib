@@ -38,12 +38,21 @@ namespace QuantLib {
           reproducing results available in literature.
         - the correctness of the returned greeks is tested by
           reproducing numerical derivatives.
+
+        The option value is a Poisson mixture of Black-Scholes values, summed
+        until the last addendum is below the relative accuracy.
+
+        \param maxIterations the maximum number of addenda. If left at
+               Null<Size>(), it is the larger of 100 and the number of
+               terms after which the Poisson tail mass is below the
+               relative accuracy, so that the series can be summed for
+               any expected number of jumps.
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:
         explicit JumpDiffusionEngine(ext::shared_ptr<Merton76Process>,
                                      Real relativeAccuracy_ = 1e-4,
-                                     Size maxIterations = 100);
+                                     Size maxIterations = Null<Size>());
         void calculate() const override;
 
       private:
