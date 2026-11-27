@@ -27,8 +27,8 @@
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
-#include <ql/shared_ptr.hpp>
 #include <ql/quotes/simplequote.hpp>
+#include <ql/shared_ptr.hpp>
 #include <ql/termstructures/yield/discountcurve.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
 #include <boost/math/special_functions/gamma.hpp>
@@ -672,6 +672,9 @@ BOOST_AUTO_TEST_CASE(testCevEffectiveTimeWithNonzeroStart) {
                     << "\n    calculated : " << flatCalculated);
     }
 
+    BOOST_CHECK_THROW(cevEffectiveTime(alpha, beta, flat, end, end), Error);
+    BOOST_CHECK_THROW(cevEffectiveTime(alpha, beta, flat, end, start), Error);
+
     // curve with a forward rate jump: compare with a fine midpoint sum.
     // The jump is a kink of the integrand, which limits the 64 point rule
     // to about 1e-6 relative accuracy here.
@@ -754,6 +757,10 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
         ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
         ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
 
+    // beta = 1-5e-4 is the closest value outside the band at which the
+    // mesher's boost evaluation converges on this mesh. The tolerance
+    // covers the genuine model difference between the two betas (about
+    // 0.023 here); a wrong boundary value moves the price by much more.
     const Real eps = 0.2;
     const Real tol = 0.05;
     for (Option::Type type : {Option::Call, Option::Put}) {
@@ -771,6 +778,66 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
                         << "\n    inside  : " << prices[0]
                         << "\n    outside : " << prices[1]
                         << "\n    tolerance: " << tol);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
+    BOOST_TEST_MESSAGE("Testing the width of the CEV Black band...");
+
+    // Just outside the band the engine uses the closed form, which differs
+    // from the Black price by the model curvature (about vega*6e-4 here);
+    // a wider band would return the Black price exactly.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, alpha = 0.30, strike = 100.0;
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, dc));
+    const Date maturityDate = today + Period(12, Months);
+    const auto payoff = ext::make_shared<PlainVanillaPayoff>(Option::Call, strike);
+    VanillaOption option(payoff, ext::make_shared<EuropeanExercise>(maturityDate));
+
+    const DiscountFactor discount = rTS->discount(maturityDate);
+    const Real black = blackFormula(
+        payoff, f0/discount,
+        alpha*std::sqrt(rTS->timeFromReference(maturityDate)), discount);
+
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        f0, alpha, 1.0-5e-4, rTS));
+    const Real difference = std::fabs(option.NPV() - black);
+    BOOST_CHECK_GT(difference, 1e-3);
+    BOOST_CHECK_LT(difference, 0.05);
+}
+
+BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
+    BOOST_TEST_MESSAGE("Testing the FDM CEV engine for beta above one...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, beta = 1.5, rate = 0.05;
+    const Real alpha = 0.30*std::pow(f0, 1.0-beta);
+    const Handle<YieldTermStructure> rTS(flatRate(today, rate, dc));
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months));
+
+    // a wide mesh (eps = 0.1) brings the lower boundary close enough for
+    // its treatment to matter: beta > 1 has no absorbing boundary at zero
+    for (Option::Type type : {Option::Call, Option::Put}) {
+        VanillaOption option(
+            ext::make_shared<PlainVanillaPayoff>(type, 100.0), exercise);
+        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            f0, alpha, beta, rTS));
+        const Real analytic = option.NPV();
+        option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+            f0, alpha, beta, rTS, 200, 400, 1, 1.0, 0.1));
+        const Real pde = option.NPV();
+        if (std::fabs(analytic - pde) > 0.02) {
+            BOOST_ERROR("failed to reproduce the analytic price for beta > 1"
+                        << "\n    analytic npv : " << analytic
+                        << "\n    pde npv      : " << pde);
         }
     }
 }
