@@ -36,6 +36,7 @@
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/termstructures/yieldtermstructure.hpp>
+#include <algorithm>
 #include <utility>
 
 namespace QuantLib {
@@ -52,10 +53,16 @@ namespace QuantLib {
               calculator_(boundary, 1.0, beta),
               boundary_(boundary), alpha_(alpha), beta_(beta) {}
 
-            Real operator()(Real t) const {
-                // t is a rollback step destination and strictly below the
-                // maturity, so the evaluation window always has positive
-                // length and stays within the curve's range
+            Real operator()(Real rollbackTime) const {
+                // the rollback destination is strictly below the maturity,
+                // so the evaluation window has positive length and stays
+                // within the curve's range. A window shorter than about a
+                // day is replaced by one of that length: the noncentral
+                // chi-squared evaluation fails for very short windows,
+                // and the boundary value hardly changes over them.
+                const Time t = std::min(
+                    rollbackTime,
+                    maturityTime_ - std::min(1.0/365.0, 0.5*maturityTime_));
                 const DiscountFactor df =
                     rTS_->discount(maturityTime_) / rTS_->discount(t);
 
@@ -154,27 +161,25 @@ namespace QuantLib {
             mesher, std::function<Real (Real)>(upperBoundPrice),
             0, FdmTimeDepDirichletBoundary::Upper));
 
-        const Real delta = (1-2*beta_)/(1-beta_);
-        if (delta < 2.0) {
-            if (lowerBound > 0.0) {
-                // the asset has drift, so the value at the lower bound is
-                // the drifted CEV price there, as at the upper bound
-                const PriceAtBoundary lowerBoundPrice(
-                    maturityTime, payoff, rTS, lowerBound, alpha_, beta_);
+        if (lowerBound > 0.0) {
+            // the asset has drift, so the value at the lower bound is the
+            // drifted CEV price there, as at the upper bound
+            const PriceAtBoundary lowerBoundPrice(
+                maturityTime, payoff, rTS, lowerBound, alpha_, beta_);
 
-                boundaries.push_back(
-                    ext::make_shared<FdmTimeDepDirichletBoundary>(
-                        mesher, std::function<Real (Real)>(lowerBoundPrice),
-                        0, FdmTimeDepDirichletBoundary::Lower));
-            }
-            else {
-                const Real terminalCashFlow = (*payoff)(lowerBound);
+            boundaries.push_back(
+                ext::make_shared<FdmTimeDepDirichletBoundary>(
+                    mesher, std::function<Real (Real)>(lowerBoundPrice),
+                    0, FdmTimeDepDirichletBoundary::Lower));
+        }
+        else if (beta_ < 1.0) {
+            // the mesh reaches zero, which is absorbing for beta < 1
+            const Real terminalCashFlow = (*payoff)(lowerBound);
 
-                boundaries.push_back(
-                    ext::make_shared<FdmDiscountDirichletBoundary>(
-                        mesher, rTS, maturityTime, terminalCashFlow,
-                        0, FdmTimeDepDirichletBoundary::Lower));
-            }
+            boundaries.push_back(
+                ext::make_shared<FdmDiscountDirichletBoundary>(
+                    mesher, rTS, maturityTime, terminalCashFlow,
+                    0, FdmTimeDepDirichletBoundary::Lower));
         }
 
         // 5. Solver

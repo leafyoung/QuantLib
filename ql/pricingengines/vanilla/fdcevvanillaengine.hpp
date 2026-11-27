@@ -31,13 +31,16 @@
 namespace QuantLib {
     class YieldTermStructure;
 
-    //! Finite-difference engine for European and American options on a CEV asset
+    //! Finite-difference engine for options on a CEV asset
     /*! As in AnalyticCEVEngine, the underlying is an asset with drift
         given by the discount curve, not a driftless forward. FdSabrVanillaEngine
         models a driftless forward, so the two agree only for a zero rate.
         The mesher requires \f$ \beta \neq 1 \f$ (and fails to converge
         closer to one than about 3e-4 on a wide mesh), unlike
         AnalyticCEVEngine, which accepts \f$ \beta = 1 \f$.
+        The boundary values are the European prices at the mesh bounds, which
+        is exact for European exercise; with early exercise they are an
+        approximation that improves as the mesh widens (smaller eps).
     */
     class FdCEVVanillaEngine : public VanillaOption::engine {
       public:

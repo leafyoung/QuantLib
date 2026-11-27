@@ -55,6 +55,13 @@ namespace QuantLib {
             }
         };
 
+        // FdCEVVanillaEngine fixes the lower node whenever the mesh starts
+        // above zero or zero is absorbing (beta < 1)
+        bool hasLowerDirichletNode(const ext::shared_ptr<FdmMesher>& mesher,
+                                   Size direction, Real beta) {
+            return beta < 1.0 || mesher->locations(direction).front() > 0.0;
+        }
+
     }
 
     FdmCEVOp::FdmCEVOp(
@@ -64,7 +71,8 @@ namespace QuantLib {
         Size direction)
     : rTS_(rTS),
       direction_(direction),
-      dxMap_(DriftDerivativeOp(direction_, mesher, beta < 1.0)
+      dxMap_(DriftDerivativeOp(direction_, mesher,
+                               hasLowerDirichletNode(mesher, direction, beta))
              .mult(mesher->locations(direction))),
       dxxMap_(SecondDerivativeOp(direction_, mesher)
               .mult(0.5 * alpha * alpha *
