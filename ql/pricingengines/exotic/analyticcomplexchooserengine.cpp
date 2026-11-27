@@ -124,7 +124,8 @@ namespace QuantLib {
         const Real Xp = strike(Option::Put);
 
         // Newton-Raphson process; the residual tolerance is relative to the strikes so that the
-        // value is homogeneous of degree one in the prices
+        // value is homogeneous of degree one in the prices. The critical value lies near the
+        // strikes, so the tolerance needs no term in the iterate.
         while (std::fabs(yi) > 1.0e-10 * std::max<Real>(Xc, Xp)) {
             Sv = Sv - yi / di;
 

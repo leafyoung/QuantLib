@@ -320,7 +320,7 @@ BOOST_AUTO_TEST_CASE(testHolderExtensibleOptionIsHomogeneousInPriceInputs) {
 
     for (const auto& c : cases) {
         Real unscaled = 0.0;
-        for (Real k : {1.0, 1.0e3, 1.0e-2, 1.0e-4, 1.0e-6}) {
+        for (Real k : std::vector<Real>{1.0, 1.0e3, 1.0e-2, 1.0e-4, 1.0e-6}) {
             auto process = ext::make_shared<BlackScholesMertonProcess>(
                 Handle<Quote>(ext::make_shared<SimpleQuote>(100.0 * k)),
                 Handle<YieldTermStructure>(flatRate(today, 0.0, dc)),
