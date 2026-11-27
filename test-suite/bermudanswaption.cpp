@@ -1148,6 +1148,11 @@ BOOST_AUTO_TEST_CASE(testG2SwaptionRejectsMalformedArguments) {
         floatSchedule, index, 0.0, index->dayCounter());
     arguments.fixedPayDates = {today + 2*Years};
     BOOST_CHECK_THROW(model.swaption(arguments, 0.03, 6.0, 16), Error);
+
+    // more fixed pay dates than fixed-leg coupons
+    arguments.fixedPayDates.assign(
+        arguments.swap->fixedLeg().size() + 1, today + 2*Years);
+    BOOST_CHECK_THROW(model.swaption(arguments, 0.03, 6.0, 16), Error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
