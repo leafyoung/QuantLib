@@ -627,6 +627,44 @@ BOOST_AUTO_TEST_CASE(testLargeJumpIntensityDefaultIterations) {
     BOOST_CHECK_THROW(capped.NPV(), Error);
 }
 
+BOOST_AUTO_TEST_CASE(testDefaultIterationCapHeadroom) {
+
+    BOOST_TEST_MESSAGE("Testing Merton76 default iteration cap against the stopping test...");
+
+    DayCounter dc = Actual365Fixed();
+    Date today(15, September, 2016);
+    Settings::instance().evaluationDate() = today;
+
+    auto spot = ext::make_shared<SimpleQuote>(100.0);
+    auto jumpIntensity = ext::make_shared<SimpleQuote>(50.0);
+    auto meanLogJump = ext::make_shared<SimpleQuote>(0.01);
+    auto jumpVol = ext::make_shared<SimpleQuote>(0.02);
+    auto process = ext::make_shared<Merton76Process>(
+        Handle<Quote>(spot), Handle<YieldTermStructure>(flatRate(today, 0.06, dc)),
+        Handle<YieldTermStructure>(flatRate(today, 0.03, dc)),
+        Handle<BlackVolTermStructure>(flatVol(today, 0.05, dc)), Handle<Quote>(jumpIntensity),
+        Handle<Quote>(meanLogJump), Handle<Quote>(jumpVol));
+
+    // the stopping test compares each Greek's last addendum with its running sum, a ratio
+    // that is large for theta here, so the default cap needs room beyond the Poisson tail
+    EuropeanOption call(ext::make_shared<PlainVanillaPayoff>(Option::Call, 90.0),
+                        ext::make_shared<EuropeanExercise>(today + 730));
+    call.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process));
+    Real calculated = Null<Real>();
+    BOOST_CHECK_NO_THROW(calculated = call.NPV());
+    if (calculated != Null<Real>())
+        QL_CHECK_CLOSE(calculated, 10.2291778517, 0.1); // percent
+
+    // jumps so large that the Black-Scholes terms overflow are reported, not priced as infinity
+    meanLogJump->setValue(-3.0);
+    jumpVol->setValue(0.0);
+    jumpIntensity->setValue(150.0);
+    EuropeanOption put(ext::make_shared<PlainVanillaPayoff>(Option::Put, 20.0),
+                       ext::make_shared<EuropeanExercise>(today + 730));
+    put.setPricingEngine(ext::make_shared<JumpDiffusionEngine>(process));
+    BOOST_CHECK_THROW(put.NPV(), Error);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE_END()

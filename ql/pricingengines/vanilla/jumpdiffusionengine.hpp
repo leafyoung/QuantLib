@@ -49,15 +49,15 @@ namespace QuantLib {
         compares the last addendum with the running sum; for strikes so far
         out of the money that the sum is negligible over that range it can
         stop early, so the relative accuracy is not a bound on the error there.
-
-        \param maxIterations the maximum number of addenda; reaching it
-               before the stopping test is met raises an error. If left at
-               Null<Size>(), it is the larger of 100 and the number of
-               terms after which the Poisson tail mass is below the
-               relative accuracy.
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:
+        /*! \param maxIterations the maximum number of addenda; reaching it
+                   before the stopping test is met raises an error. If left
+                   at Null<Size>(), it is the larger of 100 and a number of
+                   terms, with a safety margin, beyond which the Poisson tail
+                   mass is below the relative accuracy.
+        */
         explicit JumpDiffusionEngine(ext::shared_ptr<Merton76Process>,
                                      Real relativeAccuracy_ = 1e-4,
                                      Size maxIterations = Null<Size>());

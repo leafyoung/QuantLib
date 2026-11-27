@@ -35,13 +35,16 @@ namespace QuantLib {
         // The call and put legs weigh the terms by Poisson(lambda' t) and by a
         // multiple exp(rawMean - mean) of Poisson(rawMean), with rawMean the
         // intensity times t; each tail is bounded with Bernstein's inequality
-        // P(X >= m + x) <= exp(-x^2 / (2 (m + x/3))) for the larger mean.
+        // P(X >= m + x) <= exp(-x^2 / (2 (m + x/3))) for the larger mean. The
+        // stopping test compares the weighted ratio of the last addendum to the
+        // running sum of each result, which can exceed one by a large factor, so
+        // the bound is doubled in x to leave room for it.
         Size poissonTruncationBound(Real mean, Real rawMean, Real accuracy) {
             Real exponent = -std::log(std::max<Real>(accuracy, QL_EPSILON));
             exponent = std::max<Real>(exponent, 1.0) + std::fabs(rawMean - mean);
             Real m = std::max<Real>(mean, rawMean);
             Real x = exponent / 3.0 + std::sqrt(exponent * exponent / 9.0 + 2.0 * exponent * m);
-            return Size(std::ceil(m + x));
+            return static_cast<Size>(std::ceil(m + 2.0 * x));
         }
 
         const Size defaultMaxIterations = 100;
@@ -90,7 +93,7 @@ namespace QuantLib {
         // The addenda are summed at least past the larger of the two means, so that the
         // running sum has seen the bulk of both legs before the stopping test applies
         const Real rawMean = process_->jumpIntensity()->value() * t;
-        const Size minIterations = Size(std::max<Real>(lambda * t, rawMean)) + 1;
+        const Size minIterations = static_cast<Size>(std::max<Real>(lambda * t, rawMean)) + 1;
         const Size maxIterations =
             maxIterations_ != Null<Size>() ?
                 maxIterations_ :
@@ -195,6 +198,9 @@ namespace QuantLib {
 
             lastContribution *= weight;
         }
+        QL_ENSURE(std::isfinite(results_.value),
+                  "the series of " << i << " addenda is not finite: the jump parameters "
+                  << "overflow the Black-Scholes terms");
         QL_ENSURE(i<maxIterations,
                   i << " iterations have been not enough to reach "
                   << "the required " << relativeAccuracy_
