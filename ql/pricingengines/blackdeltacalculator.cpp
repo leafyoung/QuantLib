@@ -134,8 +134,9 @@ namespace QuantLib {
               solver.setMaxEvaluations(1000);
               // Relative to the price level, so that quoting in other units
               // does not change the solved strike. The solver floors the
-              // accuracy at QL_EPSILON, which limits this to forwards above
-              // about 1e-6.
+              // accuracy at QL_EPSILON; for forwards below about 1e-6 the
+              // attained accuracy then rests on Brent's convergence rate
+              // rather than on this bound.
               Real accuracy = 1.0e-10 * forward_;
 
               Real rightLimit = 0.0;
