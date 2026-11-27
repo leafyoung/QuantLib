@@ -759,6 +759,32 @@ BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaDomain) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testPremiumAdjustedStrikeFromDeltaScaleInvariance) {
+
+    BOOST_TEST_MESSAGE("Testing premium-adjusted strike-from-delta under a change of units...");
+
+    struct Request {
+        Option::Type type;
+        Real stdDev, delta;
+    };
+    const Request requests[] = {{Option::Call, 0.001, 0.9}, {Option::Call, 0.2, 0.3},
+                                {Option::Call, 0.9, 0.2},   {Option::Put, 0.2, -0.3},
+                                {Option::Put, 0.9, -0.3}};
+
+    for (auto deltaType : {DeltaVolQuote::PaSpot, DeltaVolQuote::PaFwd}) {
+        for (const Request& r : requests) {
+            BlackDeltaCalculator unit(r.type, deltaType, 1.0, 0.99, 0.98, r.stdDev);
+            Real expected = unit.strikeFromDelta(r.delta);
+            // The same market quoted in units 1e-5 and 1e-8 of the original.
+            for (Real scale : std::vector<Real>{1e-5, 1e-8}) {
+                BlackDeltaCalculator scaled(r.type, deltaType, scale, 0.99, 0.98, r.stdDev);
+                Real calculated = scaled.strikeFromDelta(r.delta) / scale;
+                QL_CHECK_CLOSE(calculated, expected, 1e-6);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaLargeStdDev) {
 
     BOOST_TEST_MESSAGE("Testing premium-adjusted call strike-from-delta at large width...");

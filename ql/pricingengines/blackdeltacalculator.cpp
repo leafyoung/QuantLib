@@ -132,7 +132,9 @@ namespace QuantLib {
 
               Brent solver;
               solver.setMaxEvaluations(1000);
-              Real accuracy = 1.0e-10;
+              // Relative to the price scale, so that quoting in other units
+              // does not change the solved strike.
+              Real accuracy = 1.0e-10 * forward_;
 
               Real rightLimit = 0.0;
               Real leftLimit = 0.0;
@@ -158,7 +160,7 @@ namespace QuantLib {
                     // accept any value below its zero tolerance as a root.
                     Real n = nD2(strike);
                     Real cum = cumD2(strike) * stdDev_;
-                    return n > 0.0 ? cum / n - 1.0 : cum - n;
+                    return n > 0.0 ? Real(cum / n - 1.0) : Real(cum - n);
                   };
 
                   // The maximum lies below forward * exp(stdDev^2 / 2) whatever
