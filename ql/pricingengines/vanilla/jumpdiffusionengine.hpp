@@ -53,6 +53,10 @@ namespace QuantLib {
         With mean log-jumps below about -2 and intensity times T in the hundreds,
         the Black-Scholes terms in the forced range can underflow or overflow, and
         an error is raised instead of a price.
+
+        The forced minimum applies even when an explicit maxIterations is given:
+        if floor(max(lambda', lambda) T) + 1 reaches maxIterations, an error is
+        raised instead of a price.
     */
     class JumpDiffusionEngine : public VanillaOption::engine {
       public:
