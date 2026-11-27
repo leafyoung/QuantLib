@@ -713,6 +713,8 @@ BOOST_AUTO_TEST_CASE(testPremiumAdjustedCallDeltaDomain) {
                             {1.0, 1.0, 1.0, 0.6},
                             {1.0, 1.0, 1.0, 1.0},
                             {1.421, 0.997306, 0.992266, 2.0},
+                            {1.0, 1.0, 1.0, 15.0},
+                            {1.1, 0.99, 0.98, 30.0},
                             {122.121, 0.9695434, 0.9872347, 0.9}};
 
     for (auto deltaType : {DeltaVolQuote::PaSpot, DeltaVolQuote::PaFwd}) {

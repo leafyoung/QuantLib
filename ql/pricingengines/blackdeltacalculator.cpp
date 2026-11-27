@@ -153,7 +153,12 @@ namespace QuantLib {
                   // corresponding to the value where premium adjusted
                   // deltas have their maximum
                   auto g = [&](Real strike) -> Real {
-                    return cumD2(strike) * stdDev_ - nD2(strike);
+                    // Divided by n(d2) where that is positive, so that its size
+                    // stays of order one in the tails; Brent would otherwise
+                    // accept any value below its zero tolerance as a root.
+                    Real n = nD2(strike);
+                    Real cum = cumD2(strike) * stdDev_;
+                    return n > 0.0 ? cum / n - 1.0 : cum - n;
                   };
 
                   // The maximum lies below forward * exp(stdDev^2 / 2) whatever
