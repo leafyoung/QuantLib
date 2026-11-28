@@ -42,6 +42,9 @@ namespace QuantLib {
         https://www.fincad.com/sites/default/files/wysiwyg/Resources-Wiki/cev-process-working-paper.pdf
     */
 
+    /*! The process is a driftless forward; see cevEffectiveTime for the
+        asset with drift.
+    */
     class CEVCalculator {
       public:
         CEVCalculator(Real f0, Real alpha, Real beta);
@@ -59,6 +62,10 @@ namespace QuantLib {
     };
 
 
+    /*! The underlying \f$ f \f$ is a driftless forward; the option value is
+        discounted with the curve. See AnalyticDriftedCEVEngine for an asset
+        with drift.
+    */
     class AnalyticCEVEngine : public VanillaOption::engine {
       public:
         AnalyticCEVEngine(Real f0, Real alpha, Real beta, Handle<YieldTermStructure> discountCurve);
@@ -87,6 +94,7 @@ namespace QuantLib {
         elsewhere); boost then raises its own exception, not a
         QuantLib::Error.
     */
+    // CEVCalculator::value applies the same width to its beta = 1 guard
     constexpr double cevBlackLimitBandWidth = 1e-4;
 
     /*! Effective time of the drift-removed CEV process.
@@ -123,8 +131,10 @@ namespace QuantLib {
         given by the discount curve, not a driftless forward as in
         AnalyticCEVEngine, which prices a forward and discounts it; the two
         engines coincide at zero rates. The Black-Scholes limit is used
-        for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth. Only plain vanilla
-        payoffs are supported.
+        for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth; just outside that
+        band the closed form can still fail with a boost exception, not a
+        QuantLib::Error. Only European exercise and plain vanilla payoffs
+        are supported.
     */
     class AnalyticDriftedCEVEngine : public VanillaOption::engine {
       public:

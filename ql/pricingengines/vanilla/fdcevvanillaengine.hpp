@@ -31,6 +31,10 @@
 namespace QuantLib {
     class YieldTermStructure;
 
+    /*! The underlying \f$ f \f$ is a driftless forward; the option value is
+        discounted with the curve. See FdDriftedCEVVanillaEngine for an asset
+        with drift.
+    */
     class FdCEVVanillaEngine : public VanillaOption::engine {
       public:
         FdCEVVanillaEngine(Real f0,
@@ -74,7 +78,9 @@ namespace QuantLib {
         finite-difference engines, the kinked payoff needs
         \p dampingSteps of at least 1 (2 is typical) for accurate prices and
         Greeks at short maturities; the default of 0 can give oscillating
-        Greeks and slightly negative prices far out of the money.
+        Greeks and slightly negative prices far out of the money. When the
+        drift dominates (the rate times the maturity of about 2 or more at
+        a volatility of 1% or less), \p tGrid has to grow with it.
     */
     class FdDriftedCEVVanillaEngine : public VanillaOption::engine {
       public:

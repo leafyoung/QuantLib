@@ -950,6 +950,35 @@ BOOST_AUTO_TEST_CASE(testDriftedAnalyticEngineRejectsAmericanExercise) {
     BOOST_CHECK_THROW(option.NPV(), Error);
 }
 
+BOOST_AUTO_TEST_CASE(testFdmDriftedCevEngineArguments) {
+    BOOST_TEST_MESSAGE("Testing the mesh and scheme arguments of the drifted FDM CEV engine...");
+
+    // each of the mesh width, the scaling factor and the scheme moves the
+    // price by an amount well above the tolerance used elsewhere against
+    // the analytic engine, so the arguments must reach the solver
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, beta = 0.5, alpha = 0.30*std::pow(f0, 1.0-beta);
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.05, dc));
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
+
+    const auto price = [&](Real eps, Real scaling, const FdmSchemeDesc& scheme) {
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+            f0, alpha, beta, rTS, 50, 400, 2, scaling, eps, scheme));
+        return option.NPV();
+    };
+
+    const Real reference = price(1e-4, 1.0, FdmSchemeDesc::Douglas());
+    BOOST_CHECK_GT(std::fabs(price(0.2, 1.0, FdmSchemeDesc::Douglas()) - reference), 5e-4);
+    BOOST_CHECK_GT(std::fabs(price(1e-4, 0.7, FdmSchemeDesc::Douglas()) - reference), 2e-4);
+    BOOST_CHECK_GT(
+        std::fabs(price(1e-4, 1.0, FdmSchemeDesc::ImplicitEuler()) - reference), 5e-3);
+}
+
 BOOST_AUTO_TEST_CASE(testCevEffectiveTimeInputGuards) {
     BOOST_TEST_MESSAGE("Testing the CEV effective time input guards...");
 
@@ -1039,6 +1068,25 @@ BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
 
     const Array expected = op1d.apply(g);
     const Array calculated = op2d.apply(v);
+    // the splitting along the CEV axis is the whole operator, and the
+    // other axis carries no part of it
+    const Array direction1 = op2d.apply_direction(1, v);
+    const Array direction0 = op2d.apply_direction(0, v);
+    for (Size k = 0; k < v.size(); ++k) {
+        QL_CHECK_SMALL(direction1[k] - calculated[k], 1e-10*(1.0 + std::fabs(calculated[k])));
+        QL_CHECK_SMALL(direction0[k], 1e-14);
+    }
+    // the implicit solve along the CEV axis acts on every line like the
+    // one-dimensional solve
+    const Real step = 0.01;
+    const Array solved1d = op1d.solve_splitting(0, g, step);
+    const Array solved1 = op2d.solve_splitting(1, v, step);
+    for (Size i = 0; i < otherSize; ++i) {
+        for (Size j = 0; j < cevSize; ++j) {
+            const Size k = layout->index(std::vector<Size>{i, j});
+            QL_CHECK_SMALL(solved1[k] - solved1d[j], 1e-9*(1.0 + std::fabs(solved1d[j])));
+        }
+    }
     for (Size i = 0; i < otherSize; ++i) {
         for (Size j = 1; j + 1 < cevSize; ++j) {
             const Real c = calculated[layout->index(std::vector<Size>{i, j})];
@@ -1132,8 +1180,6 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
 
     // a wide mesh (eps = 0.1) brings the lower boundary close enough for
     // its treatment to matter: beta > 1 has no absorbing boundary at zero.
-    // beta = 1.5 and 2.5 lie on either side of delta = 3, so a shifted
-    // delta threshold is caught
     for (Real beta : std::vector<Real>{1.5, 2.5}) {
         const Real alpha = 0.30*std::pow(f0, 1.0-beta);
         for (Option::Type type : {Option::Call, Option::Put}) {

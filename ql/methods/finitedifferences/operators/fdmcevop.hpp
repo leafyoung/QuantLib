@@ -39,6 +39,9 @@ namespace QuantLib {
     class FdmMesher;
     class YieldTermStructure;
 
+    /*! The process is a driftless forward; see FdmDriftedCEVOp for an asset
+        with drift.
+    */
     class FdmCEVOp : public FdmLinearOpComposite {
       public:
 
