@@ -165,6 +165,20 @@ namespace QuantLib {
         return squared(alpha)*integral;
     }
 
+    namespace {
+        // Black-Scholes value at the local lognormal volatility
+        // alpha*f0^(beta-1) of the CEV process
+        Real cevBlackLimitValue(Option::Type type, Real strike,
+                                const CEVCalculator& calculator,
+                                Time maturity, DiscountFactor discount) {
+            return blackFormula(
+                type, strike, calculator.f0()/discount,
+                calculator.alpha()*std::pow(calculator.f0(), calculator.beta()-1.0)
+                    *std::sqrt(maturity),
+                discount);
+        }
+    }
+
     AnalyticDriftedCEVEngine::AnalyticDriftedCEVEngine(Real f0,
                                          Real alpha,
                                          Real beta,
@@ -198,12 +212,9 @@ namespace QuantLib {
             // towards infinite degrees of freedom and boost's noncentral
             // chi-squared evaluation can raise, while the deviation from the
             // limit stays within the model curvature of the neighbourhood
-            results_.value = blackFormula(
-                payoff->optionType(), payoff->strike(),
-                calculator_->f0()/discount,
-                calculator_->alpha()*std::pow(calculator_->f0(), beta - 1.0)
-                    *std::sqrt(maturity),
-                discount);
+            results_.value = cevBlackLimitValue(
+                payoff->optionType(), payoff->strike(), *calculator_,
+                maturity, discount);
             return;
         }
 
