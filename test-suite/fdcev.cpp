@@ -954,8 +954,8 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevEngineArguments) {
     BOOST_TEST_MESSAGE("Testing the mesh and scheme arguments of the drifted FDM CEV engine...");
 
     // each of the mesh width, the scaling factor and the scheme moves the
-    // price by an amount well above the tolerance used elsewhere against
-    // the analytic engine, so the arguments must reach the solver
+    // price by more than the thresholds below (about 2e-3, 9e-4 and 3e-2),
+    // so the arguments must reach the solver
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
     Settings::instance().evaluationDate() = today;
@@ -977,6 +977,49 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevEngineArguments) {
     BOOST_CHECK_GT(std::fabs(price(1e-4, 0.7, FdmSchemeDesc::Douglas()) - reference), 2e-4);
     BOOST_CHECK_GT(
         std::fabs(price(1e-4, 1.0, FdmSchemeDesc::ImplicitEuler()) - reference), 5e-3);
+}
+
+BOOST_AUTO_TEST_CASE(testFdmDriftedCevGreeksAndGrid) {
+    BOOST_TEST_MESSAGE("Testing the Greeks and grid sizes of the drifted FDM CEV engine...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, beta = 0.7, alpha = 0.30*std::pow(f0, 1.0-beta);
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.05, dc));
+    const ext::shared_ptr<PlainVanillaPayoff> payoff =
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+
+    // reference Greeks by bumping the analytic engine
+    const auto analytic = [&](Real f, Integer days) -> Real {
+        VanillaOption o(payoff, ext::make_shared<EuropeanExercise>(today + days));
+        o.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
+            f, alpha, beta, rTS));
+        return o.NPV();
+    };
+    const Real h = 1.0;
+    const Real delta = (analytic(f0+h, 365) - analytic(f0-h, 365))/(2*h);
+    const Real gamma =
+        (analytic(f0+h, 365) - 2*analytic(f0, 365) + analytic(f0-h, 365))/(h*h);
+    const Real theta = -(analytic(f0, 370) - analytic(f0, 360))/(10.0/365.0);
+
+    VanillaOption option(payoff, ext::make_shared<EuropeanExercise>(today + 365));
+    option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+        f0, alpha, beta, rTS, 100, 400, 2));
+    QL_CHECK_SMALL(option.delta() - delta, 1e-3);
+    QL_CHECK_SMALL(option.gamma() - gamma, 2e-4);
+    QL_CHECK_SMALL(option.theta() - theta, 2e-2);
+
+    // the grid sizes reach the solver: coarse grids move the price
+    const auto price = [&](Size tGrid, Size xGrid) {
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+            f0, alpha, beta, rTS, tGrid, xGrid, 2));
+        return option.NPV();
+    };
+    const Real reference = price(50, 400);
+    BOOST_CHECK_GT(std::fabs(price(5, 400) - reference), 1e-3);
+    BOOST_CHECK_GT(std::fabs(price(50, 25) - reference), 1e-3);
 }
 
 BOOST_AUTO_TEST_CASE(testAnalyticCevEngineBetaOne) {
@@ -1133,10 +1176,15 @@ BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
     const Real step = 0.01;
     const Array solved1d = op1d.solve_splitting(0, g, step);
     const Array solved1 = op2d.solve_splitting(1, v, step);
+    // and it inverts (I + step*A), with A the operator along that axis
+    const Array residual = solved1 + step*op2d.apply_direction(1, solved1);
+    const Array preconditioned = op2d.preconditioner(v, step);
     for (Size i = 0; i < otherSize; ++i) {
         for (Size j = 0; j < cevSize; ++j) {
             const Size k = layout->index(std::vector<Size>{i, j});
             QL_CHECK_SMALL(solved1[k] - solved1d[j], 1e-9*(1.0 + std::fabs(solved1d[j])));
+            QL_CHECK_SMALL(residual[k] - v[k], 1e-10*(1.0 + std::fabs(v[k])));
+            QL_CHECK_SMALL(preconditioned[k] - solved1[k], 1e-12*(1.0 + std::fabs(solved1[k])));
         }
     }
     for (Size i = 0; i < otherSize; ++i) {

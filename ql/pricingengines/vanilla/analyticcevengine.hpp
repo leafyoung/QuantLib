@@ -36,15 +36,15 @@ namespace QuantLib {
         \f]
     */
 
-    /*! References:
+    /*! The process is a driftless forward; see cevEffectiveTime for the
+        asset with drift.
+
+        References:
 
         D.R. Brecher, A.E. Lindsay, Results on the CEV Process, Past and Present
         https://www.fincad.com/sites/default/files/wysiwyg/Resources-Wiki/cev-process-working-paper.pdf
     */
 
-    /*! The process is a driftless forward; see cevEffectiveTime for the
-        asset with drift.
-    */
     class CEVCalculator {
       public:
         CEVCalculator(Real f0, Real alpha, Real beta);
@@ -94,7 +94,6 @@ namespace QuantLib {
         elsewhere); boost then raises its own exception, not a
         QuantLib::Error.
     */
-    // CEVCalculator::value applies the same width to its beta = 1 guard
     constexpr double cevBlackLimitBandWidth = 1e-4;
 
     /*! Effective time of the drift-removed CEV process.
