@@ -71,29 +71,33 @@ namespace QuantLib {
         \f$ \beta = 1 \f$ and is the reference there.
         The boundary values are the European prices at the mesh bounds (the
         closed form, or its Black approximation near \f$ \beta = 1 \f$ or
-        where the closed form fails), which suits European exercise; with early exercise they are an
-        approximation that improves as the mesh widens (smaller eps); for
-        \f$ \beta > 1 \f$ American calls do not converge as the mesh widens.
+        where the closed form fails), which suits European exercise; with early
+        exercise they are an approximation that improves as the mesh widens
+        (smaller eps) for \f$ \beta < 1 \f$. For \f$ \beta > 1 \f$ American
+        calls do not converge as the mesh widens, and an eps below the
+        default can give wrong prices, so keep the default there.
         Only plain vanilla payoffs are supported. As with other
         finite-difference engines, the kinked payoff needs
-        \p dampingSteps of at least 1 (2 is typical) for accurate prices and
-        Greeks at short maturities; the default of 0 can give oscillating
-        Greeks and slightly negative prices far out of the money. When the
-        drift dominates (the rate times the maturity of about 2 or more at
-        a volatility of 1% or less), \p tGrid has to grow with it.
+        \p dampingSteps of 2 for accurate prices and Greeks (one step leaves
+        the at-the-money gamma off by a few tens of percent on a fine
+        grid); the default of 0 can give oscillating Greeks and slightly
+        negative prices far out of the money. \p tGrid has to grow with the
+        drift (the rate times the maturity of about 2 or more at a
+        volatility of 1% or less) and with the maturity for \f$ \beta > 1 \f$
+        calls, where 50 steps can be off by several percent.
     */
     class FdDriftedCEVVanillaEngine : public VanillaOption::engine {
       public:
         FdDriftedCEVVanillaEngine(Real f0,
-                           Real alpha,
-                           Real beta,
-                           Handle<YieldTermStructure> discountCurve,
-                           Size tGrid = 50,
-                           Size xGrid = 400,
-                           Size dampingSteps = 0,
-                           Real scalingFactor = 1.0,
-                           Real eps = 1e-4,
-                           const FdmSchemeDesc& schemeDesc = FdmSchemeDesc::Douglas());
+                                  Real alpha,
+                                  Real beta,
+                                  Handle<YieldTermStructure> discountCurve,
+                                  Size tGrid = 50,
+                                  Size xGrid = 400,
+                                  Size dampingSteps = 0,
+                                  Real scalingFactor = 1.0,
+                                  Real eps = 1e-4,
+                                  const FdmSchemeDesc& schemeDesc = FdmSchemeDesc::Douglas());
 
         void calculate() const override;
 

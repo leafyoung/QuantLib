@@ -169,8 +169,8 @@ namespace QuantLib {
         class DriftedPriceAtBoundary {
           public:
             DriftedPriceAtBoundary(Time maturityTime,
-                            ext::shared_ptr<StrikedTypePayoff> payoff,
-                            ext::shared_ptr<YieldTermStructure> rTS,
+                                   ext::shared_ptr<StrikedTypePayoff> payoff,
+                                   ext::shared_ptr<YieldTermStructure> rTS,
                             Real boundary, Real alpha, Real beta)
             : maturityTime_(maturityTime), payoff_(std::move(payoff)),
               rTS_(std::move(rTS)),
@@ -183,7 +183,9 @@ namespace QuantLib {
                 // within the curve's range. A window shorter than about a
                 // day is replaced by one of that length: the noncentral
                 // chi-squared evaluation fails for very short windows,
-                // and the boundary value hardly changes over them.
+                // and the boundary value hardly changes over them, except at
+                // the upper bound of a beta > 1 call, where the bias is
+                // about 5e-3 of the price at the default eps.
                 const Time t = std::min<Real>(
                     rollbackTime,
                     maturityTime_ - std::min<Real>(1.0/365.0, 0.5*maturityTime_));
@@ -244,14 +246,14 @@ namespace QuantLib {
     }
 
     FdDriftedCEVVanillaEngine::FdDriftedCEVVanillaEngine(Real f0,
-                                           Real alpha,
-                                           Real beta,
-                                           Handle<YieldTermStructure> discountCurve,
-                                           Size tGrid,
-                                           Size xGrid,
-                                           Size dampingSteps,
-                                           Real scalingFactor,
-                                           Real eps,
+                                                         Real alpha,
+                                                         Real beta,
+                                                         Handle<YieldTermStructure> discountCurve,
+                                                         Size tGrid,
+                                                         Size xGrid,
+                                                         Size dampingSteps,
+                                                         Real scalingFactor,
+                                                         Real eps,
                                            const FdmSchemeDesc& schemeDesc)
     : f0_(f0), alpha_(alpha), beta_(beta), discountCurve_(std::move(discountCurve)), tGrid_(tGrid),
       xGrid_(xGrid), dampingSteps_(dampingSteps), scalingFactor_(scalingFactor), eps_(eps),

@@ -167,9 +167,9 @@ namespace QuantLib {
     }
 
     AnalyticDriftedCEVEngine::AnalyticDriftedCEVEngine(Real f0,
-                                         Real alpha,
-                                         Real beta,
-                                         Handle<YieldTermStructure> discountCurve)
+                                                       Real alpha,
+                                                       Real beta,
+                                                       Handle<YieldTermStructure> discountCurve)
     : calculator_(ext::make_shared<CEVCalculator>(f0, alpha, beta)),
       discountCurve_(std::move(discountCurve)) {
         registerWith(discountCurve_);

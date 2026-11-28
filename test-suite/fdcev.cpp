@@ -979,6 +979,49 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevEngineArguments) {
         std::fabs(price(1e-4, 1.0, FdmSchemeDesc::ImplicitEuler()) - reference), 5e-3);
 }
 
+BOOST_AUTO_TEST_CASE(testFdmDriftedCevGreeksAndGrid) {
+    BOOST_TEST_MESSAGE("Testing the Greeks and grid sizes of the drifted FDM CEV engine...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, beta = 0.7, alpha = 0.30*std::pow(f0, 1.0-beta);
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.05, dc));
+    const ext::shared_ptr<PlainVanillaPayoff> payoff =
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+
+    // reference Greeks by bumping the analytic engine
+    const auto analytic = [&](Real f, Integer days) -> Real {
+        VanillaOption o(payoff, ext::make_shared<EuropeanExercise>(today + days));
+        o.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
+            f, alpha, beta, rTS));
+        return o.NPV();
+    };
+    const Real h = 1.0;
+    const Real delta = (analytic(f0+h, 365) - analytic(f0-h, 365))/(2*h);
+    const Real gamma =
+        (analytic(f0+h, 365) - 2*analytic(f0, 365) + analytic(f0-h, 365))/(h*h);
+    const Real theta = -(analytic(f0, 370) - analytic(f0, 360))/(10.0/365.0);
+
+    VanillaOption option(payoff, ext::make_shared<EuropeanExercise>(today + 365));
+    option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+        f0, alpha, beta, rTS, 100, 400, 2));
+    QL_CHECK_SMALL(option.delta() - delta, 1e-3);
+    QL_CHECK_SMALL(option.gamma() - gamma, 2e-4);
+    QL_CHECK_SMALL(option.theta() - theta, 2e-2);
+
+    // the grid sizes reach the solver: coarse grids move the price
+    const auto price = [&](Size tGrid, Size xGrid) {
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+            f0, alpha, beta, rTS, tGrid, xGrid, 2));
+        return option.NPV();
+    };
+    const Real reference = price(50, 400);
+    BOOST_CHECK_GT(std::fabs(price(5, 400) - reference), 1e-3);
+    BOOST_CHECK_GT(std::fabs(price(50, 25) - reference), 1e-3);
+}
+
 BOOST_AUTO_TEST_CASE(testCevEffectiveTimeInputGuards) {
     BOOST_TEST_MESSAGE("Testing the CEV effective time input guards...");
 
