@@ -29,7 +29,6 @@
 #include <ql/methods/finitedifferences/operators/fdmcevop.hpp>
 #include <ql/methods/finitedifferences/operators/fdmlinearoplayout.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
-#include <ql/time/daycounters/actualactual.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
@@ -37,6 +36,7 @@
 #include <ql/shared_ptr.hpp>
 #include <ql/termstructures/yield/discountcurve.hpp>
 #include <ql/termstructures/yield/flatforward.hpp>
+#include <ql/time/daycounters/actualactual.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 
 using namespace QuantLib;
@@ -789,17 +789,16 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
     const ext::shared_ptr<Exercise> exercise =
         ext::make_shared<EuropeanExercise>(today + Period(12, Months));
 
-    // beta = 1-5e-4 is the closest value outside the band at which the
-    // mesher's boost evaluation converges on this mesh. The tolerance
-    // covers the genuine model difference between the two betas (about
-    // 0.023 here); a wrong boundary value moves the price by much more.
+    // beta = 1-1.5e-4 lies just outside the band. The tolerance covers the
+    // genuine model difference between the two betas (about 0.005 here); a
+    // wrong boundary value moves the price by much more.
     const Real eps = 0.2;
-    const Real tol = 0.05;
+    const Real tol = 0.01;
     for (Option::Type type : {Option::Call, Option::Put}) {
         const auto payoff = ext::make_shared<PlainVanillaPayoff>(type, 100.0);
         VanillaOption vanilla(payoff, exercise);
         std::vector<Real> prices;
-        for (Real beta : std::vector<Real>{1.0-5e-5, 1.0-5e-4}) {
+        for (Real beta : std::vector<Real>{1.0-5e-5, 1.0-1.5e-4}) {
             vanilla.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
                 f0, alpha, beta, rTS, 200, 400, 1, 1.0, eps));
             prices.push_back(vanilla.NPV());
@@ -1022,6 +1021,16 @@ BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
     const Real difference = std::fabs(option.NPV() - black);
     BOOST_CHECK_GT(difference, 1e-4);
     BOOST_CHECK_LT(difference, 2e-3);
+
+    // closer to the band the skew is smaller but still resolved: the band
+    // is no wider than 1.5e-4
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        f0, alpha, 1.0-1.5e-4, rTS));
+    const Real localBlack = blackFormula(
+        payoff, f0/discount,
+        alpha*std::pow(f0, -1.5e-4)
+            *std::sqrt(rTS->timeFromReference(maturityDate)), discount);
+    BOOST_CHECK_GT(std::fabs(option.NPV() - localBlack), 5e-5);
 }
 
 BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {

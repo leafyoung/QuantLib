@@ -47,8 +47,8 @@ namespace QuantLib {
 
         // the integrand is smooth and positive for flat rate curves and
         // piecewise smooth otherwise; one 64 point Gauss-Legendre rule per
-        // year of the interval resolves it to about 1e-5 relative even at a
-        // curve kink. The rule is built once: the FDM boundary evaluates
+        // year of the interval resolves it to about 1e-5 relative at a curve
+        // kink (at most about 5e-5 for an extreme single jump). The rule is built once: the FDM boundary evaluates
         // this at every time step.
         static const GaussLegendreIntegration quadrature(64);
         const Size panels = std::max<Size>(1, Size(std::ceil(end-start)));
@@ -144,10 +144,8 @@ namespace QuantLib {
                    "not an European option");
 
         ext::shared_ptr<StrikedTypePayoff> payoff =
-            ext::dynamic_pointer_cast<StrikedTypePayoff>(arguments_.payoff);
-        QL_REQUIRE(payoff, "non-striked payoff given");
-        QL_REQUIRE(ext::dynamic_pointer_cast<PlainVanillaPayoff>(payoff),
-                   "only plain vanilla payoffs are supported");
+            ext::dynamic_pointer_cast<PlainVanillaPayoff>(arguments_.payoff);
+        QL_REQUIRE(payoff, "only plain vanilla payoffs are supported");
 
         const Date exerciseDate = arguments_.exercise->lastDate();
         const Time maturity = discountCurve_->timeFromReference(exerciseDate);
