@@ -153,15 +153,18 @@ namespace QuantLib {
     }
 
     namespace {
-        // Black-Scholes value at the local lognormal volatility
-        // alpha*f0^(beta-1) of the CEV process
+        // Black-Scholes value at the local lognormal volatility f0^(beta-1)
+        // of the unit-volatility process run for the effective time
         Real cevBlackLimitValue(Option::Type type, Real strike,
                                 const CEVCalculator& calculator,
+                                const ext::shared_ptr<YieldTermStructure>& curve,
                                 Time maturity, DiscountFactor discount) {
+            const Real effectiveTime = cevEffectiveTime(
+                calculator.alpha(), calculator.beta(), curve, 0.0, maturity);
             return blackFormula(
                 type, strike, calculator.f0()/discount,
-                calculator.alpha()*std::pow(calculator.f0(), calculator.beta()-1.0)
-                    *std::sqrt(maturity),
+                std::pow(calculator.f0(), calculator.beta()-1.0)
+                    *std::sqrt(effectiveTime),
                 discount);
         }
     }
@@ -201,7 +204,7 @@ namespace QuantLib {
             // limit stays within the model curvature of the neighbourhood
             results_.value = cevBlackLimitValue(
                 payoff->optionType(), payoff->strike(), *calculator_,
-                maturity, discount);
+                discountCurve_.currentLink(), maturity, discount);
             return;
         }
 

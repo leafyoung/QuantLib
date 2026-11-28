@@ -36,10 +36,7 @@ namespace QuantLib {
         \f]
     */
 
-    /*! The process is a driftless forward; see cevEffectiveTime for the
-        asset with drift.
-
-        References:
+    /*! References:
 
         D.R. Brecher, A.E. Lindsay, Results on the CEV Process, Past and Present
         https://www.fincad.com/sites/default/files/wysiwyg/Resources-Wiki/cev-process-working-paper.pdf
