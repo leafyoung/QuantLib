@@ -245,9 +245,9 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
                     ext::make_shared<PlainVanillaPayoff>(Option::Put, strike),
                     exercise);
 
-                call.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                call.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
-                put.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                put.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
                 // call - put = disc*(E[f_T] - strike), where the
@@ -324,7 +324,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                     payoff, f0/discount, stdDev*std::pow(f0, beta-1.0),
                     discount);
                 VanillaOption option(payoff, exercise);
-                option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
                 const Real calculated = option.NPV();
@@ -352,7 +352,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                 // requires beta != 1
                 if (beta == 1.0-5e-5) {
                     option.setPricingEngine(
-                        ext::make_shared<FdCEVVanillaEngine>(
+                        ext::make_shared<FdDriftedCEVVanillaEngine>(
                             f0, alpha, beta, Handle<YieldTermStructure>(rTS),
                             100, 200, 1, 1.0, 1e-6));
 
@@ -414,7 +414,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
         VanillaOption option(
             ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
             exercise);
-        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
             f0, alpha, 0.0, Handle<YieldTermStructure>(rTS)));
 
         const Real calculated = option.NPV();
@@ -447,7 +447,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
             VanillaOption option(
                 ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
                 exercise);
-            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                 f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
             const Real calculated = option.NPV();
@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
             VanillaOption option(
                 ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
                 exercise);
-            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                 f0, alpha, beta, Handle<YieldTermStructure>(rTS0)));
 
             const Real calculated = option.NPV();
@@ -518,7 +518,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
             VanillaOption option(
                 ext::make_shared<PlainVanillaPayoff>(Option::Put, 100.0),
                 exercise);
-            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                 f0, alpha, 1.5, Handle<YieldTermStructure>(rTS0)));
 
             const Real calculated = option.NPV();
@@ -552,7 +552,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
             VanillaOption option(
                 ext::make_shared<PlainVanillaPayoff>(Option::Call, strike),
                 exercise);
-            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                 f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
 
             const Real calculated = option.NPV();
@@ -605,13 +605,13 @@ BOOST_AUTO_TEST_CASE(testFdmCevPiecewiseRateCurve) {
 
     VanillaOption option(
         ext::make_shared<PlainVanillaPayoff>(Option::Call, strike), exercise);
-    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
         f0, alpha, 0.9, rTS));
     const Real analyticNPV = option.NPV();
 
     // a time grid with more than 365 steps per year puts rollback steps
     // within a day of the curve's maximum time
-    option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+    option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
         f0, alpha, 0.9, rTS, 400, 400, 1, 1.0, 1e-6));
 
     const Real calculatedNPV = option.NPV();
@@ -644,19 +644,19 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevExpiredOption) {
     VanillaOption option(
         ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
         ext::make_shared<EuropeanExercise>(today));
-    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
         100.0, 0.30, 0.9, rTS));
 
     BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
 
     // the FDM engine rejects the same input through its own maturity path
-    option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+    option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
         100.0, 0.30, 0.9, rTS, 100, 100, 1, 1.0, 1e-6));
 
     BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
 
     // inside the Black band the same input is rejected, not priced
-    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
         100.0, 0.30, 1.0, rTS));
 
     BOOST_CHECK_THROW(option.NPV(), QuantLib::Error);
@@ -750,8 +750,8 @@ BOOST_AUTO_TEST_CASE(testCevEnginesReactToRateCurve) {
         ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
 
     const std::vector<ext::shared_ptr<PricingEngine>> engines = {
-        ext::make_shared<AnalyticCEVEngine>(100.0, 0.30, 0.8, rTS),
-        ext::make_shared<FdCEVVanillaEngine>(100.0, 0.30, 0.8, rTS,
+        ext::make_shared<AnalyticDriftedCEVEngine>(100.0, 0.30, 0.8, rTS),
+        ext::make_shared<FdDriftedCEVVanillaEngine>(100.0, 0.30, 0.8, rTS,
                                              50, 100, 1, 1.0, 1e-6)
     };
 
@@ -799,7 +799,7 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
         VanillaOption vanilla(payoff, exercise);
         std::vector<Real> prices;
         for (Real beta : std::vector<Real>{1.0-5e-5, 1.0-1.5e-4}) {
-            vanilla.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+            vanilla.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
                 f0, alpha, beta, rTS, 200, 400, 1, 1.0, eps));
             prices.push_back(vanilla.NPV());
         }
@@ -833,11 +833,11 @@ BOOST_AUTO_TEST_CASE(testFdmCevNearBlackLimitAwayFromTheMoney) {
             for (Option::Type type : {Option::Call, Option::Put}) {
                 VanillaOption fd(
                     ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
-                fd.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+                fd.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
                     f0, alpha, beta, rTS, 200, 400));
                 VanillaOption analytic(
                     ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
-                analytic.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                analytic.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                     f0, alpha, beta, rTS));
                 const Real expected = analytic.NPV();
                 QL_CHECK_CLOSE(fd.NPV(), expected, 2.0);
@@ -868,10 +868,10 @@ BOOST_AUTO_TEST_CASE(testFdmCevBoundaryFallbackValue) {
                 const Real alpha = vol*std::pow(f0, 1.0-beta);
                 VanillaOption option(
                     ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
-                option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                     f0, alpha, beta, rTS));
                 const Real expected = option.NPV();
-                option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+                option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
                     f0, alpha, beta, rTS, 50, 400, 2, 1.0, 0.2));
                 QL_CHECK_SMALL(option.NPV() - expected, 2e-3);
             }
@@ -894,26 +894,62 @@ BOOST_AUTO_TEST_CASE(testCevEnginesRejectNonVanillaPayoffs) {
         ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
 
     digital.setPricingEngine(
-        ext::make_shared<AnalyticCEVEngine>(100.0, 0.3, 0.5, rTS));
+        ext::make_shared<AnalyticDriftedCEVEngine>(100.0, 0.3, 0.5, rTS));
     BOOST_CHECK_THROW(digital.NPV(), Error);
 
     digital.setPricingEngine(
-        ext::make_shared<FdCEVVanillaEngine>(100.0, 0.3, 0.5, rTS, 50, 100, 1));
+        ext::make_shared<FdDriftedCEVVanillaEngine>(100.0, 0.3, 0.5, rTS, 50, 100, 1));
     BOOST_CHECK_THROW(digital.NPV(), Error);
 }
 
-BOOST_AUTO_TEST_CASE(testCevCalculatorInputGuards) {
-    BOOST_TEST_MESSAGE("Testing the CEV calculator and effective time input guards...");
+BOOST_AUTO_TEST_CASE(testCevEffectiveTimeInputGuards) {
+    BOOST_TEST_MESSAGE("Testing the CEV effective time input guards...");
 
-    // the closed form is not evaluated inside the Black band
-    BOOST_CHECK_THROW(
-        CEVCalculator(100.0, 0.3, 1.0 + 0.5*cevBlackLimitBandWidth)
-            .value(Option::Call, 100.0, 1.0),
-        Error);
-    // and a missing discount curve is rejected
+    // a missing discount curve is rejected
     BOOST_CHECK_THROW(
         cevEffectiveTime(0.3, 0.5, ext::shared_ptr<YieldTermStructure>(), 0.0, 1.0),
         Error);
+}
+
+BOOST_AUTO_TEST_CASE(testDriftedEnginesAtZeroRate) {
+    BOOST_TEST_MESSAGE("Testing that the drifted CEV engines match the forward engines at zero rates...");
+
+    // the forward engines price a driftless forward and discount it; the
+    // drifted engines price an asset with drift given by the curve. The two
+    // conventions coincide at zero rates and differ at positive rates.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, alpha = 0.30*std::pow(100.0, 0.2);
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months));
+    const ext::shared_ptr<PlainVanillaPayoff> payoff =
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0);
+    VanillaOption option(payoff, exercise);
+
+    const Handle<YieldTermStructure> zero(flatRate(today, 0.0, dc));
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        f0, alpha, 0.8, zero));
+    const Real forwardNpv = option.NPV();
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
+        f0, alpha, 0.8, zero));
+    QL_CHECK_SMALL(option.NPV() - forwardNpv, 1e-9);
+
+    option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+        f0, alpha, 0.8, zero, 100, 400, 1));
+    const Real fdForwardNpv = option.NPV();
+    option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+        f0, alpha, 0.8, zero, 100, 400, 1));
+    QL_CHECK_SMALL(option.NPV() - fdForwardNpv, 1e-3);
+
+    const Handle<YieldTermStructure> positive(flatRate(today, 0.03, dc));
+    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        f0, alpha, 0.8, positive));
+    const Real forward = option.NPV();
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
+        f0, alpha, 0.8, positive));
+    BOOST_CHECK_GT(option.NPV() - forward, 1.0);
 }
 
 BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
@@ -938,8 +974,8 @@ BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
         ext::make_shared<FdmMesherComposite>(
             ext::make_shared<Uniform1dMesher>(0.0, 1.0, otherSize), cev);
 
-    FdmCEVOp op1d(mesher1d, rTS, f0, alpha, beta, 0);
-    FdmCEVOp op2d(mesher2d, rTS, f0, alpha, beta, 1);
+    FdmDriftedCEVOp op1d(mesher1d, rTS, f0, alpha, beta, 0);
+    FdmDriftedCEVOp op2d(mesher2d, rTS, f0, alpha, beta, 1);
     op1d.setTime(0.0, 0.1);
     op2d.setTime(0.0, 0.1);
 
@@ -981,10 +1017,10 @@ BOOST_AUTO_TEST_CASE(testFdmCevOneDayOption) {
         const Real alpha = 0.3*std::pow(f0, 1.0-beta);
         VanillaOption option(
             ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0), exercise);
-        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
             f0, alpha, beta, rTS));
         const Real analytic = option.NPV();
-        option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
             f0, alpha, beta, rTS));
         Real pde = Null<Real>();
         BOOST_CHECK_NO_THROW(pde = option.NPV());
@@ -1016,7 +1052,7 @@ BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
         alpha*std::pow(f0, beta-1.0)
             *std::sqrt(rTS->timeFromReference(maturityDate)), discount);
 
-    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
         f0, alpha, beta, rTS));
     const Real difference = std::fabs(option.NPV() - black);
     BOOST_CHECK_GT(difference, 1e-4);
@@ -1024,7 +1060,7 @@ BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
 
     // closer to the band the skew is smaller but still resolved: the band
     // is no wider than 1.5e-4
-    option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+    option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
         f0, alpha, 1.0-1.5e-4, rTS));
     const Real localBlack = blackFormula(
         payoff, f0/discount,
@@ -1054,10 +1090,10 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
         for (Option::Type type : {Option::Call, Option::Put}) {
             VanillaOption option(
                 ext::make_shared<PlainVanillaPayoff>(type, 100.0), exercise);
-            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
                 f0, alpha, beta, rTS));
             const Real analytic = option.NPV();
-            option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+            option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
                 f0, alpha, beta, rTS, 200, 400, 1, 1.0, 0.1));
             const Real pde = option.NPV();
             if (std::fabs(analytic - pde) > 0.02) {
@@ -1113,10 +1149,10 @@ BOOST_AUTO_TEST_CASE(testFdmCevDriftStability) {
         VanillaOption option(
             ext::make_shared<PlainVanillaPayoff>(c.type, c.strike),
             ext::make_shared<EuropeanExercise>(today + c.days));
-        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+        option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
             f0, alpha, c.beta, rTS));
         const Real analytic = option.NPV();
-        option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
             f0, alpha, c.beta, rTS));
         const Real pde = option.NPV();
         if (!(std::fabs(analytic - pde) <= c.tolerance)) {
