@@ -35,12 +35,14 @@ namespace QuantLib {
     /*! As in AnalyticCEVEngine, the underlying is an asset with drift
         given by the discount curve, not a driftless forward. FdSabrVanillaEngine
         models a driftless forward, so the two agree only for a zero rate.
-        The mesher requires \f$ \beta \neq 1 \f$ (and fails to converge
-        closer to one than about 3e-4 on a wide mesh), unlike
-        AnalyticCEVEngine, which accepts \f$ \beta = 1 \f$.
+        The mesher requires \f$ \beta \neq 1 \f$. Within a few
+        multiples of 1e-3 of one, the noncentral chi-squared evaluation of
+        the closed form can fail for short maturities and low volatilities;
+        AnalyticCEVEngine accepts \f$ \beta = 1 \f$ and is the reference there.
         The boundary values are the European prices at the mesh bounds, which
         is exact for European exercise; with early exercise they are an
-        approximation that improves as the mesh widens (smaller eps).
+        approximation that improves as the mesh widens (smaller eps); for
+        \f$ \beta > 1 \f$ American calls do not converge as the mesh widens.
     */
     class FdCEVVanillaEngine : public VanillaOption::engine {
       public:
