@@ -27,6 +27,8 @@
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <boost/math/distributions/non_central_chi_squared.hpp>
 #include <boost/math/special_functions/gamma.hpp>
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace QuantLib {
@@ -44,18 +46,25 @@ namespace QuantLib {
         const Real exponent = 2.0*(1.0-beta);
 
         // the integrand is smooth and positive for flat rate curves and
-        // piecewise smooth otherwise; a fixed 64 point Gauss-Legendre rule
-        // resolves it to about 1e-6 even at a curve kink. The rule is built
-        // once: the FDM boundary evaluates this at every time step.
+        // piecewise smooth otherwise; one 64 point Gauss-Legendre rule per
+        // year of the interval resolves it to about 1e-5 relative even at a
+        // curve kink. The rule is built once: the FDM boundary evaluates
+        // this at every time step.
         static const GaussLegendreIntegration quadrature(64);
-        const Time halfLength = 0.5*(end-start);
-        const Time mid = 0.5*(end+start);
+        const Size panels = std::max<Size>(1, Size(std::ceil(end-start)));
+        const Time halfLength = 0.5*(end-start)/Real(panels);
 
-        return squared(alpha)*halfLength*quadrature(
-            [&](Real x) -> Real {
-                const Time s = mid + halfLength*x;
-                return std::pow(discountCurve->discount(s)/dStart, exponent);
-            });
+        Real integral = 0.0;
+        for (Size k = 0; k < panels; ++k) {
+            const Time mid = start + (2.0*Real(k)+1.0)*halfLength;
+            integral += halfLength*quadrature(
+                [&](Real x) -> Real {
+                    const Time s = mid + halfLength*x;
+                    return std::pow(discountCurve->discount(s)/dStart,
+                                    exponent);
+                });
+        }
+        return squared(alpha)*integral;
     }
 
     CEVCalculator::CEVCalculator(Real f0, Real alpha, Real beta)
@@ -158,7 +167,9 @@ namespace QuantLib {
             results_.value = blackFormula(
                 payoff->optionType(), payoff->strike(),
                 calculator_->f0()/discount,
-                calculator_->alpha()*std::sqrt(maturity), discount);
+                calculator_->alpha()*std::pow(calculator_->f0(), beta - 1.0)
+                    *std::sqrt(maturity),
+                discount);
             return;
         }
 

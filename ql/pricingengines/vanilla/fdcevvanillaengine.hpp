@@ -41,8 +41,9 @@ namespace QuantLib {
         volatilities) but also sporadically elsewhere, including inside the
         Black band of AnalyticCEVEngine, which accepts
         \f$ \beta = 1 \f$ and is the reference there.
-        The boundary values are the European prices at the mesh bounds, which
-        is exact for European exercise; with early exercise they are an
+        The boundary values are the European prices at the mesh bounds (the
+        closed form, or its Black approximation near \f$ \beta = 1 \f$ or
+        where the closed form fails), which suits European exercise; with early exercise they are an
         approximation that improves as the mesh widens (smaller eps); for
         \f$ \beta > 1 \f$ American calls do not converge as the mesh widens.
         Only plain vanilla payoffs are supported. As with other

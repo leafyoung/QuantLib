@@ -73,7 +73,9 @@ namespace QuantLib {
                     return blackFormula(
                         payoff_->optionType(), payoff_->strike(),
                         boundary_/df,
-                        alpha_*std::sqrt(maturityTime_ - t), df);
+                        alpha_*std::pow(boundary_, beta_ - 1.0)
+                            *std::sqrt(maturityTime_ - t),
+                        df);
                 }
 
                 // drift-removed unit volatility process, see cevEffectiveTime
