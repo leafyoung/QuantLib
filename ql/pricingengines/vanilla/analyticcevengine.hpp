@@ -37,7 +37,7 @@ namespace QuantLib {
 
         For \f$ \beta < 1 \f$ the process has an absorbing boundary at
         \f$ f = 0 \f$; for \f$ \beta > 1 \f$ zero is unattainable and
-        \f$ f \f$ is a strict local martingale under its own measure.
+        the discounted process is a strict local martingale.
     */
 
     /*! References:

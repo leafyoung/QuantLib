@@ -790,6 +790,40 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testFdmCevNearBlackLimitAwayFromTheMoney) {
+    BOOST_TEST_MESSAGE("Testing the FDM CEV engine near beta = 1 away from the money...");
+
+    // Close to beta = 1 the noncentral chi-squared evaluation at a
+    // far-from-the-money boundary can fail. The engine must still price,
+    // and agree with the analytic engine.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, alpha = 0.10;
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.0, dc));
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months));
+
+    for (Real beta : {0.999, 1.001}) {
+        for (Real strike : {70.0, 130.0}) {
+            for (Option::Type type : {Option::Call, Option::Put}) {
+                VanillaOption fd(
+                    ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
+                fd.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+                    f0, alpha, beta, rTS, 200, 400));
+                VanillaOption analytic(
+                    ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
+                analytic.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                    f0, alpha, beta, rTS));
+                const Real expected = analytic.NPV();
+                QL_CHECK_CLOSE(fd.NPV(), expected, 2.0);
+                QL_CHECK_SMALL(fd.NPV() - expected, 5e-3);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
     BOOST_TEST_MESSAGE("Testing the width of the CEV Black band...");
 
