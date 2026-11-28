@@ -44,6 +44,11 @@ namespace QuantLib {
         is exact for European exercise; with early exercise they are an
         approximation that improves as the mesh widens (smaller eps); for
         \f$ \beta > 1 \f$ American calls do not converge as the mesh widens.
+        Only plain vanilla payoffs are supported. As with other
+        finite-difference engines, the kinked payoff needs
+        \p dampingSteps of at least 1 (2 is typical) for accurate prices and
+        Greeks at short maturities; the default of 0 can give oscillating
+        Greeks and slightly negative prices far out of the money.
     */
     class FdCEVVanillaEngine : public VanillaOption::engine {
       public:
