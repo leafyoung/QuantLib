@@ -128,7 +128,10 @@ namespace QuantLib {
     */
     class AnalyticDriftedCEVEngine : public VanillaOption::engine {
       public:
-        AnalyticDriftedCEVEngine(Real f0, Real alpha, Real beta, Handle<YieldTermStructure> discountCurve);
+        AnalyticDriftedCEVEngine(Real f0,
+                                 Real alpha,
+                                 Real beta,
+                                 Handle<YieldTermStructure> discountCurve);
 
         void calculate() const override;
 

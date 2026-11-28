@@ -22,6 +22,7 @@
 */
 
 #include <ql/exercise.hpp>
+#include <ql/instruments/payoffs.hpp>
 #include <ql/methods/finitedifferences/meshers/concentrating1dmesher.hpp>
 #include <ql/methods/finitedifferences/meshers/fdmcev1dmesher.hpp>
 #include <ql/methods/finitedifferences/meshers/fdmmeshercomposite.hpp>
@@ -32,13 +33,12 @@
 #include <ql/methods/finitedifferences/utilities/fdmdiscountdirichletboundary.hpp>
 #include <ql/methods/finitedifferences/utilities/fdminnervaluecalculator.hpp>
 #include <ql/methods/finitedifferences/utilities/fdmtimedepdirichletboundary.hpp>
+#include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/termstructures/yieldtermstructure.hpp>
-#include <ql/instruments/payoffs.hpp>
-#include <ql/pricingengines/blackformula.hpp>
-#include <utility>
 #include <algorithm>
+#include <utility>
 
 namespace QuantLib {
 
@@ -344,7 +344,7 @@ namespace QuantLib {
             ext::make_shared<FdmDriftedCEVOp>(
                mesher, discountCurve_.currentLink(), f0_, alpha_, beta_, 0);
 
-        const auto solver =
+        const ext::shared_ptr<Fdm1DimSolver> solver =
             ext::make_shared<Fdm1DimSolver>(solverDesc, schemeDesc_, op);
 
         results_.value = solver->interpolateAt(f0_);
