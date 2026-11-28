@@ -128,7 +128,8 @@ namespace QuantLib {
     /*! The underlying \f$ f \f$ is an asset with drift \f$ r_t f_t \f$
         given by the discount curve, not a driftless forward; a flat zero
         curve gives the driftless process. The Black-Scholes limit is used
-        for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth.
+        for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth. Only plain vanilla
+        payoffs are supported.
     */
     class AnalyticCEVEngine : public VanillaOption::engine {
       public:

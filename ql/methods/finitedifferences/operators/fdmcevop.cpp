@@ -33,11 +33,12 @@ namespace QuantLib {
 
         // The first derivative operator with empty rows at the mesh
         // boundaries that carry a Dirichlet condition (the upper one always,
-        // the lower one when emptyLower is set). Those rows only matter
-        // through the implicit solve, where the one-sided drift term at a
-        // node with a large location-to-spacing ratio contributes a
-        // diagonal entry that empirically destabilizes the neighbouring rows
-        // for large time steps, for either sign of the rate.
+        // the lower one when emptyLower is set). Dirichlet values are
+        // imposed after the solve, so, as in SecondDerivativeOp, the end
+        // rows must be empty for the implicit row at those nodes to be the
+        // identity; a one-sided drift term there feeds into the neighbouring
+        // rows and destabilizes large time steps, for either sign of the
+        // rate.
         class DriftDerivativeOp : public FirstDerivativeOp {
           public:
             DriftDerivativeOp(Size direction,
