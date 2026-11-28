@@ -532,7 +532,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
     {
         const Real strike = 100.0;
 
-        for (Real beta : {0.5, 1.1}) {
+        for (Real beta : std::vector<Real>{0.5, 1.1}) {
             const Time effectiveTime = alpha*alpha
                 *(1.0 - std::exp(-2.0*(1.0-beta)*rate*maturity))
                 /(2.0*(1.0-beta)*rate);
@@ -632,7 +632,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevExpiredOption) {
     const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, dc));
 
     // the exercise date at the curve's reference date gives a zero
-    // maturity: the engine rejects it before any term structure access
+    // maturity: the engine rejects it
     VanillaOption option(
         ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
         ext::make_shared<EuropeanExercise>(today));
@@ -775,7 +775,7 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
         const auto payoff = ext::make_shared<PlainVanillaPayoff>(type, 100.0);
         VanillaOption vanilla(payoff, option.exercise());
         std::vector<Real> prices;
-        for (Real beta : {1.0-5e-5, 1.0-5e-4}) {
+        for (Real beta : std::vector<Real>{1.0-5e-5, 1.0-5e-4}) {
             vanilla.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
                 f0, alpha, beta, rTS, 200, 400, 1, 1.0, eps));
             prices.push_back(vanilla.NPV());
@@ -805,8 +805,8 @@ BOOST_AUTO_TEST_CASE(testFdmCevNearBlackLimitAwayFromTheMoney) {
     const ext::shared_ptr<Exercise> exercise =
         ext::make_shared<EuropeanExercise>(today + Period(12, Months));
 
-    for (Real beta : {0.999, 1.001}) {
-        for (Real strike : {70.0, 130.0}) {
+    for (Real beta : std::vector<Real>{0.999, 1.001}) {
+        for (Real strike : std::vector<Real>{70.0, 130.0}) {
             for (Option::Type type : {Option::Call, Option::Put}) {
                 VanillaOption fd(
                     ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
@@ -819,6 +819,38 @@ BOOST_AUTO_TEST_CASE(testFdmCevNearBlackLimitAwayFromTheMoney) {
                 const Real expected = analytic.NPV();
                 QL_CHECK_CLOSE(fd.NPV(), expected, 2.0);
                 QL_CHECK_SMALL(fd.NPV() - expected, 5e-3);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testFdmCevBoundaryFallbackValue) {
+    BOOST_TEST_MESSAGE("Testing the FDM CEV boundary value near beta = 1 on a wide mesh...");
+
+    // A wide mesh (eps = 0.2) makes the boundary values material. For these
+    // inputs the noncentral chi-squared evaluation fails at both boundaries,
+    // so the price depends on the Black-Scholes boundary value.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, vol = 0.10, strike = 100.0;
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + 30);
+
+    for (Real beta : std::vector<Real>{0.9998, 1.0002}) {
+        for (Rate rate : std::vector<Rate>{-0.02, 0.05}) {
+            for (Option::Type type : {Option::Call, Option::Put}) {
+                const Handle<YieldTermStructure> rTS(flatRate(today, rate, dc));
+                const Real alpha = vol*std::pow(f0, 1.0-beta);
+                VanillaOption option(
+                    ext::make_shared<PlainVanillaPayoff>(type, strike), exercise);
+                option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                    f0, alpha, beta, rTS));
+                const Real expected = option.NPV();
+                option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+                    f0, alpha, beta, rTS, 50, 400, 2, 1.0, 0.2));
+                QL_CHECK_SMALL(option.NPV() - expected, 2e-3);
             }
         }
     }
@@ -868,7 +900,7 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
     // its treatment to matter: beta > 1 has no absorbing boundary at zero.
     // beta = 1.5 and 2.5 lie on either side of delta = 3, so a shifted
     // delta threshold is caught
-    for (Real beta : {1.5, 2.5}) {
+    for (Real beta : std::vector<Real>{1.5, 2.5}) {
       const Real alpha = 0.30*std::pow(f0, 1.0-beta);
       for (Option::Type type : {Option::Call, Option::Put}) {
         VanillaOption option(
@@ -919,8 +951,8 @@ BOOST_AUTO_TEST_CASE(testFdmCevDriftStability) {
         {Option::Call, 80.0, 0.03, 1825, -0.05, 2.5, 0.05},
         {Option::Put, 80.0, 0.03, 1825, -0.05, 2.5, 0.05},
         {Option::Call, 80.0, 0.03, 1825, -0.05, 1.5, 0.05},
-        // close to beta = 1 over a short maturity: the boundary evaluation
-        // must not reach the noncentral chi-squared failure region
+        // close to beta = 1 over a short maturity, where the boundary
+        // closed form is near its failure region
         {Option::Call, 100.0, 0.03, 30, 0.0, 0.99, 0.01},
         {Option::Call, 100.0, 0.03, 30, 0.05, 0.99, 0.01}
     };

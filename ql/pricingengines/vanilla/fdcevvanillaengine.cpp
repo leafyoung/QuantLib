@@ -81,6 +81,8 @@ namespace QuantLib {
                         payoff_->optionType(),
                         payoff_->strike()*df,
                         cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_));
+                } catch (const Error&) {
+                    throw;
                 } catch (const std::exception&) {
                     // the noncentral chi-squared evaluation fails for beta
                     // close to one far from the money; the value there is
