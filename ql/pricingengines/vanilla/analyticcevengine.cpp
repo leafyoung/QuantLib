@@ -40,9 +40,6 @@ namespace QuantLib {
         QL_REQUIRE(start < end,
                    "cevEffectiveTime requires a positive time interval");
 
-        if (beta == 1.0)
-            return squared(alpha)*(end-start);
-
         const DiscountFactor dStart = discountCurve->discount(start);
         const Real exponent = 2.0*(1.0-beta);
 
@@ -93,7 +90,7 @@ namespace QuantLib {
             }
             else {
                 const Real g =
-                    boost::math::gamma_p(0.5*delta_-1.0,x0_/(2.0*t));
+                    boost::math::gamma_p(Real(0.5*delta_-1.0), Real(x0_/(2.0*t)));
 
                 return f0_ * (g - boost::math::cdf(
                          nc_chi2(delta_-2.0, kTilde/t), x0_/t))
@@ -113,8 +110,8 @@ namespace QuantLib {
                 // martingale with E[f_t] = f0*gamma_p(delta_/2-1, x0_/(2t)),
                 // so put = call - E[f_t] + strike
                 return value(Option::Call, strike, t)
-                     - f0_ * boost::math::gamma_p(0.5*delta_-1.0,
-                                                  x0_/(2.0*t))
+                     - f0_ * boost::math::gamma_p(Real(0.5*delta_-1.0),
+                                                  Real(x0_/(2.0*t)))
                      + strike;
             }
         }

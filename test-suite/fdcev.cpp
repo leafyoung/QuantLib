@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevPutCallParity) {
                         /((1.0-beta)*(1.0-beta));
 
                     expectedForward = f0*boost::math::gamma_p(
-                        0.5*delta-1.0, x0/(2.0*tau)) - strike*discount;
+                        Real(0.5*delta-1.0), Real(x0/(2.0*tau))) - strike*discount;
                 }
 
                 const Real residual =
@@ -879,6 +879,20 @@ BOOST_AUTO_TEST_CASE(testCevEnginesRejectNonVanillaPayoffs) {
     BOOST_CHECK_THROW(digital.NPV(), Error);
 }
 
+BOOST_AUTO_TEST_CASE(testCevCalculatorInputGuards) {
+    BOOST_TEST_MESSAGE("Testing the CEV calculator and effective time input guards...");
+
+    // the closed form is not evaluated inside the Black band
+    BOOST_CHECK_THROW(
+        CEVCalculator(100.0, 0.3, 1.0 + 0.5*cevBlackLimitBandWidth)
+            .value(Option::Call, 100.0, 1.0),
+        Error);
+    // and a missing discount curve is rejected
+    BOOST_CHECK_THROW(
+        cevEffectiveTime(0.3, 0.5, ext::shared_ptr<YieldTermStructure>(), 0.0, 1.0),
+        Error);
+}
+
 BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
     BOOST_TEST_MESSAGE("Testing the width of the CEV Black band...");
 
@@ -924,23 +938,23 @@ BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
     // beta = 1.5 and 2.5 lie on either side of delta = 3, so a shifted
     // delta threshold is caught
     for (Real beta : std::vector<Real>{1.5, 2.5}) {
-      const Real alpha = 0.30*std::pow(f0, 1.0-beta);
-      for (Option::Type type : {Option::Call, Option::Put}) {
-        VanillaOption option(
-            ext::make_shared<PlainVanillaPayoff>(type, 100.0), exercise);
-        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
-            f0, alpha, beta, rTS));
-        const Real analytic = option.NPV();
-        option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
-            f0, alpha, beta, rTS, 200, 400, 1, 1.0, 0.1));
-        const Real pde = option.NPV();
-        if (std::fabs(analytic - pde) > 0.02) {
-            BOOST_ERROR("failed to reproduce the analytic price"
-                        << "\n    beta         : " << beta
-                        << "\n    analytic npv : " << analytic
-                        << "\n    pde npv      : " << pde);
+        const Real alpha = 0.30*std::pow(f0, 1.0-beta);
+        for (Option::Type type : {Option::Call, Option::Put}) {
+            VanillaOption option(
+                ext::make_shared<PlainVanillaPayoff>(type, 100.0), exercise);
+            option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+                f0, alpha, beta, rTS));
+            const Real analytic = option.NPV();
+            option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+                f0, alpha, beta, rTS, 200, 400, 1, 1.0, 0.1));
+            const Real pde = option.NPV();
+            if (std::fabs(analytic - pde) > 0.02) {
+                BOOST_ERROR("failed to reproduce the analytic price"
+                            << "\n    beta         : " << beta
+                            << "\n    analytic npv : " << analytic
+                            << "\n    pde npv      : " << pde);
+            }
         }
-      }
     }
 }
 

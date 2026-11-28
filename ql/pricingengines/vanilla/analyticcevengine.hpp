@@ -86,8 +86,9 @@ namespace QuantLib {
         converge just outside the band when the noncentrality, about
         \f$ f_0^{2(1-\beta)} / ((1-\beta)^2 \alpha^2 t) \f$, is large, for
         example for very short maturities or low volatilities (the FDM
-        engine's mesher fails this way for \f$ |\beta - 1| \f$ up to
-        about 1e-3, whatever the mesh width); boost then raises its own exception, not a
+        engine's mesher can fail this way, mostly for \f$ |\beta - 1| \f$
+        up to about 1e-3 whatever the mesh width, but also sporadically
+        elsewhere); boost then raises its own exception, not a
         QuantLib::Error.
     */
     constexpr double cevBlackLimitBandWidth = 1e-4;

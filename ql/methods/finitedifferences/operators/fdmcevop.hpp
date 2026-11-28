@@ -38,6 +38,11 @@ namespace QuantLib {
         For \f$ \beta < 1 \f$ the process has an absorbing boundary at
         \f$ f = 0 \f$; for \f$ \beta > 1 \f$ zero is unattainable and
         the discounted process is a strict local martingale.
+
+        The first-derivative (drift) rows at the mesh end points that carry
+        Dirichlet conditions are emptied, so the operator is meant to be
+        used with Dirichlet boundary conditions there: the mesh's lower end
+        when \f$ \beta < 1 \f$ or it lies above zero, and its upper end.
     */
 
     class FdmMesher;
