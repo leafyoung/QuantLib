@@ -30,7 +30,43 @@
 
 namespace QuantLib {
 
-    //! constant elasticity of variance process
+    //! constant elasticity of variance process (absorbing boundary at f=0)
+    /*! \f[
+         df_t = \alpha f_t^\beta \mathrm{d}W_t
+        \f]
+    */
+
+    class FdmMesher;
+    class YieldTermStructure;
+
+    class FdmCEVOp : public FdmLinearOpComposite {
+      public:
+
+        FdmCEVOp(
+            const ext::shared_ptr<FdmMesher>& mesher,
+            const ext::shared_ptr<YieldTermStructure>& rTS,
+            Real f0, Real alpha, Real beta,
+            Size direction);
+
+        Size size() const override;
+        void setTime(Time t1, Time t2) override;
+
+        Array apply(const Array& r) const override;
+        Array apply_mixed(const Array& r) const override;
+        Array apply_direction(Size direction, const Array& r) const override;
+        Array solve_splitting(Size direction, const Array& r, Real s) const override;
+        Array preconditioner(const Array& r, Real s) const override;
+
+        std::vector<SparseMatrix> toMatrixDecomp() const override;
+
+      private:
+        const ext::shared_ptr<YieldTermStructure> rTS_;
+        const Size direction_;
+        const TripleBandLinearOp dxxMap_;
+        TripleBandLinearOp mapT_;
+    };
+
+    //! constant elasticity of variance process for an asset with drift
     /*! \f[
          df_t = r_t f_t \mathrm{d}t + \alpha f_t^\beta \mathrm{d}W_t
         \f]
@@ -45,13 +81,10 @@ namespace QuantLib {
         when \f$ \beta < 1 \f$ or it lies above zero, and its upper end.
     */
 
-    class FdmMesher;
-    class YieldTermStructure;
-
-    class FdmCEVOp : public FdmLinearOpComposite {
+    class FdmDriftedCEVOp : public FdmLinearOpComposite {
       public:
 
-        FdmCEVOp(
+        FdmDriftedCEVOp(
             const ext::shared_ptr<FdmMesher>& mesher,
             const ext::shared_ptr<YieldTermStructure>& rTS,
             Real f0, Real alpha, Real beta,

@@ -20,18 +20,115 @@
 /*! \file analyticcevengine.cpp */
 
 #include <ql/exercise.hpp>
-#include <ql/instruments/payoffs.hpp>
 #include <ql/math/functional.hpp>
-#include <ql/math/integrals/gaussianquadratures.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
+#include <ql/instruments/payoffs.hpp>
+#include <ql/math/integrals/gaussianquadratures.hpp>
 #include <boost/math/distributions/non_central_chi_squared.hpp>
 #include <boost/math/special_functions/gamma.hpp>
+#include <utility>
 #include <algorithm>
 #include <cmath>
-#include <utility>
 
 namespace QuantLib {
+
+    CEVCalculator::CEVCalculator(Real f0, Real alpha, Real beta)
+    : f0_(f0),
+      alpha_(alpha),
+      beta_(beta),
+      delta_((1.0-2.0*beta)/(1.0-beta)),
+      x0_(X(f0)) { }
+
+    Real CEVCalculator::X(Real f) const {
+        return std::pow(f, 2.0*(1.0-beta_))/squared(alpha_*(1.0-beta_));
+    }
+
+    Real CEVCalculator::value(
+        Option::Type optionType, Real strike, Time t) const {
+
+        // At beta=1, dF = alpha*F*dW is exactly geometric Brownian motion
+        // with volatility alpha: the CEV closed form degenerates (delta_'s
+        // 1/(1-beta) factor blows up, feeding the chi-squared distributions
+        // below a divide-by-zero/overflowing degrees-of-freedom parameter,
+        // which throws rather than returning a sensible price) exactly
+        // where the true model is just Black. Dispatch to the Black formula
+        // for beta at or extremely close to 1, where the CEV closed form is
+        // both undefined/unstable and numerically indistinguishable from it
+        // anyway.
+        if (std::fabs(beta_ - 1.0) < 1.0e-4) {
+            return blackFormula(optionType, strike, f0_, alpha_*std::sqrt(t), 1.0);
+        }
+
+        typedef boost::math::non_central_chi_squared_distribution<Real>
+            nc_chi2;
+
+        const Real kTilde = X(strike);
+
+        if (optionType == Option::Call) {
+            if (delta_ < 2.0) {
+                return f0_ * (1.0 - boost::math::cdf(
+                         nc_chi2(4.0-delta_, x0_/t), kTilde/t))
+                     - strike * boost::math::cdf(
+                         nc_chi2(2.0-delta_, kTilde/t), x0_/t);
+            }
+            else {
+                const Real g =
+                    boost::math::gamma_p(0.5*delta_-1.0,x0_/(2.0*t));
+
+                return f0_ * (g - boost::math::cdf(
+                         nc_chi2(delta_-2.0, kTilde/t), x0_/t))
+                     - strike * boost::math::cdf(
+                         nc_chi2(delta_, x0_/t), kTilde/t);
+            }
+        }
+        else if (optionType == Option::Put) {
+            if (delta_ < 2.0) {
+                return - f0_ * boost::math::cdf(
+                           nc_chi2(4.0-delta_, x0_/t), kTilde/t)
+                       + strike * (1.0 - boost::math::cdf(
+                           nc_chi2(2.0-delta_, kTilde/t), x0_/t));
+            }
+            else {
+                return - f0_ * boost::math::cdf(
+                           nc_chi2(delta_-2.0, kTilde/t), x0_/t)
+                       + strike * (1.0 - boost::math::cdf(
+                           nc_chi2(delta_, x0_/t), kTilde/t));
+            }
+        }
+        else {
+            QL_FAIL("unknown option type");
+}
+
+    }
+
+    AnalyticCEVEngine::AnalyticCEVEngine(Real f0,
+                                         Real alpha,
+                                         Real beta,
+                                         Handle<YieldTermStructure> discountCurve)
+    : calculator_(ext::make_shared<CEVCalculator>(f0, alpha, beta)),
+      discountCurve_(std::move(discountCurve)) {
+        registerWith(discountCurve_);
+    }
+
+    void AnalyticCEVEngine::calculate() const {
+
+        QL_REQUIRE(arguments_.exercise->type() == Exercise::European,
+                   "not an European option");
+
+        ext::shared_ptr<StrikedTypePayoff> payoff =
+            ext::dynamic_pointer_cast<StrikedTypePayoff>(arguments_.payoff);
+        QL_REQUIRE(payoff, "non-striked payoff given");
+
+        const Date exerciseDate = arguments_.exercise->lastDate();
+
+        results_.value = calculator_->value(
+                payoff->optionType(),
+                payoff->strike(),
+                discountCurve_->timeFromReference(exerciseDate))
+            * discountCurve_->discount(exerciseDate);
+    }
+
 
     Time cevEffectiveTime(
         Real alpha, Real beta,
@@ -67,69 +164,7 @@ namespace QuantLib {
         return squared(alpha)*integral;
     }
 
-    CEVCalculator::CEVCalculator(Real f0, Real alpha, Real beta)
-    : f0_(f0),
-      alpha_(alpha),
-      beta_(beta),
-      delta_((1.0-2.0*beta)/(1.0-beta)),
-      x0_(X(f0)) { }
-
-    Real CEVCalculator::X(Real f) const {
-        return std::pow(f, 2.0*(1.0-beta_))/squared(alpha_*(1.0-beta_));
-    }
-
-    Real CEVCalculator::value(
-        Option::Type optionType, Real strike, Time t) const {
-
-        QL_REQUIRE(std::fabs(beta_ - 1.0) >= cevBlackLimitBandWidth,
-                   "beta " << beta_ << " is within " << cevBlackLimitBandWidth
-                   << " of one: the closed form is not evaluated there");
-
-        typedef boost::math::non_central_chi_squared_distribution<Real>
-            nc_chi2;
-
-        const Real kTilde = X(strike);
-
-        if (optionType == Option::Call) {
-            if (delta_ < 2.0) {
-                return f0_ * (1.0 - boost::math::cdf(
-                         nc_chi2(4.0-delta_, x0_/t), kTilde/t))
-                     - strike * boost::math::cdf(
-                         nc_chi2(2.0-delta_, kTilde/t), x0_/t);
-            }
-            else {
-                const Real g =
-                    boost::math::gamma_p(Real(0.5*delta_-1.0), Real(x0_/(2.0*t)));
-
-                return f0_ * (g - boost::math::cdf(
-                         nc_chi2(delta_-2.0, kTilde/t), x0_/t))
-                     - strike * boost::math::cdf(
-                         nc_chi2(delta_, x0_/t), kTilde/t);
-            }
-        }
-        else if (optionType == Option::Put) {
-            if (delta_ < 2.0) {
-                return - f0_ * boost::math::cdf(
-                           nc_chi2(4.0-delta_, x0_/t), kTilde/t)
-                       + strike * (1.0 - boost::math::cdf(
-                           nc_chi2(2.0-delta_, kTilde/t), x0_/t));
-            }
-            else {
-                // for beta > 1 the driftless CEV process is a strict local
-                // martingale with E[f_t] = f0*gamma_p(delta_/2-1, x0_/(2t)),
-                // so put = call - E[f_t] + strike
-                return value(Option::Call, strike, t)
-                     - f0_ * boost::math::gamma_p(Real(0.5*delta_-1.0),
-                                                  Real(x0_/(2.0*t)))
-                     + strike;
-            }
-        }
-        else
-            QL_FAIL("unknown option type");
-
-    }
-
-    AnalyticCEVEngine::AnalyticCEVEngine(Real f0,
+    AnalyticDriftedCEVEngine::AnalyticDriftedCEVEngine(Real f0,
                                          Real alpha,
                                          Real beta,
                                          Handle<YieldTermStructure> discountCurve)
@@ -138,7 +173,7 @@ namespace QuantLib {
         registerWith(discountCurve_);
     }
 
-    void AnalyticCEVEngine::calculate() const {
+    void AnalyticDriftedCEVEngine::calculate() const {
 
         QL_REQUIRE(arguments_.exercise->type() == Exercise::European,
                    "not an European option");
