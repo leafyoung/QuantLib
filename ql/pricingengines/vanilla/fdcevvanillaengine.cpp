@@ -67,21 +67,18 @@ namespace QuantLib {
                 const DiscountFactor df =
                     rTS_->discount(maturityTime_) / rTS_->discount(t);
 
+                const Time window = maturityTime_ - t;
+
                 if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
                     // the CEV price converges to its Black-Scholes limit as
                     // beta approaches one; see AnalyticCEVEngine
-                    return blackFormula(
-                        payoff_->optionType(), payoff_->strike(),
-                        boundary_/df,
-                        alpha_*std::pow(boundary_, beta_ - 1.0)
-                            *std::sqrt(maturityTime_ - t),
-                        df);
+                    return localBlackValue(df, window);
                 }
 
-                // drift-removed unit volatility process, see cevEffectiveTime
-                const Time window = maturityTime_ - t;
                 if (!closedFormFails_) {
                     try {
+                        // drift-removed unit volatility process, see
+                        // cevEffectiveTime
                         return calculator_.value(
                             payoff_->optionType(),
                             payoff_->strike()*df,
@@ -91,14 +88,21 @@ namespace QuantLib {
                         throw;
                     } catch (const std::exception&) {
                         // the noncentral chi-squared evaluation fails for
-                        // beta close to one far from the money; retrying it
-                        // at every time step costs seconds, and the
-                        // fallback is accurate there, so stop retrying
+                        // beta close to one far from the money. Retrying at
+                        // every time step costs seconds and the fallback is
+                        // accurate there, so stop retrying; failure is not
+                        // monotone in the window, which costs at most about
+                        // 2e-4 in price
                         closedFormFails_ = true;
                     }
                 }
-                // the value is that of the local Black-Scholes volatility at
-                // the boundary, which beta close to one makes accurate
+                return localBlackValue(df, window);
+            }
+
+          private:
+            // Black-Scholes value at the local lognormal volatility of the
+            // CEV process at the boundary
+            Real localBlackValue(DiscountFactor df, Time window) const {
                 return blackFormula(
                     payoff_->optionType(), payoff_->strike(),
                     boundary_/df,
@@ -106,7 +110,6 @@ namespace QuantLib {
                     df);
             }
 
-          private:
             const Time maturityTime_;
             const ext::shared_ptr<StrikedTypePayoff> payoff_;
             const ext::shared_ptr<YieldTermStructure> rTS_;
@@ -137,10 +140,8 @@ namespace QuantLib {
 
         // 1. Mesher
         const ext::shared_ptr<StrikedTypePayoff> payoff =
-            ext::dynamic_pointer_cast<StrikedTypePayoff>(arguments_.payoff);
-        QL_REQUIRE(payoff, "non-striked payoff given");
-        QL_REQUIRE(ext::dynamic_pointer_cast<PlainVanillaPayoff>(payoff),
-                   "only plain vanilla payoffs are supported");
+            ext::dynamic_pointer_cast<PlainVanillaPayoff>(arguments_.payoff);
+        QL_REQUIRE(payoff, "only plain vanilla payoffs are supported");
 
         const ext::shared_ptr<YieldTermStructure> rTS =
             discountCurve_.currentLink();
