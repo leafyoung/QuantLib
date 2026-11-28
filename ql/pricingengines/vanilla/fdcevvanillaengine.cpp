@@ -79,7 +79,7 @@ namespace QuantLib {
                                            Size dampingSteps,
                                            Real scalingFactor,
                                            Real eps,
-                                                         const FdmSchemeDesc& schemeDesc)
+                                           const FdmSchemeDesc& schemeDesc)
     : f0_(f0), alpha_(alpha), beta_(beta), discountCurve_(std::move(discountCurve)), tGrid_(tGrid),
       xGrid_(xGrid), dampingSteps_(dampingSteps), scalingFactor_(scalingFactor), eps_(eps),
       schemeDesc_(schemeDesc) {
@@ -186,7 +186,7 @@ namespace QuantLib {
                 // chi-squared evaluation fails for very short windows,
                 // and the boundary value hardly changes over them, except at
                 // the upper bound of a beta > 1 call, where the bias is
-                // about 5e-3 of the price at the default eps.
+                // about 5e-4 of the price (beta 2.5, vol 60%).
                 const Time t = std::min<Real>(
                     rollbackTime,
                     maturityTime_ - std::min<Real>(1.0/365.0, 0.5*maturityTime_));
@@ -255,7 +255,7 @@ namespace QuantLib {
                                                          Size dampingSteps,
                                                          Real scalingFactor,
                                                          Real eps,
-                                           const FdmSchemeDesc& schemeDesc)
+                                                         const FdmSchemeDesc& schemeDesc)
     : f0_(f0), alpha_(alpha), beta_(beta), discountCurve_(std::move(discountCurve)), tGrid_(tGrid),
       xGrid_(xGrid), dampingSteps_(dampingSteps), scalingFactor_(scalingFactor), eps_(eps),
       schemeDesc_(schemeDesc) {

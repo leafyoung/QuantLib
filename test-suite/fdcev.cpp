@@ -968,7 +968,7 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevEngineArguments) {
         ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
         ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
 
-    const auto price = [&](Real eps, Real scaling, const FdmSchemeDesc& scheme) {
+    const auto price = [&](Real eps, Real scaling, const FdmSchemeDesc& scheme) -> Real {
         option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
             f0, alpha, beta, rTS, 50, 400, 2, scaling, eps, scheme));
         return option.NPV();
@@ -1014,7 +1014,7 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevGreeksAndGrid) {
     QL_CHECK_SMALL(option.theta() - theta, 2e-2);
 
     // the grid sizes reach the solver: coarse grids move the price
-    const auto price = [&](Size tGrid, Size xGrid) {
+    const auto price = [&](Size tGrid, Size xGrid) -> Real {
         option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
             f0, alpha, beta, rTS, tGrid, xGrid, 2));
         return option.NPV();
@@ -1052,7 +1052,8 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevAmericanPut) {
 }
 
 BOOST_AUTO_TEST_CASE(testDriftedEnginesWithLaterReferenceDate) {
-    BOOST_TEST_MESSAGE("Testing the drifted CEV engines on a curve that starts after the evaluation date...");
+    BOOST_TEST_MESSAGE(
+        "Testing the drifted CEV engines on a curve that starts later...");
 
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
