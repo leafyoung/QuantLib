@@ -123,7 +123,7 @@ namespace QuantLib {
     FdmDriftedCEVOp::FdmDriftedCEVOp(
         const ext::shared_ptr<FdmMesher>& mesher,
         const ext::shared_ptr<YieldTermStructure>& rTS,
-        Real f0, Real alpha, Real beta,
+        Real /*f0*/, Real alpha, Real beta,
         Size direction)
     : rTS_(rTS),
       direction_(direction),

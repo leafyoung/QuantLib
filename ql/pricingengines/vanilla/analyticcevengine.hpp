@@ -74,61 +74,47 @@ namespace QuantLib {
         const Handle<YieldTermStructure> discountCurve_;
     };
 
-    /*! Width of the neighbourhood of \f$ \beta = 1 \f$ inside which the CEV
-        price is replaced by its Black-Scholes limit. At \f$ \beta = 1 \f$
-        the limit is exact; inside the band it is the Black-Scholes price at
-        the local lognormal volatility \f$ \alpha f_0^{\beta-1} \f$, an
-        approximation whose deviation from the CEV price is of the order of
-        the band width in volatility.
-        Outside the band the closed form is valid in exact arithmetic; inside
-        it, the noncentral chi-squared degrees of freedom grow beyond what
-        boost's evaluation supports. The evaluation can still fail to
-        converge just outside the band when the noncentrality, about
-        \f$ f_0^{2(1-\beta)} / ((1-\beta)^2 \alpha^2 t) \f$, is large, for
-        example for very short maturities or low volatilities (the FDM
-        engine's mesher can fail this way, mostly for \f$ |\beta - 1| \f$
-        up to about 1e-3 whatever the mesh width, but also sporadically
-        elsewhere); boost then raises its own exception, not a
-        QuantLib::Error.
-    */
-    constexpr double cevBlackLimitBandWidth = 1e-4;
+    namespace detail {
 
-    /*! Effective time of the drift-removed CEV process.
+        /*! Width of the neighbourhood of \f$ \beta = 1 \f$ inside which the
+            drifted engines price with the Black-Scholes limit at the local
+            lognormal volatility \f$ \alpha f_0^{\beta-1} \f$. The closed form
+            degenerates there (infinite degrees of freedom).
+        */
+        constexpr double cevBlackLimitBandWidth = 1e-4;
 
-        Under a deterministically varying rate curve the CEV process is, after
-        the change of variable \f$ \tilde f = f \cdot disc(0,t) \f$, a driftless
-        diffusion with time dependent volatility
-        \f$ \alpha(t) = \alpha\, disc(0,t)^{1-\beta} \f$. A deterministic time
-        change maps this to a driftless CEV process with unit volatility at
-        the effective time
+        /*! Effective time of the drift-removed CEV process.
 
-        \f[
-            t_{\mathrm{eff}} = \alpha^2 \int_{start}^{end}
-                \left(\frac{disc(0,s)}{disc(0,start)}\right)^{2(1-\beta)} ds.
-        \f]
+            With \f$ \tilde f = f \cdot disc(0,t) \f$ the process driven by a
+            deterministic rate curve is driftless with volatility
+            \f$ \alpha\, disc(0,t)^{1-\beta} \f$; a deterministic time change
+            maps it to the driftless CEV process with unit volatility at
 
-        An option on \f$ f \f$ maturing at \f$ end \f$ is then the undiscounted
-        value of that unit volatility driftless process started at the
-        current value of \f$ f \f$, at the discounted strike
-        \f$ K\,disc(0,end)/disc(0,start) \f$. For
-        \f$ \beta = 1 \f$ the process is geometric Brownian motion and the
-        effective time \f$ \alpha^2(end-start) \f$ reproduces the
-        Black-Scholes limit exactly. The integral is evaluated by a
-        64 point Gauss-Legendre rule per year of the interval.
-    */
-    Time cevEffectiveTime(
-        Real alpha, Real beta,
-        const ext::shared_ptr<YieldTermStructure>& discountCurve,
-        Time start, Time end);
+            \f[
+                t_{\mathrm{eff}} = \alpha^2 \int_{start}^{end}
+                    \left(\frac{disc(0,s)}{disc(0,start)}\right)^{2(1-\beta)} ds.
+            \f]
+
+            An option on \f$ f \f$ maturing at \f$ end \f$ is the undiscounted
+            value of that process started at the current \f$ f \f$, at the
+            strike \f$ K\,disc(0,end)/disc(0,start) \f$. The integral uses a
+            64 point Gauss-Legendre rule per year of the interval.
+        */
+        Time cevEffectiveTime(Real alpha, Real beta,
+                              const YieldTermStructure& discountCurve,
+                              Time start, Time end);
+
+    }
 
 
     //! Analytic engine for European options on a CEV asset with drift
     /*! The underlying \f$ f \f$ is an asset with drift \f$ r_t f_t \f$
         given by the discount curve, not a driftless forward as in
         AnalyticCEVEngine, which prices a forward and discounts it; the two
-        engines coincide at zero rates. The Black-Scholes limit is used
-        for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth; just outside that
-        band the closed form can still fail with a boost exception, not a
+        engines coincide at zero rates. Inside a small neighbourhood of
+        \f$ \beta = 1 \f$ the Black-Scholes limit is used; just outside it
+        the closed form can still fail for short maturities or low
+        volatilities, and boost then raises its own exception, not a
         QuantLib::Error. Only European exercise and plain vanilla payoffs
         are supported.
     */

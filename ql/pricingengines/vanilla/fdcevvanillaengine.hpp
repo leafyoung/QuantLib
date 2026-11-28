@@ -59,32 +59,27 @@ namespace QuantLib {
     };
 
     //! Finite-difference engine for options on a CEV asset with drift
-    /*! As in AnalyticDriftedCEVEngine, the underlying is an asset with drift
-        given by the discount curve, not a driftless forward as in
-        FdCEVVanillaEngine and FdSabrVanillaEngine, so those agree with this
-        engine only for a zero rate.
-        The mesher requires \f$ \beta \neq 1 \f$, and its
-        noncentral chi-squared evaluation can fail, mostly for
-        \f$ |\beta - 1| \f$ up to about 1e-3 (short maturities, low
-        volatilities) but also sporadically elsewhere, including inside the
-        Black band of AnalyticDriftedCEVEngine, which accepts
-        \f$ \beta = 1 \f$ and is the reference there.
-        The boundary values are the European prices at the mesh bounds (the
-        closed form, or its Black approximation near \f$ \beta = 1 \f$ or
-        where the closed form fails), which suits European exercise; with early
-        exercise they are an approximation that improves as the mesh widens
-        (smaller eps) for \f$ \beta < 1 \f$. For \f$ \beta > 1 \f$ American
-        calls do not converge as the mesh widens, and an eps below the
-        default can give wrong prices, so keep the default there.
-        Only plain vanilla payoffs are supported. As with other
-        finite-difference engines, the kinked payoff needs
-        \p dampingSteps of 2 for accurate prices and Greeks (one step leaves
-        the at-the-money gamma off by a few tens of percent on a fine
-        grid); the default of 0 can give oscillating Greeks and slightly
-        negative prices far out of the money. \p tGrid has to grow with the
-        drift (the rate times the maturity of about 2 or more at a
-        volatility of 1% or less) and with the maturity for \f$ \beta > 1 \f$
-        calls, where 50 steps can be off by several percent.
+    /*! The underlying is an asset with drift given by the discount curve,
+        as in AnalyticDriftedCEVEngine, not a driftless forward as in
+        FdCEVVanillaEngine and FdSabrVanillaEngine; those agree with this
+        engine only at zero rates.
+
+        The mesher requires \f$ \beta \neq 1 \f$, and its noncentral
+        chi-squared evaluation can fail, mostly for \f$ |\beta - 1| \f$ up
+        to about 1e-3 but also sporadically elsewhere.
+
+        The boundary values are European prices at the mesh bounds, so early
+        exercise is approximate. For \f$ \beta < 1 \f$ it improves as the
+        mesh widens (smaller eps); for \f$ \beta > 1 \f$ it does not, and an
+        eps below the default can give wrong prices.
+
+        Only plain vanilla payoffs are supported. The kinked payoff needs
+        \p dampingSteps of 2 for accurate prices and Greeks; the default of
+        0 can give oscillating Greeks and slightly negative prices far out
+        of the money. \p tGrid has to grow with the drift (the rate times
+        the maturity of about 2 or more at a volatility of 1% or less) and
+        with the maturity for \f$ \beta > 1 \f$ calls, where 50 steps can be
+        off by up to about 20%.
     */
     class FdDriftedCEVVanillaEngine : public VanillaOption::engine {
       public:

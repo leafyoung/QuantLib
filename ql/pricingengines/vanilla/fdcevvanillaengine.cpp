@@ -186,14 +186,14 @@ namespace QuantLib {
                 // chi-squared evaluation fails for very short windows,
                 // and the boundary value hardly changes over them, except at
                 // the upper bound of a beta > 1 call, where the bias is
-                // about 5e-4 of the price (beta 2.5, vol 60%).
+                // about 6e-4 of the price (beta 2.5, vol 60%).
                 const Time t = std::min<Real>(
                     rollbackTime,
                     maturityTime_ - std::min<Real>(1.0/365.0, 0.5*maturityTime_));
                 const DiscountFactor df =
                     rTS_->discount(maturityTime_) / rTS_->discount(t);
 
-                if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
+                if (std::fabs(beta_ - 1.0) < detail::cevBlackLimitBandWidth) {
                     // the CEV price converges to its Black-Scholes limit as
                     // beta approaches one; see AnalyticDriftedCEVEngine
                     return localBlackValue(df, t);
@@ -206,8 +206,8 @@ namespace QuantLib {
                         return calculator_.value(
                             payoff_->optionType(),
                             payoff_->strike()*df,
-                            cevEffectiveTime(alpha_, beta_, rTS_, t,
-                                             maturityTime_));
+                            detail::cevEffectiveTime(alpha_, beta_, *rTS_, t,
+                                                     maturityTime_));
                     } catch (const Error&) {
                         throw;
                     } catch (const std::exception&) {
@@ -228,7 +228,7 @@ namespace QuantLib {
             // CEV process at the boundary
             Real localBlackValue(DiscountFactor df, Time t) const {
                 const Real effectiveTime =
-                    cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_);
+                    detail::cevEffectiveTime(alpha_, beta_, *rTS_, t, maturityTime_);
                 return blackFormula(
                     payoff_->optionType(), payoff_->strike(),
                     boundary_/df,

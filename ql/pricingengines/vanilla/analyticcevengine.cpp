@@ -117,16 +117,15 @@ namespace QuantLib {
     }
 
 
-    Time cevEffectiveTime(
+    Time detail::cevEffectiveTime(
         Real alpha, Real beta,
-        const ext::shared_ptr<YieldTermStructure>& discountCurve,
+        const YieldTermStructure& discountCurve,
         Time start, Time end) {
 
-        QL_REQUIRE(discountCurve, "no discount curve given");
         QL_REQUIRE(start < end,
                    "cevEffectiveTime requires a positive time interval");
 
-        const DiscountFactor dStart = discountCurve->discount(start);
+        const DiscountFactor dStart = discountCurve.discount(start);
         const Real exponent = 2.0*(1.0-beta);
 
         // the integrand is smooth and positive for flat rate curves and
@@ -145,7 +144,7 @@ namespace QuantLib {
             integral += halfLength*quadrature(
                 [&](Real x) -> Real {
                     const Time s = mid + halfLength*x;
-                    return std::pow(discountCurve->discount(s)/dStart,
+                    return std::pow(discountCurve.discount(s)/dStart,
                                     exponent);
                 });
         }
@@ -157,9 +156,9 @@ namespace QuantLib {
         // of the unit-volatility process run for the effective time
         Real cevBlackLimitValue(Option::Type type, Real strike,
                                 const CEVCalculator& calculator,
-                                const ext::shared_ptr<YieldTermStructure>& curve,
+                                const YieldTermStructure& curve,
                                 Time maturity, DiscountFactor discount) {
-            const Real effectiveTime = cevEffectiveTime(
+            const Real effectiveTime = detail::cevEffectiveTime(
                 calculator.alpha(), calculator.beta(), curve, 0.0, maturity);
             return blackFormula(
                 type, strike, calculator.f0()/discount,
@@ -196,7 +195,7 @@ namespace QuantLib {
         const DiscountFactor discount = discountCurve_->discount(exerciseDate);
         const Real beta = calculator_->beta();
 
-        if (std::fabs(beta - 1.0) < cevBlackLimitBandWidth) {
+        if (std::fabs(beta - 1.0) < detail::cevBlackLimitBandWidth) {
             // the CEV price converges to its Black-Scholes limit as beta
             // approaches one. Within the band the closed form degenerates
             // towards infinite degrees of freedom and boost's noncentral
@@ -204,7 +203,7 @@ namespace QuantLib {
             // limit stays within the model curvature of the neighbourhood
             results_.value = cevBlackLimitValue(
                 payoff->optionType(), payoff->strike(), *calculator_,
-                discountCurve_.currentLink(), maturity, discount);
+                *discountCurve_.currentLink(), maturity, discount);
             return;
         }
 
@@ -218,8 +217,8 @@ namespace QuantLib {
         results_.value = unitVolCalculator.value(
             payoff->optionType(),
             payoff->strike()*discount,
-            cevEffectiveTime(calculator_->alpha(), beta,
-                             discountCurve_.currentLink(), 0.0, maturity));
+            detail::cevEffectiveTime(calculator_->alpha(), beta,
+                                     *discountCurve_.currentLink(), 0.0, maturity));
     }
 
 }
