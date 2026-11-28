@@ -25,7 +25,6 @@
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/instruments/payoffs.hpp>
 #include <ql/math/integrals/gaussianquadratures.hpp>
-#include <ql/pricingengines/blackformula.hpp>
 #include <boost/math/distributions/non_central_chi_squared.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 #include <utility>
