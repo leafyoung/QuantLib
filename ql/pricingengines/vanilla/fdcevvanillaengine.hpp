@@ -36,9 +36,10 @@ namespace QuantLib {
         given by the discount curve, not a driftless forward. FdSabrVanillaEngine
         models a driftless forward, so the two agree only for a zero rate.
         The mesher requires \f$ \beta \neq 1 \f$, and its
-        noncentral chi-squared evaluation can fail for \f$ |\beta - 1| \f$
-        up to about 1e-3 (short maturities, low volatilities), including
-        inside the Black band of AnalyticCEVEngine, which accepts
+        noncentral chi-squared evaluation can fail, mostly for
+        \f$ |\beta - 1| \f$ up to about 1e-3 (short maturities, low
+        volatilities) but also sporadically elsewhere, including inside the
+        Black band of AnalyticCEVEngine, which accepts
         \f$ \beta = 1 \f$ and is the reference there.
         The boundary values are the European prices at the mesh bounds, which
         is exact for European exercise; with early exercise they are an
