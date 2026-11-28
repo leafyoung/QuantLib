@@ -307,8 +307,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
     const ext::shared_ptr<YieldTermStructure> rTS =
         flatRate(today, 0.03, dc);
     const DiscountFactor discount = rTS->discount(maturityDate);
-    const Real stdDev = alpha * std::sqrt(
-        rTS->timeFromReference(maturityDate));
+    const Time maturity = rTS->timeFromReference(maturityDate);
 
     const Option::Type optionTypes[] = { Option::Call, Option::Put };
     const Real strikes[] = {80.0, 100.0, 120.0};
@@ -319,9 +318,12 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
                 ext::make_shared<PlainVanillaPayoff>(optionType, strike);
             for (Real beta : std::vector<Real>{
                      1.0-5e-5, 1.0-1e-6, 1.0, 1.0+1e-6, 1.0+5e-5}) {
-                // Black price at the local lognormal volatility alpha*f0^(beta-1)
+                // Black price at the local lognormal volatility f0^(beta-1)
+                // of the unit-volatility process run for the effective time
                 const Real black = blackFormula(
-                    payoff, f0/discount, stdDev*std::pow(f0, beta-1.0),
+                    payoff, f0/discount,
+                    std::pow(f0, beta-1.0)
+                        *std::sqrt(cevEffectiveTime(alpha, beta, rTS, 0.0, maturity)),
                     discount);
                 VanillaOption option(payoff, exercise);
                 option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
@@ -1022,6 +1024,60 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevGreeksAndGrid) {
     BOOST_CHECK_GT(std::fabs(price(50, 25) - reference), 1e-3);
 }
 
+BOOST_AUTO_TEST_CASE(testFdmDriftedCevAmericanPut) {
+    BOOST_TEST_MESSAGE("Testing early exercise with the drifted FDM CEV engine...");
+
+    // a deep in-the-money put at a high rate is worth more exercised early
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, beta = 0.5, alpha = 3.0, strike = 110.0;
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.08, dc));
+    const ext::shared_ptr<PlainVanillaPayoff> payoff =
+        ext::make_shared<PlainVanillaPayoff>(Option::Put, strike);
+    const Date maturity = today + Period(12, Months);
+
+    VanillaOption european(payoff, ext::make_shared<EuropeanExercise>(maturity));
+    VanillaOption american(
+        payoff, ext::make_shared<AmericanExercise>(today, maturity));
+    const ext::shared_ptr<PricingEngine> engine =
+        ext::make_shared<FdDriftedCEVVanillaEngine>(
+            f0, alpha, beta, rTS, 200, 400, 2);
+    european.setPricingEngine(engine);
+    american.setPricingEngine(engine);
+
+    BOOST_CHECK_GT(american.NPV() - european.NPV(), 1.0);
+    BOOST_CHECK_GE(american.NPV(), strike - f0);
+}
+
+BOOST_AUTO_TEST_CASE(testDriftedEnginesWithLaterReferenceDate) {
+    BOOST_TEST_MESSAGE("Testing the drifted CEV engines on a curve that starts after the evaluation date...");
+
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    // maturities are measured from the curve's reference date
+    const Handle<YieldTermStructure> rTS(
+        ext::make_shared<FlatForward>(today + 10, 0.05, dc));
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + 375);
+    const Real f0 = 100.0;
+
+    for (Real beta : std::vector<Real>{0.5, 1.5}) {
+        const Real alpha = 0.30*std::pow(f0, 1.0-beta);
+        VanillaOption option(
+            ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0), exercise);
+        option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
+            f0, alpha, beta, rTS));
+        const Real analytic = option.NPV();
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+            f0, alpha, beta, rTS, 100, 400, 2));
+        QL_CHECK_SMALL(option.NPV() - analytic, 1e-2);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(testAnalyticCevEngineBetaOne) {
     BOOST_TEST_MESSAGE(
             "Testing analytic CEV engine at beta=1 (the Black limit)...");
@@ -1163,6 +1219,14 @@ BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
 
     const Array expected = op1d.apply(g);
     const Array calculated = op2d.apply(v);
+    // the matrix form is the operator, and there is no mixed term
+    const SparseMatrix matrix = op1d.toMatrixDecomp()[0];
+    const Array viaMatrix = prod(matrix, g);
+    const Array mixed = op1d.apply_mixed(g);
+    for (Size j = 0; j < cevSize; ++j) {
+        QL_CHECK_SMALL(viaMatrix[j] - expected[j], 1e-10*(1.0 + std::fabs(expected[j])));
+        QL_CHECK_SMALL(mixed[j], 1e-14);
+    }
     // the splitting along the CEV axis is the whole operator, and the
     // other axis carries no part of it
     const Array direction1 = op2d.apply_direction(1, v);
@@ -1244,10 +1308,12 @@ BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
 
     const DiscountFactor discount = rTS->discount(maturityDate);
     const Real beta = 1.0-5e-4;
+    const Time maturity = rTS->timeFromReference(maturityDate);
     const Real black = blackFormula(
         payoff, f0/discount,
-        alpha*std::pow(f0, beta-1.0)
-            *std::sqrt(rTS->timeFromReference(maturityDate)), discount);
+        std::pow(f0, beta-1.0)
+            *std::sqrt(cevEffectiveTime(alpha, beta, rTS.currentLink(), 0.0, maturity)),
+        discount);
 
     option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
         f0, alpha, beta, rTS));
@@ -1261,8 +1327,10 @@ BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
         f0, alpha, 1.0-1.5e-4, rTS));
     const Real localBlack = blackFormula(
         payoff, f0/discount,
-        alpha*std::pow(f0, -1.5e-4)
-            *std::sqrt(rTS->timeFromReference(maturityDate)), discount);
+        std::pow(f0, -1.5e-4)
+            *std::sqrt(cevEffectiveTime(
+                alpha, 1.0-1.5e-4, rTS.currentLink(), 0.0, maturity)),
+        discount);
     BOOST_CHECK_GT(std::fabs(option.NPV() - localBlack), 5e-5);
 }
 

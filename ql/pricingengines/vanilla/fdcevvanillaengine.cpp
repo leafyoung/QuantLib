@@ -38,6 +38,7 @@
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
 #include <ql/termstructures/yieldtermstructure.hpp>
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace QuantLib {
@@ -78,7 +79,7 @@ namespace QuantLib {
                                            Size dampingSteps,
                                            Real scalingFactor,
                                            Real eps,
-                                           const FdmSchemeDesc& schemeDesc)
+                                                         const FdmSchemeDesc& schemeDesc)
     : f0_(f0), alpha_(alpha), beta_(beta), discountCurve_(std::move(discountCurve)), tGrid_(tGrid),
       xGrid_(xGrid), dampingSteps_(dampingSteps), scalingFactor_(scalingFactor), eps_(eps),
       schemeDesc_(schemeDesc) {
@@ -171,7 +172,7 @@ namespace QuantLib {
             DriftedPriceAtBoundary(Time maturityTime,
                                    ext::shared_ptr<StrikedTypePayoff> payoff,
                                    ext::shared_ptr<YieldTermStructure> rTS,
-                            Real boundary, Real alpha, Real beta)
+                                   Real boundary, Real alpha, Real beta)
             : maturityTime_(maturityTime), payoff_(std::move(payoff)),
               rTS_(std::move(rTS)),
               calculator_(boundary, 1.0, beta),
@@ -192,12 +193,10 @@ namespace QuantLib {
                 const DiscountFactor df =
                     rTS_->discount(maturityTime_) / rTS_->discount(t);
 
-                const Time window = maturityTime_ - t;
-
                 if (std::fabs(beta_ - 1.0) < cevBlackLimitBandWidth) {
                     // the CEV price converges to its Black-Scholes limit as
                     // beta approaches one; see AnalyticDriftedCEVEngine
-                    return localBlackValue(df, window);
+                    return localBlackValue(df, t);
                 }
 
                 if (!closedFormFails_) {
@@ -221,17 +220,19 @@ namespace QuantLib {
                         closedFormFails_ = true;
                     }
                 }
-                return localBlackValue(df, window);
+                return localBlackValue(df, t);
             }
 
           private:
             // Black-Scholes value at the local lognormal volatility of the
             // CEV process at the boundary
-            Real localBlackValue(DiscountFactor df, Time window) const {
+            Real localBlackValue(DiscountFactor df, Time t) const {
+                const Real effectiveTime =
+                    cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_);
                 return blackFormula(
                     payoff_->optionType(), payoff_->strike(),
                     boundary_/df,
-                    alpha_*std::pow(boundary_, beta_ - 1.0)*std::sqrt(window),
+                    std::pow(boundary_, beta_ - 1.0)*std::sqrt(effectiveTime),
                     df);
             }
 
