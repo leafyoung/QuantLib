@@ -60,9 +60,9 @@ namespace QuantLib {
                 // day is replaced by one of that length: the noncentral
                 // chi-squared evaluation fails for very short windows,
                 // and the boundary value hardly changes over them.
-                const Time t = std::min(
+                const Time t = std::min<Real>(
                     rollbackTime,
-                    maturityTime_ - std::min(1.0/365.0, 0.5*maturityTime_));
+                    maturityTime_ - std::min<Real>(1.0/365.0, 0.5*maturityTime_));
                 const DiscountFactor df =
                     rTS_->discount(maturityTime_) / rTS_->discount(t);
 
@@ -76,10 +76,23 @@ namespace QuantLib {
                 }
 
                 // drift-removed unit volatility process, see cevEffectiveTime
-                return calculator_.value(
-                    payoff_->optionType(),
-                    payoff_->strike()*df,
-                    cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_));
+                try {
+                    return calculator_.value(
+                        payoff_->optionType(),
+                        payoff_->strike()*df,
+                        cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_));
+                } catch (const std::exception&) {
+                    // the noncentral chi-squared evaluation fails for beta
+                    // close to one far from the money; the value there is
+                    // that of the local Black-Scholes volatility at the
+                    // boundary, which beta close to one makes accurate
+                    return blackFormula(
+                        payoff_->optionType(), payoff_->strike(),
+                        boundary_/df,
+                        alpha_*std::pow(boundary_, beta_ - 1.0) *
+                            std::sqrt(maturityTime_ - t),
+                        df);
+                }
             }
 
           private:

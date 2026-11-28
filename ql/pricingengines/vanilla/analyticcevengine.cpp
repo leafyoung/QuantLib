@@ -47,7 +47,7 @@ namespace QuantLib {
 
         // the integrand is smooth and positive for flat rate curves and
         // piecewise smooth otherwise; a fixed 64 point Gauss-Legendre rule
-        // resolves it well beyond pricing tolerances. The rule is built
+        // resolves it to about 1e-6 even at a curve kink. The rule is built
         // once: the FDM boundary evaluates this at every time step.
         static const GaussLegendreIntegration quadrature(64);
         const Time halfLength = 0.5*(end-start);
