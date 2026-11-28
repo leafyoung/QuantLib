@@ -954,8 +954,8 @@ BOOST_AUTO_TEST_CASE(testFdmDriftedCevEngineArguments) {
     BOOST_TEST_MESSAGE("Testing the mesh and scheme arguments of the drifted FDM CEV engine...");
 
     // each of the mesh width, the scaling factor and the scheme moves the
-    // price by an amount well above the tolerance used elsewhere against
-    // the analytic engine, so the arguments must reach the solver
+    // price by more than the thresholds below (about 2e-3, 9e-4 and 3e-2),
+    // so the arguments must reach the solver
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
     Settings::instance().evaluationDate() = today;
@@ -1081,10 +1081,15 @@ BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
     const Real step = 0.01;
     const Array solved1d = op1d.solve_splitting(0, g, step);
     const Array solved1 = op2d.solve_splitting(1, v, step);
+    // and it inverts (I + step*A), with A the operator along that axis
+    const Array residual = solved1 + step*op2d.apply_direction(1, solved1);
+    const Array preconditioned = op2d.preconditioner(v, step);
     for (Size i = 0; i < otherSize; ++i) {
         for (Size j = 0; j < cevSize; ++j) {
             const Size k = layout->index(std::vector<Size>{i, j});
             QL_CHECK_SMALL(solved1[k] - solved1d[j], 1e-9*(1.0 + std::fabs(solved1d[j])));
+            QL_CHECK_SMALL(residual[k] - v[k], 1e-10*(1.0 + std::fabs(v[k])));
+            QL_CHECK_SMALL(preconditioned[k] - solved1[k], 1e-12*(1.0 + std::fabs(solved1[k])));
         }
     }
     for (Size i = 0; i < otherSize; ++i) {
