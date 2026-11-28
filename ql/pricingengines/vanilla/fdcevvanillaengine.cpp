@@ -22,12 +22,12 @@
 */
 
 #include <ql/exercise.hpp>
+#include <ql/instruments/payoffs.hpp>
 #include <ql/methods/finitedifferences/meshers/concentrating1dmesher.hpp>
 #include <ql/methods/finitedifferences/meshers/fdmcev1dmesher.hpp>
 #include <ql/methods/finitedifferences/meshers/fdmmeshercomposite.hpp>
 #include <ql/methods/finitedifferences/operators/fdmcevop.hpp>
 #include <ql/methods/finitedifferences/operators/fdmlinearoplayout.hpp>
-#include <ql/instruments/payoffs.hpp>
 #include <ql/methods/finitedifferences/solvers/fdm1dimsolver.hpp>
 #include <ql/methods/finitedifferences/stepconditions/fdmstepconditioncomposite.hpp>
 #include <ql/methods/finitedifferences/utilities/fdmdiscountdirichletboundary.hpp>
@@ -78,7 +78,7 @@ namespace QuantLib {
 
                 // drift-removed unit volatility process, see cevEffectiveTime
                 const Time window = maturityTime_ - t;
-                if (window > failedWindow_) {
+                if (!closedFormFails_) {
                     try {
                         return calculator_.value(
                             payoff_->optionType(),
@@ -89,10 +89,10 @@ namespace QuantLib {
                         throw;
                     } catch (const std::exception&) {
                         // the noncentral chi-squared evaluation fails for
-                        // beta close to one far from the money, and the
-                        // failure only gets worse for shorter windows, so
-                        // they skip the evaluation from now on
-                        failedWindow_ = std::max<Real>(failedWindow_, window);
+                        // beta close to one far from the money; retrying it
+                        // at every time step costs seconds, and the
+                        // fallback is accurate there, so stop retrying
+                        closedFormFails_ = true;
                     }
                 }
                 // the value is that of the local Black-Scholes volatility at
@@ -110,8 +110,8 @@ namespace QuantLib {
             const ext::shared_ptr<YieldTermStructure> rTS_;
             const CEVCalculator calculator_;
             const Real boundary_, alpha_, beta_;
-            // windows up to this length are known to fail in the closed form
-            mutable Time failedWindow_ = 0.0;
+            // set once the closed form has failed
+            mutable bool closedFormFails_ = false;
         };
     }
 
