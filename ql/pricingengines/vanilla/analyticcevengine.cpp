@@ -20,6 +20,7 @@
 /*! \file analyticcevengine.cpp */
 
 #include <ql/exercise.hpp>
+#include <ql/instruments/payoffs.hpp>
 #include <ql/math/functional.hpp>
 #include <ql/math/integrals/gaussianquadratures.hpp>
 #include <ql/pricingengines/blackformula.hpp>
@@ -139,6 +140,8 @@ namespace QuantLib {
         ext::shared_ptr<StrikedTypePayoff> payoff =
             ext::dynamic_pointer_cast<StrikedTypePayoff>(arguments_.payoff);
         QL_REQUIRE(payoff, "non-striked payoff given");
+        QL_REQUIRE(ext::dynamic_pointer_cast<PlainVanillaPayoff>(payoff),
+                   "only plain vanilla payoffs are supported");
 
         const Date exerciseDate = arguments_.exercise->lastDate();
         const Time maturity = discountCurve_->timeFromReference(exerciseDate);

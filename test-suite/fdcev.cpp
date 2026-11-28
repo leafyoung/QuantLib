@@ -856,6 +856,29 @@ BOOST_AUTO_TEST_CASE(testFdmCevBoundaryFallbackValue) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(testCevEnginesRejectNonVanillaPayoffs) {
+    BOOST_TEST_MESSAGE("Testing that the CEV engines reject non-vanilla payoffs...");
+
+    // the boundary and closed-form values are vanilla prices, so a
+    // digital payoff would be priced silently wrong
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, dc));
+    VanillaOption digital(
+        ext::make_shared<CashOrNothingPayoff>(Option::Call, 100.0, 1.0),
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
+
+    digital.setPricingEngine(
+        ext::make_shared<AnalyticCEVEngine>(100.0, 0.3, 0.5, rTS));
+    BOOST_CHECK_THROW(digital.NPV(), Error);
+
+    digital.setPricingEngine(
+        ext::make_shared<FdCEVVanillaEngine>(100.0, 0.3, 0.5, rTS, 50, 100, 1));
+    BOOST_CHECK_THROW(digital.NPV(), Error);
+}
+
 BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
     BOOST_TEST_MESSAGE("Testing the width of the CEV Black band...");
 

@@ -27,6 +27,7 @@
 #include <ql/methods/finitedifferences/meshers/fdmmeshercomposite.hpp>
 #include <ql/methods/finitedifferences/operators/fdmcevop.hpp>
 #include <ql/methods/finitedifferences/operators/fdmlinearoplayout.hpp>
+#include <ql/instruments/payoffs.hpp>
 #include <ql/methods/finitedifferences/solvers/fdm1dimsolver.hpp>
 #include <ql/methods/finitedifferences/stepconditions/fdmstepconditioncomposite.hpp>
 #include <ql/methods/finitedifferences/utilities/fdmdiscountdirichletboundary.hpp>
@@ -76,25 +77,31 @@ namespace QuantLib {
                 }
 
                 // drift-removed unit volatility process, see cevEffectiveTime
-                try {
-                    return calculator_.value(
-                        payoff_->optionType(),
-                        payoff_->strike()*df,
-                        cevEffectiveTime(alpha_, beta_, rTS_, t, maturityTime_));
-                } catch (const Error&) {
-                    throw;
-                } catch (const std::exception&) {
-                    // the noncentral chi-squared evaluation fails for beta
-                    // close to one far from the money; the value there is
-                    // that of the local Black-Scholes volatility at the
-                    // boundary, which beta close to one makes accurate
-                    return blackFormula(
-                        payoff_->optionType(), payoff_->strike(),
-                        boundary_/df,
-                        alpha_*std::pow(boundary_, beta_ - 1.0) *
-                            std::sqrt(maturityTime_ - t),
-                        df);
+                const Time window = maturityTime_ - t;
+                if (window > failedWindow_) {
+                    try {
+                        return calculator_.value(
+                            payoff_->optionType(),
+                            payoff_->strike()*df,
+                            cevEffectiveTime(alpha_, beta_, rTS_, t,
+                                             maturityTime_));
+                    } catch (const Error&) {
+                        throw;
+                    } catch (const std::exception&) {
+                        // the noncentral chi-squared evaluation fails for
+                        // beta close to one far from the money, and the
+                        // failure only gets worse for shorter windows, so
+                        // they skip the evaluation from now on
+                        failedWindow_ = std::max<Real>(failedWindow_, window);
+                    }
                 }
+                // the value is that of the local Black-Scholes volatility at
+                // the boundary, which beta close to one makes accurate
+                return blackFormula(
+                    payoff_->optionType(), payoff_->strike(),
+                    boundary_/df,
+                    alpha_*std::pow(boundary_, beta_ - 1.0)*std::sqrt(window),
+                    df);
             }
 
           private:
@@ -103,6 +110,8 @@ namespace QuantLib {
             const ext::shared_ptr<YieldTermStructure> rTS_;
             const CEVCalculator calculator_;
             const Real boundary_, alpha_, beta_;
+            // windows up to this length are known to fail in the closed form
+            mutable Time failedWindow_ = 0.0;
         };
     }
 
@@ -128,6 +137,8 @@ namespace QuantLib {
         const ext::shared_ptr<StrikedTypePayoff> payoff =
             ext::dynamic_pointer_cast<StrikedTypePayoff>(arguments_.payoff);
         QL_REQUIRE(payoff, "non-striked payoff given");
+        QL_REQUIRE(ext::dynamic_pointer_cast<PlainVanillaPayoff>(payoff),
+                   "only plain vanilla payoffs are supported");
 
         const ext::shared_ptr<YieldTermStructure> rTS =
             discountCurve_.currentLink();
