@@ -23,7 +23,13 @@
 #include <ql/math/integrals/gausslobattointegral.hpp>
 #include <ql/math/randomnumbers/rngtraits.hpp>
 #include <ql/math/statistics/generalstatistics.hpp>
+#include <ql/methods/finitedifferences/meshers/fdmcev1dmesher.hpp>
+#include <ql/methods/finitedifferences/meshers/fdmmeshercomposite.hpp>
+#include <ql/methods/finitedifferences/meshers/uniform1dmesher.hpp>
+#include <ql/methods/finitedifferences/operators/fdmcevop.hpp>
+#include <ql/methods/finitedifferences/operators/fdmlinearoplayout.hpp>
 #include <ql/methods/finitedifferences/utilities/cevrndcalculator.hpp>
+#include <ql/time/daycounters/actualactual.hpp>
 #include <ql/pricingengines/blackformula.hpp>
 #include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/pricingengines/vanilla/fdcevvanillaengine.hpp>
@@ -148,10 +154,10 @@ BOOST_AUTO_TEST_CASE(testFdmCevOp) {
         ext::make_shared<EuropeanExercise>(maturityDate);
 
     for (auto optionType : optionTypes) {
-        const ext::shared_ptr<PlainVanillaPayoff> payoff =
+        const auto payoff =
             ext::make_shared<PlainVanillaPayoff>(optionType, strike);
 
-        const ext::shared_ptr<YieldTermStructure> rTS =
+        const auto rTS =
             flatRate(today, 0.15, dc);
 
         const Real f0 = 2.1;
@@ -311,11 +317,12 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevBlackLimit) {
         for (Real strike : strikes) {
             const ext::shared_ptr<PlainVanillaPayoff> payoff =
                 ext::make_shared<PlainVanillaPayoff>(optionType, strike);
-            const Real black = blackFormula(
-                payoff, f0/discount, stdDev, discount);
-
-            for (Real beta :
-                 {1.0-5e-5, 1.0-1e-6, 1.0, 1.0+1e-6, 1.0+5e-5}) {
+            for (Real beta : std::vector<Real>{
+                     1.0-5e-5, 1.0-1e-6, 1.0, 1.0+1e-6, 1.0+5e-5}) {
+                // Black price at the local lognormal volatility alpha*f0^(beta-1)
+                const Real black = blackFormula(
+                    payoff, f0/discount, stdDev*std::pow(f0, beta-1.0),
+                    discount);
                 VanillaOption option(payoff, exercise);
                 option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
                     f0, alpha, beta, Handle<YieldTermStructure>(rTS)));
@@ -462,6 +469,7 @@ BOOST_AUTO_TEST_CASE(testAnalyticCevKnownValues) {
     {
         const ext::shared_ptr<YieldTermStructure> rTS0 =
             flatRate(today, 0.0, dc);
+        // beta < 1 values: Schroder's formula evaluated with scipy.stats.ncx2
         const Real r0Values[][3] = {
             { 0.999,  90.0, 16.9649458981 },
             { 0.999, 110.0,  8.08624096975 },
@@ -685,7 +693,7 @@ BOOST_AUTO_TEST_CASE(testCevEffectiveTimeWithNonzeroStart) {
 
     // curve with a forward rate jump: compare with a fine midpoint sum.
     // The jump is a kink of the integrand, which limits the 64 point rule
-    // to about 1e-6 relative accuracy here.
+    // on one panel to about 1e-6 relative accuracy here.
     const ext::shared_ptr<YieldTermStructure> kinked =
         ext::make_shared<DiscountCurve>(
             std::vector<Date>{today, today + Period(6, Months),
@@ -707,6 +715,23 @@ BOOST_AUTO_TEST_CASE(testCevEffectiveTimeWithNonzeroStart) {
                     << "\n    expected   : " << kinkedExpected
                     << "\n    calculated : " << kinkedCalculated);
     }
+
+    // long maturity with an early forward rate jump: the integral of
+    // exp(-k*int r) has a closed form for a piecewise flat forward curve.
+    // The kink at 3 years is resolved only if the rule is applied per year.
+    const Real r1 = 0.01, r2 = 0.15, kink = 3.0, horizon = 30.0;
+    const ext::shared_ptr<YieldTermStructure> longKinked =
+        ext::make_shared<DiscountCurve>(
+            std::vector<Date>{today, today + 365*3, today + 365*30},
+            std::vector<DiscountFactor>{
+                1.0, std::exp(-r1*kink),
+                std::exp(-r1*kink - r2*(horizon-kink))}, dc);
+    const Real longExpected =  // alpha = 1, beta = 0: k = 2
+        (1.0 - std::exp(-2.0*r1*kink))/(2.0*r1)
+        + std::exp(-2.0*r1*kink)
+            *(1.0 - std::exp(-2.0*r2*(horizon-kink)))/(2.0*r2);
+    QL_CHECK_CLOSE(cevEffectiveTime(1.0, 0.0, longKinked, 0.0, horizon),
+                   longExpected, 1e-3);
 }
 
 BOOST_AUTO_TEST_CASE(testCevEnginesReactToRateCurve) {
@@ -761,9 +786,8 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
 
     const Real f0 = 100.0, alpha = 0.30, rate = 0.08;
     const Handle<YieldTermStructure> rTS(flatRate(today, rate, dc));
-    VanillaOption option(
-        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
-        ext::make_shared<EuropeanExercise>(today + Period(12, Months)));
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + Period(12, Months));
 
     // beta = 1-5e-4 is the closest value outside the band at which the
     // mesher's boost evaluation converges on this mesh. The tolerance
@@ -773,7 +797,7 @@ BOOST_AUTO_TEST_CASE(testFdmCevBlackBandBoundary) {
     const Real tol = 0.05;
     for (Option::Type type : {Option::Call, Option::Put}) {
         const auto payoff = ext::make_shared<PlainVanillaPayoff>(type, 100.0);
-        VanillaOption vanilla(payoff, option.exercise());
+        VanillaOption vanilla(payoff, exercise);
         std::vector<Real> prices;
         for (Real beta : std::vector<Real>{1.0-5e-5, 1.0-5e-4}) {
             vanilla.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
@@ -893,32 +917,111 @@ BOOST_AUTO_TEST_CASE(testCevCalculatorInputGuards) {
         Error);
 }
 
-BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
-    BOOST_TEST_MESSAGE("Testing the width of the CEV Black band...");
+BOOST_AUTO_TEST_CASE(testFdmCevOpDirection) {
+    BOOST_TEST_MESSAGE("Testing the FDM CEV operator on a non-zero direction...");
 
-    // Just outside the band the engine uses the closed form, which differs
-    // from the Black price by the model curvature (about vega*6e-4 here);
-    // a wider band would return the Black price exactly.
+    // On a two-dimensional mesh whose second axis is the CEV axis, the
+    // operator acting along that axis must reproduce the one-dimensional
+    // operator on every row, away from the boundary rows.
     const Date today = Date(22, February, 2018);
     const DayCounter dc = Actual365Fixed();
     Settings::instance().evaluationDate() = today;
 
-    const Real f0 = 100.0, alpha = 0.30, strike = 100.0;
+    const ext::shared_ptr<YieldTermStructure> rTS = flatRate(today, 0.05, dc);
+    const Real f0 = 30.0, beta = 0.6, alpha = 0.3*std::pow(f0, 1.0-beta);
+    const Size cevSize = 40, otherSize = 4;
+
+    const ext::shared_ptr<Fdm1dMesher> cev =
+        ext::make_shared<FdmCEV1dMesher>(cevSize, f0, alpha, beta, 1.0, 1e-3);
+    const ext::shared_ptr<FdmMesher> mesher1d =
+        ext::make_shared<FdmMesherComposite>(cev);
+    const ext::shared_ptr<FdmMesher> mesher2d =
+        ext::make_shared<FdmMesherComposite>(
+            ext::make_shared<Uniform1dMesher>(0.0, 1.0, otherSize), cev);
+
+    FdmCEVOp op1d(mesher1d, rTS, f0, alpha, beta, 0);
+    FdmCEVOp op2d(mesher2d, rTS, f0, alpha, beta, 1);
+    op1d.setTime(0.0, 0.1);
+    op2d.setTime(0.0, 0.1);
+
+    Array g(cevSize);
+    for (Size j = 0; j < cevSize; ++j)
+        g[j] = std::sin(0.1*cev->location(j)) + 0.01*cev->location(j);
+    Array v(cevSize*otherSize);
+    const ext::shared_ptr<FdmLinearOpLayout> layout = mesher2d->layout();
+    for (Size i = 0; i < otherSize; ++i)
+        for (Size j = 0; j < cevSize; ++j)
+            v[layout->index(std::vector<Size>{i, j})] = g[j];
+
+    const Array expected = op1d.apply(g);
+    const Array calculated = op2d.apply(v);
+    for (Size i = 0; i < otherSize; ++i) {
+        for (Size j = 1; j + 1 < cevSize; ++j) {
+            const Real c = calculated[layout->index(std::vector<Size>{i, j})];
+            QL_CHECK_SMALL(c - expected[j], 1e-10*(1.0 + std::fabs(expected[j])));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testFdmCevOneDayOption) {
+    BOOST_TEST_MESSAGE("Testing the FDM CEV engine for a one-day option...");
+
+    // A one-day maturity is shorter than the window floor of the boundary
+    // evaluation; with a year fraction that differs from the calendar
+    // count the window must stay inside the time to maturity.
+    const Date today = Date(15, June, 2020);
+    const DayCounter dc = ActualActual(ActualActual::ISDA);
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0;
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, dc));
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + 1);
+
+    for (Real beta : std::vector<Real>{0.7, 1.4}) {
+        const Real alpha = 0.3*std::pow(f0, 1.0-beta);
+        VanillaOption option(
+            ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0), exercise);
+        option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
+            f0, alpha, beta, rTS));
+        const Real analytic = option.NPV();
+        option.setPricingEngine(ext::make_shared<FdCEVVanillaEngine>(
+            f0, alpha, beta, rTS));
+        Real pde = Null<Real>();
+        BOOST_CHECK_NO_THROW(pde = option.NPV());
+        QL_CHECK_SMALL(pde - analytic, 1e-2);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testCevBlackBandWidth) {
+    BOOST_TEST_MESSAGE("Testing the width of the CEV Black band...");
+
+    // Just outside the band the engine uses the closed form, which differs
+    // from the Black price at the local volatility by the skew of the model
+    // away from the money (about 6e-4 here); a wider band would return the
+    // Black price exactly.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 100.0, alpha = 0.30, strike = 130.0;
     const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, dc));
     const Date maturityDate = today + Period(12, Months);
     const auto payoff = ext::make_shared<PlainVanillaPayoff>(Option::Call, strike);
     VanillaOption option(payoff, ext::make_shared<EuropeanExercise>(maturityDate));
 
     const DiscountFactor discount = rTS->discount(maturityDate);
+    const Real beta = 1.0-5e-4;
     const Real black = blackFormula(
         payoff, f0/discount,
-        alpha*std::sqrt(rTS->timeFromReference(maturityDate)), discount);
+        alpha*std::pow(f0, beta-1.0)
+            *std::sqrt(rTS->timeFromReference(maturityDate)), discount);
 
     option.setPricingEngine(ext::make_shared<AnalyticCEVEngine>(
-        f0, alpha, 1.0-5e-4, rTS));
+        f0, alpha, beta, rTS));
     const Real difference = std::fabs(option.NPV() - black);
-    BOOST_CHECK_GT(difference, 1e-3);
-    BOOST_CHECK_LT(difference, 0.05);
+    BOOST_CHECK_GT(difference, 1e-4);
+    BOOST_CHECK_LT(difference, 2e-3);
 }
 
 BOOST_AUTO_TEST_CASE(testFdmCevBetaAboveOne) {
