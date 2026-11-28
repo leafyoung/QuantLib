@@ -36,8 +36,8 @@ namespace QuantLib {
         // the lower one when emptyLower is set). Those rows only matter
         // through the implicit solve, where the one-sided drift term at a
         // node with a large location-to-spacing ratio contributes a
-        // diagonal entry that destabilizes the neighbouring rows for
-        // large time steps, for either sign of the rate.
+        // diagonal entry that empirically destabilizes the neighbouring rows
+        // for large time steps, for either sign of the rate.
         class DriftDerivativeOp : public FirstDerivativeOp {
           public:
             DriftDerivativeOp(Size direction,

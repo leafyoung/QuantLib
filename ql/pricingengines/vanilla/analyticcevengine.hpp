@@ -78,8 +78,10 @@ namespace QuantLib {
 
     /*! Width of the neighbourhood of \f$ \beta = 1 \f$ inside which the CEV
         price is replaced by its Black-Scholes limit. At \f$ \beta = 1 \f$
-        the limit is exact; inside the band it is an approximation whose
-        deviation from the CEV price is of the order of the band width.
+        the limit is exact; inside the band it is the Black-Scholes price at
+        the local lognormal volatility \f$ \alpha f_0^{\beta-1} \f$, an
+        approximation whose deviation from the CEV price is of the order of
+        the band width in volatility.
         Outside the band the closed form is valid in exact arithmetic; inside
         it, the noncentral chi-squared degrees of freedom grow beyond what
         boost's evaluation supports. The evaluation can still fail to
@@ -113,8 +115,8 @@ namespace QuantLib {
         \f$ K\,disc(0,end)/disc(0,start) \f$. For
         \f$ \beta = 1 \f$ the process is geometric Brownian motion and the
         effective time \f$ \alpha^2(end-start) \f$ reproduces the
-        Black-Scholes limit exactly. The integral is evaluated by a fixed
-        64 point Gauss-Legendre rule.
+        Black-Scholes limit exactly. The integral is evaluated by a
+        64 point Gauss-Legendre rule per year of the interval.
     */
     Time cevEffectiveTime(
         Real alpha, Real beta,
