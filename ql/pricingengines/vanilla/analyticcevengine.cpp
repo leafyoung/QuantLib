@@ -20,16 +20,16 @@
 /*! \file analyticcevengine.cpp */
 
 #include <ql/exercise.hpp>
-#include <ql/math/functional.hpp>
-#include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <ql/instruments/payoffs.hpp>
+#include <ql/math/functional.hpp>
 #include <ql/math/integrals/gaussianquadratures.hpp>
 #include <ql/pricingengines/blackformula.hpp>
+#include <ql/pricingengines/vanilla/analyticcevengine.hpp>
 #include <boost/math/distributions/non_central_chi_squared.hpp>
 #include <boost/math/special_functions/gamma.hpp>
-#include <utility>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace QuantLib {
 
@@ -131,8 +131,9 @@ namespace QuantLib {
 
         // the integrand is smooth and positive for flat rate curves and
         // piecewise smooth otherwise; one 64 point Gauss-Legendre rule per
-        // year of the interval resolves it to about 1e-5 relative at a curve
-        // kink (at most about 5e-5 for an extreme single jump). The rule is built once: the FDM boundary evaluates
+        // year of the interval resolves it to about 3e-5 relative at a curve
+        // kink for forward rate jumps up to 20%, and to about 1e-4 for a
+        // jump of 100%. The rule is built once: the FDM boundary evaluates
         // this at every time step.
         static const GaussLegendreIntegration quadrature(64);
         const Size panels = std::max<Size>(1, Size(std::ceil(end-start)));

@@ -902,6 +902,54 @@ BOOST_AUTO_TEST_CASE(testCevEnginesRejectNonVanillaPayoffs) {
     BOOST_CHECK_THROW(digital.NPV(), Error);
 }
 
+BOOST_AUTO_TEST_CASE(testFdmDriftedCevAbsorbingBoundary) {
+    BOOST_TEST_MESSAGE(
+        "Testing the drifted FDM CEV engine with an absorbing zero...");
+
+    // For beta < 1 the process is absorbed at zero, and with a high
+    // volatility the mesh reaches it: the lower boundary value is the
+    // discounted payoff at zero, which dominates the put price here.
+    const Date today = Date(22, February, 2018);
+    const DayCounter dc = Actual365Fixed();
+    Settings::instance().evaluationDate() = today;
+
+    const Real f0 = 10.0, vol = 1.0;
+    const ext::shared_ptr<Exercise> exercise =
+        ext::make_shared<EuropeanExercise>(today + Period(24, Months));
+
+    struct Case { Real beta, strike, rate; };
+    for (const Case& c : {Case{0.0, 20.0, 0.0}, Case{0.3, 10.0, 0.0},
+                          Case{0.6, 10.0, 0.05}}) {
+        const Real alpha = vol*std::pow(f0, 1.0-c.beta);
+        const Handle<YieldTermStructure> rTS(flatRate(today, c.rate, dc));
+        VanillaOption option(
+            ext::make_shared<PlainVanillaPayoff>(Option::Put, c.strike),
+            exercise);
+        option.setPricingEngine(ext::make_shared<AnalyticDriftedCEVEngine>(
+            f0, alpha, c.beta, rTS));
+        const Real analytic = option.NPV();
+        option.setPricingEngine(ext::make_shared<FdDriftedCEVVanillaEngine>(
+            f0, alpha, c.beta, rTS, 100, 400, 2));
+        QL_CHECK_SMALL(option.NPV() - analytic, 5e-3);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(testDriftedAnalyticEngineRejectsAmericanExercise) {
+    BOOST_TEST_MESSAGE(
+        "Testing that the drifted analytic CEV engine rejects early exercise...");
+
+    const Date today = Date(22, February, 2018);
+    Settings::instance().evaluationDate() = today;
+
+    const Handle<YieldTermStructure> rTS(flatRate(today, 0.03, Actual365Fixed()));
+    VanillaOption option(
+        ext::make_shared<PlainVanillaPayoff>(Option::Call, 100.0),
+        ext::make_shared<AmericanExercise>(today, today + Period(12, Months)));
+    option.setPricingEngine(
+        ext::make_shared<AnalyticDriftedCEVEngine>(100.0, 0.3, 0.5, rTS));
+    BOOST_CHECK_THROW(option.NPV(), Error);
+}
+
 BOOST_AUTO_TEST_CASE(testCevEffectiveTimeInputGuards) {
     BOOST_TEST_MESSAGE("Testing the CEV effective time input guards...");
 
@@ -912,7 +960,8 @@ BOOST_AUTO_TEST_CASE(testCevEffectiveTimeInputGuards) {
 }
 
 BOOST_AUTO_TEST_CASE(testDriftedEnginesAtZeroRate) {
-    BOOST_TEST_MESSAGE("Testing that the drifted CEV engines match the forward engines at zero rates...");
+    BOOST_TEST_MESSAGE(
+        "Testing the drifted CEV engines against the forward engines at zero rates...");
 
     // the forward engines price a driftless forward and discount it; the
     // drifted engines price an asset with drift given by the curve. The two
