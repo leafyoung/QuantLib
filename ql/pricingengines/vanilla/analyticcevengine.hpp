@@ -30,40 +30,22 @@
 
 namespace QuantLib {
 
-    //! constant elasticity of variance process
+    //! constant elasticity of variance process (absorbing boundary at f=0)
     /*! \f[
-         df_t = r_t f_t \mathrm{d}t + \alpha f_t^\beta \mathrm{d}W_t
+         df_t = \alpha f_t^\beta \mathrm{d}W_t
         \f]
-
-        For \f$ \beta < 1 \f$ the process has an absorbing boundary at
-        \f$ f = 0 \f$; for \f$ \beta > 1 \f$ zero is unattainable and
-        the discounted process is a strict local martingale.
     */
 
     /*! References:
 
         D.R. Brecher, A.E. Lindsay, Results on the CEV Process, Past and Present
         https://www.fincad.com/sites/default/files/wysiwyg/Resources-Wiki/cev-process-working-paper.pdf
-
-        M. Schroder, Computing the Constant Elasticity of Variance Option
-        Pricing Formula, Journal of Finance 44(1), 211-219, 1989.
     */
 
     class CEVCalculator {
       public:
         CEVCalculator(Real f0, Real alpha, Real beta);
 
-        /*! Value of a European option for the driftless CEV process
-            \f$ df_t = \alpha f_t^\beta dW_t \f$ at time \p t.
-            Requires \f$ |\beta - 1| \f$ at least
-            cevBlackLimitBandWidth: closer to one the degrees of freedom
-            of the closed form grow beyond what the noncentral chi-squared
-            evaluation supports. The engines handle that band themselves.
-            To price under a rate curve, use this value with a unit
-            volatility calculator at the effective time returned by
-            cevEffectiveTime and the strike discounted from the maturity
-            to the valuation time.
-        */
         Real value(Option::Type optionType, Real strike, Time t) const;
 
         Real f0()    const { return f0_; }
@@ -74,6 +56,18 @@ namespace QuantLib {
         Real X(Real f) const;
 
         const Real f0_, alpha_, beta_, delta_, x0_;
+    };
+
+
+    class AnalyticCEVEngine : public VanillaOption::engine {
+      public:
+        AnalyticCEVEngine(Real f0, Real alpha, Real beta, Handle<YieldTermStructure> discountCurve);
+
+        void calculate() const override;
+
+      private:
+        const ext::shared_ptr<CEVCalculator> calculator_;
+        const Handle<YieldTermStructure> discountCurve_;
     };
 
     /*! Width of the neighbourhood of \f$ \beta = 1 \f$ inside which the CEV
@@ -124,16 +118,17 @@ namespace QuantLib {
         Time start, Time end);
 
 
-    //! Analytic engine for European options on a CEV asset
+    //! Analytic engine for European options on a CEV asset with drift
     /*! The underlying \f$ f \f$ is an asset with drift \f$ r_t f_t \f$
-        given by the discount curve, not a driftless forward; a flat zero
-        curve gives the driftless process. The Black-Scholes limit is used
+        given by the discount curve, not a driftless forward as in
+        AnalyticCEVEngine, which prices a forward and discounts it; the two
+        engines coincide at zero rates. The Black-Scholes limit is used
         for \f$ |\beta - 1| < \f$ cevBlackLimitBandWidth. Only plain vanilla
         payoffs are supported.
     */
-    class AnalyticCEVEngine : public VanillaOption::engine {
+    class AnalyticDriftedCEVEngine : public VanillaOption::engine {
       public:
-        AnalyticCEVEngine(Real f0, Real alpha, Real beta, Handle<YieldTermStructure> discountCurve);
+        AnalyticDriftedCEVEngine(Real f0, Real alpha, Real beta, Handle<YieldTermStructure> discountCurve);
 
         void calculate() const override;
 

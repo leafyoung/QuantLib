@@ -31,15 +31,39 @@
 namespace QuantLib {
     class YieldTermStructure;
 
-    //! Finite-difference engine for options on a CEV asset
-    /*! As in AnalyticCEVEngine, the underlying is an asset with drift
-        given by the discount curve, not a driftless forward. FdSabrVanillaEngine
-        models a driftless forward, so the two agree only for a zero rate.
+    class FdCEVVanillaEngine : public VanillaOption::engine {
+      public:
+        FdCEVVanillaEngine(Real f0,
+                           Real alpha,
+                           Real beta,
+                           Handle<YieldTermStructure> discountCurve,
+                           Size tGrid = 50,
+                           Size xGrid = 400,
+                           Size dampingSteps = 0,
+                           Real scalingFactor = 1.0,
+                           Real eps = 1e-4,
+                           const FdmSchemeDesc& schemeDesc = FdmSchemeDesc::Douglas());
+
+        void calculate() const override;
+
+      private:
+        const Real f0_, alpha_, beta_;
+        const Handle<YieldTermStructure> discountCurve_;
+        const Size tGrid_, xGrid_, dampingSteps_;
+        const Real scalingFactor_, eps_;
+        const FdmSchemeDesc schemeDesc_;
+    };
+
+    //! Finite-difference engine for options on a CEV asset with drift
+    /*! As in AnalyticDriftedCEVEngine, the underlying is an asset with drift
+        given by the discount curve, not a driftless forward as in
+        FdCEVVanillaEngine and FdSabrVanillaEngine, so those agree with this
+        engine only for a zero rate.
         The mesher requires \f$ \beta \neq 1 \f$, and its
         noncentral chi-squared evaluation can fail, mostly for
         \f$ |\beta - 1| \f$ up to about 1e-3 (short maturities, low
         volatilities) but also sporadically elsewhere, including inside the
-        Black band of AnalyticCEVEngine, which accepts
+        Black band of AnalyticDriftedCEVEngine, which accepts
         \f$ \beta = 1 \f$ and is the reference there.
         The boundary values are the European prices at the mesh bounds (the
         closed form, or its Black approximation near \f$ \beta = 1 \f$ or
@@ -52,9 +76,9 @@ namespace QuantLib {
         Greeks at short maturities; the default of 0 can give oscillating
         Greeks and slightly negative prices far out of the money.
     */
-    class FdCEVVanillaEngine : public VanillaOption::engine {
+    class FdDriftedCEVVanillaEngine : public VanillaOption::engine {
       public:
-        FdCEVVanillaEngine(Real f0,
+        FdDriftedCEVVanillaEngine(Real f0,
                            Real alpha,
                            Real beta,
                            Handle<YieldTermStructure> discountCurve,

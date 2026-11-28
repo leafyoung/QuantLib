@@ -29,42 +29,6 @@
 
 namespace QuantLib {
 
-    namespace {
-
-        // The first derivative operator with empty rows at the mesh
-        // boundaries that carry a Dirichlet condition (the upper one always,
-        // the lower one when emptyLower is set). Dirichlet values are
-        // imposed after the solve, so, as in SecondDerivativeOp, the end
-        // rows must be empty for the implicit row at those nodes to be the
-        // identity; a one-sided drift term there feeds into the neighbouring
-        // rows and destabilizes large time steps, for either sign of the
-        // rate.
-        class DriftDerivativeOp : public FirstDerivativeOp {
-          public:
-            DriftDerivativeOp(Size direction,
-                              const ext::shared_ptr<FdmMesher>& mesher,
-                              bool emptyLower)
-            : FirstDerivativeOp(direction, mesher) {
-                const Size last = mesher->layout()->dim()[direction] - 1;
-                for (const auto& iter : *mesher->layout()) {
-                    const Size coordinate = iter.coordinates()[direction];
-                    if (coordinate == last || (emptyLower && coordinate == 0)) {
-                        const Size i = iter.index();
-                        lower_[i] = diag_[i] = upper_[i] = 0.0;
-                    }
-                }
-            }
-        };
-
-        // FdCEVVanillaEngine fixes the lower node whenever the mesh starts
-        // above zero or zero is absorbing (beta < 1)
-        bool hasLowerDirichletNode(const ext::shared_ptr<FdmMesher>& mesher,
-                                   Size direction, Real beta) {
-            return beta < 1.0 || mesher->locations(direction).front() > 0.0;
-        }
-
-    }
-
     FdmCEVOp::FdmCEVOp(
         const ext::shared_ptr<FdmMesher>& mesher,
         const ext::shared_ptr<YieldTermStructure>& rTS,
@@ -72,10 +36,7 @@ namespace QuantLib {
         Size direction)
     : rTS_(rTS),
       direction_(direction),
-      dxMap_(DriftDerivativeOp(direction_, mesher,
-                               hasLowerDirichletNode(mesher, direction, beta))
-             .mult(mesher->locations(direction))),
-      dxxMap_(SecondDerivativeOp(direction_, mesher)
+      dxxMap_(SecondDerivativeOp(0, mesher)
               .mult(0.5 * alpha * alpha *
                     Pow(mesher->locations(direction), 2.0 * beta))),
       mapT_(direction, mesher) {
@@ -85,7 +46,7 @@ namespace QuantLib {
 
     void FdmCEVOp::setTime(Time t1, Time t2) {
         const Rate r = rTS_->forwardRate(t1, t2, Continuous).rate();
-        mapT_.axpyb(Array(1, r), dxMap_, dxxMap_, Array(1, -r));
+        mapT_.axpyb(Array(), dxxMap_, dxxMap_, Array(1, -r));
     }
 
     Array FdmCEVOp::apply(const Array& r) const {
@@ -122,5 +83,98 @@ namespace QuantLib {
         return std::vector<SparseMatrix>(1, mapT_.toMatrix());
     }
 
-}
 
+    namespace {
+
+        // The first derivative operator with empty rows at the mesh
+        // boundaries that carry a Dirichlet condition (the upper one always,
+        // the lower one when emptyLower is set). Dirichlet values are
+        // imposed after the solve, so, as in SecondDerivativeOp, the end
+        // rows must be empty for the implicit row at those nodes to be the
+        // identity; a one-sided drift term there feeds into the neighbouring
+        // rows and destabilizes large time steps, for either sign of the
+        // rate.
+        class DriftDerivativeOp : public FirstDerivativeOp {
+          public:
+            DriftDerivativeOp(Size direction,
+                              const ext::shared_ptr<FdmMesher>& mesher,
+                              bool emptyLower)
+            : FirstDerivativeOp(direction, mesher) {
+                const Size last = mesher->layout()->dim()[direction] - 1;
+                for (const auto& iter : *mesher->layout()) {
+                    const Size coordinate = iter.coordinates()[direction];
+                    if (coordinate == last || (emptyLower && coordinate == 0)) {
+                        const Size i = iter.index();
+                        lower_[i] = diag_[i] = upper_[i] = 0.0;
+                    }
+                }
+            }
+        };
+
+        // FdDriftedCEVVanillaEngine fixes the lower node whenever the mesh starts
+        // above zero or zero is absorbing (beta < 1)
+        bool hasLowerDirichletNode(const ext::shared_ptr<FdmMesher>& mesher,
+                                   Size direction, Real beta) {
+            return beta < 1.0 || mesher->locations(direction).front() > 0.0;
+        }
+
+    }
+
+    FdmDriftedCEVOp::FdmDriftedCEVOp(
+        const ext::shared_ptr<FdmMesher>& mesher,
+        const ext::shared_ptr<YieldTermStructure>& rTS,
+        Real f0, Real alpha, Real beta,
+        Size direction)
+    : rTS_(rTS),
+      direction_(direction),
+      dxMap_(DriftDerivativeOp(direction_, mesher,
+                               hasLowerDirichletNode(mesher, direction, beta))
+             .mult(mesher->locations(direction))),
+      dxxMap_(SecondDerivativeOp(direction_, mesher)
+              .mult(0.5 * alpha * alpha *
+                    Pow(mesher->locations(direction), 2.0 * beta))),
+      mapT_(direction, mesher) {
+    }
+
+    Size FdmDriftedCEVOp::size() const { return 1U; }
+
+    void FdmDriftedCEVOp::setTime(Time t1, Time t2) {
+        const Rate r = rTS_->forwardRate(t1, t2, Continuous).rate();
+        mapT_.axpyb(Array(1, r), dxMap_, dxxMap_, Array(1, -r));
+    }
+
+    Array FdmDriftedCEVOp::apply(const Array& r) const {
+        return mapT_.apply(r);
+    }
+
+    Array FdmDriftedCEVOp::apply_mixed(const Array& r) const {
+        return Array(r.size(), 0.0);
+    }
+
+    Array FdmDriftedCEVOp::apply_direction(Size direction, const Array& r) const {
+        if (direction == direction_) {
+            return mapT_.apply(r);
+        }
+        else {
+            return Array(r.size(), 0.0);
+        }
+    }
+
+    Array FdmDriftedCEVOp::solve_splitting(Size direction, const Array& r, Real a) const {
+        if (direction == direction_) {
+            return mapT_.solve_splitting(r, a, 1.0);
+        }
+        else {
+            return Array(r.size(), 0.0);
+        }
+    }
+
+    Array FdmDriftedCEVOp::preconditioner(const Array& r, Real dt) const {
+        return solve_splitting(direction_, r, dt);
+    }
+
+    std::vector<SparseMatrix> FdmDriftedCEVOp::toMatrixDecomp() const {
+        return std::vector<SparseMatrix>(1, mapT_.toMatrix());
+    }
+
+}
